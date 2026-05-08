@@ -174,10 +174,36 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 @keyframes fadeup{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 /* DEMO BANNER */
 .demo-banner{background:#FFF8E0;border:1px solid #F0D060;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#7A6000;display:flex;align-items:center;gap:8px}
+/* WELCOME SCREEN */
+.welcome-screen{position:fixed;inset:0;z-index:999;background:linear-gradient(160deg,#3D1200 0%,#6B2400 55%,#8B4000 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 24px;text-align:center}
+.welcome-logo-circle{width:130px;height:130px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;box-shadow:0 8px 40px rgba(0,0,0,0.35)}
+.welcome-logo-text{font-size:32px;font-weight:700;color:var(--brown);letter-spacing:-1px;line-height:1}
+.welcome-logo-sub{font-size:11px;font-weight:600;color:var(--brown);letter-spacing:0.1em;text-transform:uppercase;margin-top:2px}
+.welcome-brand{color:#C49A22;font-size:12px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:8px}
+.welcome-title{color:#fff;font-size:26px;font-weight:700;margin-bottom:6px;letter-spacing:-0.3px}
+.welcome-subtitle{color:rgba(255,255,255,0.6);font-size:13px;line-height:1.6;max-width:280px;margin:0 auto 36px}
+.welcome-btn{background:#fff;color:var(--brown);border:none;padding:15px 44px;border-radius:30px;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--font);box-shadow:0 4px 24px rgba(0,0,0,0.25);letter-spacing:0.01em}
+.welcome-btn:active{transform:scale(0.97)}
+.welcome-footer{color:rgba(255,255,255,0.25);font-size:11px;margin-top:36px;letter-spacing:0.05em}
 </style>
 </head>
 <body>
-<div class="app">
+<!-- WELCOME SCREEN -->
+<div id="welcome-screen" class="welcome-screen">
+  <div class="welcome-logo-circle">
+    <div>
+      <div class="welcome-logo-text">BH</div>
+      <div class="welcome-logo-sub">Heaven</div>
+    </div>
+  </div>
+  <div class="welcome-brand">Welcome to</div>
+  <div class="welcome-title">Brownie Heaven</div>
+  <div class="welcome-subtitle">Stock Management &amp; Production System — built for your team, by your team.</div>
+  <button class="welcome-btn" onclick="startApp()">Get Started →</button>
+  <div class="welcome-footer">stock.brownieheaven.in</div>
+</div>
+
+<div class="app" id="main-app" style="display:none">
   <div class="hdr">
     <div class="hdr-left">
       <div class="logo">BH</div>
@@ -280,6 +306,12 @@ async function init() {
   showLoading('Loading Brownie Heaven...');
   try {
     DB.products = await sbGet('products','?order=category_id,sort_order');
+    // Fix product names client-side
+    DB.products.forEach(p => {
+      if (p.name === 'Blue & White Chocolate Medovik') p.name = 'Blueberry Medovik';
+      if (p.name === 'Overloaded Cake 1/2kg') p.name = 'Overloaded Cake 750g';
+      if (p.name === 'Pink Rose Strawberry 1/2kg') p.name = 'Pink Rose Strawberry 850g';
+    });
     DB.outlets = await sbGet('outlets','?order=id');
     const cfg = await sbGet('outlet_product_config');
     DB.outletConfig = {};
@@ -289,6 +321,13 @@ async function init() {
     });
   } catch(e) { console.warn('Offline mode:', e); }
   renderPin();
+}
+
+function startApp() {
+  document.getElementById('welcome-screen').style.display = 'none';
+  document.getElementById('main-app').style.display = 'flex';
+  document.getElementById('main-app').style.flexDirection = 'column';
+  init();
 }
 
 function showLoading(msg='Loading...') {
@@ -324,8 +363,9 @@ function confirmLogout() {
 function goHome() {
   S = {...S, screen:'pin', pin:'', outlet:null, shift:null, staffName:'',
     activeTab:0, stockData:{}, demandData:{}, pinError:false, role:null, demoMode:false};
-  setHdr('Stock Management', false);
-  renderPin();
+  // Show welcome screen again
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('welcome-screen').style.display = 'flex';
 }
 
 function setTab(i) {
@@ -492,31 +532,39 @@ function renderStock() {
       ${rows}
       <div class="nav-row">
         ${S.activeTab>0?`<button class="btn btn-s" onclick="swTab(${S.activeTab-1})">← Back</button>`:''}
-        <button class="btn btn-p" onclick="${isLast?'renderDemand()':`swTab(${S.activeTab+1})`}">${isLast?'Next: Demand request →':'Next category →'}</button>
+        <button class="btn btn-p" onclick="${isLast ? (S.shift==='night' ? 'renderDemand()' : 'submitShift()') : `swTab(${S.activeTab+1})`}">${isLast ? (S.shift==='night' ? 'Next: Tomorrow\'s demand →' : '✓ Submit shift') : 'Next category →'}</button>
       </div>
     </div>
   </div>`;
 }
 function swTab(i) { S.activeTab=i; renderStock(); }
 
-// ── DEMAND ────────────────────────────────────────────────────────────────────
+// ── DEMAND (night shift only) ─────────────────────────────────────────────────
 function renderDemand() {
   const cats = getOutletCats().filter(c=>['half_cakes','one_cakes','pastry','brownies','eggless','medovik','eclair'].includes(c.id));
   const rows = cats.map(cat=>`
     <div class="sec-hdr">${cat.label}</div>
-    ${cat.products.map(p=>`
-      <div class="demand-row">
-        <div class="demand-name">${p.name}</div>
-        <input class="demand-input" type="number" min="0" placeholder="0" value="${S.demandData[p.id]||''}" oninput="S.demandData[${p.id}]=this.value">
-      </div>`).join('')}
+    <div style="display:grid;grid-template-columns:1fr 52px 70px;gap:0;padding:4px 0 2px;border-bottom:1px solid var(--border2)">
+      <div style="font-size:9px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Product</div>
+      <div style="font-size:9px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.04em;text-align:center">Closing</div>
+      <div style="font-size:9px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.04em;text-align:center">Need tmrw</div>
+    </div>
+    ${cat.products.map(p=>{
+      const cl = calcCl(cat.id, p.id);
+      return `<div class="demand-row" style="display:grid;grid-template-columns:1fr 52px 70px;gap:0;align-items:center">
+        <div class="demand-name" style="font-size:12px">${p.name}</div>
+        <div style="text-align:center;font-size:13px;font-weight:600;font-family:var(--mono);color:${cl===0?'var(--red)':cl<=2?'var(--orange)':'var(--txt2)'}">${cl}</div>
+        <div style="text-align:center"><input class="demand-input" type="number" min="0" placeholder="0" value="${S.demandData[p.id]||''}" oninput="S.demandData[${p.id}]=this.value" style="width:58px"></div>
+      </div>`;
+    }).join('')}
   `).join('');
   document.getElementById('screen').innerHTML = `
   <div style="margin-top:12px">
     <div class="card">
-      <div class="card-title">Tomorrow morning — how many do you need?</div>
-      <p style="font-size:13px;color:var(--txt2);margin-bottom:12px">Goes to Gautham for dispatch. Leave blank if not needed.</p>
+      <div class="card-title">🌙 Night shift — tomorrow's demand</div>
+      <p style="font-size:13px;color:var(--txt2);margin-bottom:12px">Closing stock shown. Enter how many needed tomorrow morning. Goes to Ashik for production planning.</p>
       ${rows}
-      <button class="btn btn-p" style="margin-top:14px" onclick="submitShift()">✓ Submit shift entry</button>
+      <button class="btn btn-p" style="margin-top:14px" onclick="submitShift()">✓ Submit night shift</button>
       <button class="btn btn-s" style="margin-top:8px" onclick="swTab(getOutletCats().length-1);renderStock()">← Back to stock</button>
     </div>
   </div>`;
@@ -544,13 +592,16 @@ async function submitShift() {
       });
     });
     if(lines.length) await sbPost('stock_lines',lines);
-    const demands=[];
-    const tmrw=new Date(); tmrw.setDate(tmrw.getDate()+1);
-    const tmrwStr=tmrw.toISOString().split('T')[0];
-    Object.entries(S.demandData).forEach(([prodId,qty])=>{
-      if(qty&&+qty>0) demands.push({outlet_id:S.outlet,entry_date:tmrwStr,product_id:parseInt(prodId),requested_qty:+qty});
-    });
-    if(demands.length) await sbPost('demand_requests',demands);
+    // Only save demand requests for night shift
+    if (S.shift === 'night') {
+      const demands=[];
+      const tmrw=new Date(); tmrw.setDate(tmrw.getDate()+1);
+      const tmrwStr=tmrw.toISOString().split('T')[0];
+      Object.entries(S.demandData).forEach(([prodId,qty])=>{
+        if(qty&&+qty>0) demands.push({outlet_id:S.outlet,entry_date:tmrwStr,product_id:parseInt(prodId),requested_qty:+qty});
+      });
+      if(demands.length) await sbPost('demand_requests',demands);
+    }
     renderSuccess();
   } catch(e) {
     toast('Error saving. Please try again.');
@@ -924,7 +975,7 @@ async function addProd(catId){
   } catch(e){ toast('Error adding product'); }
 }
 
-init();
+// App starts via welcome screen Get Started button → startApp()
 </script>
 </body>
 </html>
