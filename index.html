@@ -253,6 +253,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
     <button class="mt" id="mt1" onclick="setTab(1)">Production</button>
     <button class="mt" id="mt2" onclick="setTab(2)">Monthly</button>
     <button class="mt" id="mt3" onclick="setTab(3)">Admin</button>
+    <button class="mt" id="mt4" onclick="setTab(4)">Supply Ledger</button>
   </div>
   <div class="screen" id="screen"></div>
 </div>
@@ -413,7 +414,7 @@ function setHdr(sub, showTabs) {
   document.getElementById('main-tabs').style.display = showTabs ? 'flex' : 'none';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
-    ['mt0','mt1','mt2','mt3'].forEach((id,i) => {
+    ['mt0','mt1','mt2','mt3','mt4'].forEach((id,i) => {
       document.getElementById(id).classList.toggle('active', i === S.mainTab);
     });
   }
@@ -443,6 +444,7 @@ function setTab(i) {
   else if (i===1) renderProduction();
   else if (i===2) renderMonthly();
   else if (i===3) renderAdmin();
+  else if (i===4) renderSupplyLedger();
 }
 
 // ── PIN ──────────────────────────────────────────────────────────────────────
@@ -1272,6 +1274,277 @@ async function addProd(catId){
 }
 
 // App starts via welcome screen Get Started button → startApp()
+  // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
+const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam'];
+const SL_CATALOG=[
+  {cat:'Cakes – ½ kg',items:[
+    {name:'Chocolate Truffle 1/2kg',rate:595},{name:'Overloaded Cake 750g',rate:775},
+    {name:'Tiramisu Cake 1/2kg',rate:595},{name:'Triple Chocolate Truffle 1/2kg',rate:695},
+    {name:'Butterscotch Cake 1/2kg',rate:695},{name:'Biscoff Cake 1/2kg',rate:695},
+    {name:'Hazelnut Truffle 1/2kg',rate:695},{name:'Fresh Cream Chocolate 1/2kg',rate:695},
+    {name:'Red Velvet 1/2kg',rate:595},{name:'BH Signature Chocolate 1/2kg',rate:795},
+    {name:'Pink Rose Strawberry 850g',rate:695},{name:'Fresh Cream Pineapple 1/2kg',rate:695},
+    {name:'Brownie Slab 1/2kg',rate:600}]},
+  {cat:'Mini Items',items:[
+    {name:'Chocolate Truffle Balls',rate:59},{name:'Mini Pastry Cup Choc Truffle',rate:25},
+    {name:'Mini Pastry Cup Tiramisu',rate:25},{name:'Mini Pastry Cup Triple Choc',rate:25},
+    {name:'Mini Pastry Cup Butterscotch',rate:25}]},
+  {cat:'Cakes – 1 kg',items:[
+    {name:'Chocolate Truffle Cake 1kg',rate:990},{name:'Tiramisu Cake 1kg',rate:1190},
+    {name:'Butterscotch Cake 1kg',rate:990},{name:'BH Signature Chocolate Cake 1kg',rate:1300}]},
+  {cat:'Pastry Slices',items:[
+    {name:'Chocolate Truffle Pastry Slice',rate:120},{name:'Tiramisu Pastry Slice',rate:120},
+    {name:'Triple Choc Truffle Pastry Slice',rate:130},{name:'Butterscotch Pastry Slice',rate:120},
+    {name:'Biscoff Pastry Slice',rate:120},{name:'Black Forest Pastry Slice',rate:120}]},
+  {cat:'Cheesecakes',items:[
+    {name:'Blueberry Cheesecake Piece',rate:230},{name:'Biscoff Cheesecake Piece',rate:210}]},
+  {cat:'Tubs',items:[
+    {name:'Brooklyn Blackout Tub',rate:270},{name:'Tiramisu Tub',rate:270}]},
+  {cat:'Eclairs & Medoviks',items:[
+    {name:'Eclair Chocolate',rate:150},{name:'Eclair Hazelnut',rate:150},{name:'Eclair Biscoff',rate:150},
+    {name:'Chocolate Medovik',rate:175},{name:'Hazelnut Medovik',rate:175},
+    {name:'Pistachio Medovik',rate:175},{name:'Lotus Biscoff Medovik',rate:175},
+    {name:'Honey & Chocolate Medovik',rate:175},{name:'Blueberry Medovik',rate:175},
+    {name:'7 Layer Devil Choc Cake Slice',rate:400}]},
+  {cat:'Savouries',items:[
+    {name:'Mini Pizza Non Veg',rate:130},{name:'Mini Pizza Veg',rate:130},
+    {name:'Stuffed Bun Chicken',rate:130},{name:'Korean Bun Mushroom',rate:130},
+    {name:'Stuffed Bun Mushroom',rate:130},{name:'Stuffed Bun Paneer',rate:130},
+    {name:'Babka Biscoff',rate:130},{name:'Babka Chilli Cheese',rate:130},
+    {name:'Sausage Claws Chicken',rate:130},{name:'Chicken Puff',rate:130},
+    {name:'Mushroom Puff',rate:130},{name:'Donut',rate:130},
+    {name:'Cashew Butter',rate:150},{name:'Assorted Brownie Cream 16pcs Box',rate:595}]},
+  {cat:'Brownies & Boxes',items:[
+    {name:'Classic Brownie',rate:120},{name:'Roasted Nuts Brownie',rate:145},
+    {name:'Choco Hazelnut Spread Brownie',rate:165},{name:'Triple Chocolate Brownie',rate:165},
+    {name:'Red Velvet Brownie',rate:140},{name:'White Chocolate Brownie',rate:145},
+    {name:'Caramel Fudge Brownie',rate:145},{name:'Oreo Brownie',rate:155},
+    {name:'Walnut Brownie',rate:160},{name:'Overloaded Brownie',rate:155},
+    {name:'Eggless Classic Brownie',rate:125},{name:'Eggless Roasted Nuts Brownie',rate:150},
+    {name:'Eggless Triple Chocolate Brownie',rate:170},
+    {name:'Indulgence Box – 8 Pcs',rate:595},{name:'Assorted Box 6 Pcs',rate:475},
+    {name:'Assorted Box 3 Pcs',rate:250},{name:'Choco Lava',rate:110}]}
+];
+
+let SL={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:'',editKey:null};
+
+function slFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function slSafeId(name){return name.replace(/[^a-zA-Z0-9]/g,'_');}
+function slGetLine(name){
+  if(!SL.lines[name]){const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);SL.lines[name]={qty:'',rate:def?def.rate:0,amount:0};}
+  return SL.lines[name];
+}
+function slCalcDaily(){return Object.values(SL.lines).reduce((s,l)=>s+(l.amount||0),0);}
+
+async function slMonthlyTotal(){
+  if(!SL.outlet||!SL.date)return slCalcDaily();
+  const ym=SL.date.slice(0,7);const[y,m]=ym.split('-');
+  const last=new Date(+y,+m,0).getDate();
+  try{
+    const rows=await sbGet('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(SL.outlet)}&date=gte.${ym}-01&date=lte.${ym}-${last}&select=amount`);
+    return rows.reduce((s,r)=>s+Number(r.amount||0),0)+slCalcDaily();
+  }catch(e){return slCalcDaily();}
+}
+
+async function slLoadHistory(){
+  try{
+    let q='outlet_supply_ledger?order=date.desc,outlet,category,product';
+    if(SL.filterOutlet)q+=`&outlet=eq.${encodeURIComponent(SL.filterOutlet)}`;
+    if(SL.filterDate)q+=`&date=eq.${SL.filterDate}`;
+    SL.history=await sbGet(q);
+  }catch(e){SL.history=[];}
+}
+
+async function slSave(){
+  const btn=document.getElementById('sl-save-btn');
+  if(btn){btn.disabled=true;btn.textContent='Saving...';}
+  const active=Object.entries(SL.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l])=>{
+    const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);
+    return{outlet:SL.outlet,date:SL.date,product:name,category:def?def.cat:'Other',qty:Number(l.qty),rate:Number(l.rate)};
+  });
+  if(!SL.outlet){alert('Select an outlet');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
+  if(!active.length){alert('Enter at least one product quantity');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
+  try{
+    await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(SL.outlet)}&date=eq.${SL.date}`);
+    await sbPost('outlet_supply_ledger',active);
+    SL.editKey=null;SL.lines={};
+    toast('Supply entry saved!');
+    await slLoadHistory();renderSupplyLedger();
+  }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
+}
+
+async function slDelete(outlet,date){
+  if(!confirm('Delete all entries for '+outlet+' on '+date+'?'))return;
+  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await slLoadHistory();renderSupplyLedger();}
+  catch(e){toast('Error: '+e.message);}
+}
+
+function slEdit(dataStr){
+  const rows=JSON.parse(decodeURIComponent(dataStr));
+  SL.outlet=rows[0].outlet;SL.date=rows[0].date;SL.editKey=SL.outlet+'|'+SL.date;SL.lines={};
+  rows.forEach(r=>{SL.lines[r.product]={qty:String(r.qty),rate:Number(r.rate),amount:Number(r.amount||0)};});
+  SL.view='entry';renderSupplyLedger();window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function slUpdateLine(name,field,val){
+  const l=slGetLine(name);l[field]=val;
+  const q=Number(l.qty)||0,r=Number(l.rate)||0;l.amount=q*r;
+  const el=document.getElementById('sl-amt-'+slSafeId(name));
+  if(el)el.textContent=q>0?slFmt(l.amount):'—';
+  const daily=slCalcDaily();
+  const dt=document.getElementById('sl-daily-total');if(dt)dt.textContent=slFmt(daily);
+  const dd=document.getElementById('sl-daily-disp');if(dd)dd.textContent=slFmt(daily);
+  slMonthlyTotal().then(mt=>{const me=document.getElementById('sl-monthly-disp');if(me)me.textContent=slFmt(mt);});
+}
+
+function slGroupHistory(){
+  const g={};
+  SL.history.forEach(r=>{const k=r.outlet+'|'+r.date;if(!g[k])g[k]={outlet:r.outlet,date:r.date,rows:[],total:0};g[k].rows.push(r);g[k].total+=Number(r.amount||0);});
+  return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date)||a.outlet.localeCompare(b.outlet));
+}
+
+async function renderSupplyLedger(){
+  setHdr('Dashboard',true);
+  if(!SL.history.length)await slLoadHistory();
+  const daily=slCalcDaily();
+  const groups=slGroupHistory();
+  const monthLabel=SL.date?new Date(SL.date+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'}):'';
+
+  let prodHTML='';
+  SL_CATALOG.forEach(function(group){
+    var sub=0;
+    var rowsHtml=group.items.map(function(p){
+      var l=slGetLine(p.name);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=slSafeId(p.name);
+      return '<tr style="'+(hasQty?'background:#f0fbf7':'')+'">'
+        +'<td style="padding:5px 8px;font-size:13px;border-bottom:.5px solid #f0f0ee">'+p.name+'</td>'
+        +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee">'
+        +'<input type="number" min="0" step="1" placeholder="0" value="'+(l.qty||'')+'"'
+        +' style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right;font-family:var(--mono)"'
+        +' oninput="slUpdateLine(\''+p.name+'\',\'qty\',this.value)"></td>'
+        +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee">'
+        +'<input type="number" min="0" step="0.01" value="'+(l.rate||p.rate)+'"'
+        +' style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right;font-family:var(--mono)"'
+        +' oninput="slUpdateLine(\''+p.name+'\',\'rate\',this.value)"></td>'
+        +'<td id="sl-amt-'+sid+'" style="padding:5px 8px;text-align:right;font-size:13px;font-family:var(--mono);border-bottom:.5px solid #f0f0ee;color:'+(hasQty?'#0F6E56':'#bbb')+'">'+(hasQty?slFmt(l.amount):'—')+'</td>'
+        +'</tr>';
+    }).join('');
+    prodHTML+='<div style="margin-bottom:1rem">'
+      +'<div style="font-size:11px;font-weight:600;color:#1D9E75;text-transform:uppercase;letter-spacing:.05em;padding:6px 0 4px;border-bottom:1px solid #E1F5EE">'+group.cat+'</div>'
+      +'<div style="border:.5px solid #e5e5e3;border-radius:0 0 8px 8px;overflow:hidden">'
+      +'<table style="width:100%;border-collapse:collapse;table-layout:fixed">'
+      +'<colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup>'
+      +'<tbody>'+rowsHtml+'</tbody>'
+      +'<tfoot><tr style="background:#f7f7f5">'
+      +'<td colspan="3" style="padding:5px 8px;font-size:12px;font-weight:500">Subtotal</td>'
+      +'<td style="padding:5px 8px;text-align:right;font-size:12px;font-weight:500;font-family:var(--mono)">'+slFmt(sub)+'</td>'
+      +'</tr></tfoot></table></div></div>';
+  });
+
+  var histHTML='';
+  if(SL.view==='history'){
+    if(!groups.length){
+      histHTML='<p style="color:var(--txt3);font-size:13px;text-align:center;padding:2rem">No entries found.</p>';
+    }else{
+      histHTML=groups.map(function(g){
+        var rowsHtml=g.rows.map(function(r){
+          return '<tr><td style="padding:5px 10px;font-size:12px">'+(r.category||'')+'</td>'
+            +'<td style="padding:5px 10px;font-size:12px">'+r.product+'</td>'
+            +'<td style="padding:5px 10px;text-align:right;font-family:var(--mono);font-size:12px">'+r.qty+'</td>'
+            +'<td style="padding:5px 10px;text-align:right;font-family:var(--mono);font-size:12px">'+Number(r.rate).toFixed(2)+'</td>'
+            +'<td style="padding:5px 10px;text-align:right;font-family:var(--mono);font-size:12px">'+slFmt(r.amount)+'</td></tr>';
+        }).join('');
+        var encoded=encodeURIComponent(JSON.stringify(g.rows));
+        return '<div style="border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:8px;background:white">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;background:#fafaf8" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">'
+          +'<div><span style="font-weight:500;font-size:14px;margin-right:8px">'+g.outlet+'</span>'
+          +'<span style="font-size:12px;color:#888">'+g.date+'</span>'
+          +'<span style="font-size:11px;color:#aaa;margin-left:6px">'+g.rows.length+' products</span></div>'
+          +'<div style="display:flex;align-items:center;gap:10px">'
+          +'<span style="font-weight:600;font-size:15px;color:#0F6E56;font-family:var(--mono)">'+slFmt(g.total)+'</span>'
+          +'<span style="color:#aaa;font-size:11px">▼</span></div></div>'
+          +'<div style="display:none">'
+          +'<table style="width:100%;border-collapse:collapse">'
+          +'<thead><tr style="background:#f7f7f5">'
+          +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Category</th>'
+          +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th>'
+          +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th>'
+          +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th>'
+          +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th>'
+          +'</tr></thead><tbody>'+rowsHtml+'</tbody>'
+          +'<tfoot><tr style="background:#f7f7f5;font-weight:600">'
+          +'<td colspan="4" style="padding:6px 10px">Total</td>'
+          +'<td style="padding:6px 10px;text-align:right;font-family:var(--mono)">'+slFmt(g.total)+'</td>'
+          +'</tr></tfoot></table>'
+          +'<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f0f0ee">'
+          +'<button onclick="slEdit(\''+encoded+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #1D9E75;color:#0F6E56;background:none;font-family:var(--font)">Edit</button>'
+          +'<button onclick="slDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none;font-family:var(--font)">Delete</button>'
+          +'</div></div></div>';
+      }).join('');
+    }
+  }
+
+  var outletOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(SL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
+  var filterOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(SL.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
+
+  document.getElementById('screen').innerHTML=
+    '<div style="padding:0 0 3rem">'
+
+    // View toggle tabs
+    +'<div style="display:flex;gap:2px;border-bottom:1px solid #e5e5e3;margin-bottom:1.5rem;margin-top:12px">'
+    +'<button onclick="SL.view=\'entry\';renderSupplyLedger()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(SL.view==='entry'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(SL.view==='entry'?'#0F6E56':'#888')+';font-weight:'+(SL.view==='entry'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">New entry'+(SL.editKey?' (editing)':'')+'</button>'
+    +'<button onclick="SL.view=\'history\';slLoadHistory().then(function(){renderSupplyLedger();})" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(SL.view==='history'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(SL.view==='history'?'#0F6E56':'#888')+';font-weight:'+(SL.view==='history'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">History '+(groups.length?'('+groups.length+')':'')+'</button>'
+    +'</div>'
+
+    +(SL.view==='entry'?
+      // ENTRY VIEW
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Outlet</label>'
+      +'<select onchange="SL.outlet=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;color:var(--txt);font-family:var(--font)">'
+      +'<option value="">Select outlet...</option>'+outletOptions+'</select></div>'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
+      +'<input type="date" value="'+SL.date+'" onchange="SL.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
+      +'<div style="padding:14px 16px;border-radius:10px;border:.5px solid #e5e5e3;background:#fafaf8">'
+      +'<div style="font-size:12px;color:#666;margin-bottom:4px">Daily total</div>'
+      +'<div id="sl-daily-disp" style="font-size:22px;font-weight:600;font-family:var(--mono)">'+slFmt(daily)+'</div></div>'
+      +'<div style="padding:14px 16px;border-radius:10px;border:.5px solid #1D9E75;background:#fafaf8">'
+      +'<div style="font-size:12px;color:#666;margin-bottom:4px">Monthly total <span style="font-size:11px;background:#E1F5EE;color:#0F6E56;padding:1px 6px;border-radius:99px;font-weight:500">'+monthLabel+'</span></div>'
+      +'<div id="sl-monthly-disp" style="font-size:22px;font-weight:600;color:#0F6E56;font-family:var(--mono)">...</div>'
+      +'<div style="font-size:11px;color:#aaa;margin-top:2px">'+(SL.outlet||'—')+' · from database</div></div>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:40% 20% 20% 20%;background:#fafaf8;padding:6px 8px;border-radius:6px 6px 0 0;border:.5px solid #e5e5e3;border-bottom:none">'
+      +'<div style="font-size:11px;font-weight:500;color:#888">Product</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Qty (nos)</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Rate (excl GST) Rs</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Amount Rs</div>'
+      +'</div>'
+      +prodHTML
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:#E1F5EE;border-radius:8px;margin-bottom:1.5rem;font-weight:500">'
+      +'<span>Grand total (daily)</span>'
+      +'<span id="sl-daily-total" style="font-size:20px;font-weight:600;color:#0F6E56;font-family:var(--mono)">'+slFmt(daily)+'</span>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:2rem">'
+      +'<button id="sl-save-btn" onclick="slSave()" style="background:#1D9E75;color:white;border:none;padding:10px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:500;font-family:var(--font)">'+(SL.editKey?'Update entry':'Save entry')+'</button>'
+      +'<button onclick="SL.lines={};SL.editKey=null;renderSupplyLedger()" style="background:none;border:.5px solid #d5d5d0;color:#555;padding:10px 16px;border-radius:8px;font-size:13px;cursor:pointer;font-family:var(--font)">Clear</button>'
+      +(SL.editKey?'<button onclick="SL.editKey=null;SL.lines={};renderSupplyLedger()" style="background:none;border:.5px solid #e24b4a;color:#e24b4a;padding:10px 16px;border-radius:8px;font-size:13px;cursor:pointer;font-family:var(--font)">Cancel edit</button>':'')
+      +'</div>'
+    :
+      // HISTORY VIEW
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.5rem;align-items:flex-end">'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Outlet</label>'
+      +'<select onchange="SL.filterOutlet=this.value;slLoadHistory().then(function(){renderSupplyLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
+      +'<option value="">All outlets</option>'+filterOptions+'</select></div>'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
+      +'<input type="date" value="'+SL.filterDate+'" onchange="SL.filterDate=this.value;slLoadHistory().then(function(){renderSupplyLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'<button onclick="SL.filterOutlet=\'\';SL.filterDate=\'\';slLoadHistory().then(function(){renderSupplyLedger();})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
+      +'</div>'
+      +histHTML
+    )
+    +'</div>';
+
+  slMonthlyTotal().then(function(mt){var me=document.getElementById('sl-monthly-disp');if(me)me.textContent=slFmt(mt);});
+}
 </script>
 </body>
 </html>
