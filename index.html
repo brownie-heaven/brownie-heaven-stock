@@ -1355,7 +1355,36 @@ async function slLoadHistory(){
   }catch(e){SL.history=[];}
 }
 
-async function slSave(){
+async function slExport(){
+  try{
+    let q='outlet_supply_ledger?order=date.desc,outlet,product';
+    if(SL.filterOutlet)q+=`&outlet=eq.${encodeURIComponent(SL.filterOutlet)}`;
+    if(SL.filterDate)q+=`&date=eq.${SL.filterDate}`;
+    const rows=await sbGet(q);
+    if(!rows.length){toast('No data to export');return;}
+    const headers=['Date','Outlet','Category','Product','Qty','Rate','Amount'];
+    const csv=[headers.join(','),...rows.map(r=>[
+      r.date,r.outlet,'"'+(r.category||'')+'"','"'+r.product+'"',r.qty,r.rate,r.amount
+    ].join(','))].join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='BH_Supply_'+(SL.filterOutlet||'All')+'_'+(SL.filterDate||new Date().toISOString().slice(0,7))+'.csv';
+    a.click();
+    toast('Downloaded! Open in Excel');
+  }catch(e){toast('Error: '+e.message);}
+}
+
+function slWhatsApp(){
+  const groups=slGroupHistory();
+  if(!groups.length){toast('No data to share');return;}
+  const g=groups[0];
+  let msg='*Brownie Heaven — Supply Ledger*\n';
+  msg+='Outlet: '+g.outlet+'\nDate: '+g.date+'\n\n';
+  g.rows.forEach(r=>{if(Number(r.qty)>0)msg+=r.product+': '+r.qty+' nos = Rs.'+Number(r.amount).toLocaleString('en-IN')+'\n';});
+  msg+='\n*Total: Rs.'+Number(g.total).toLocaleString('en-IN')+'*';
+  window.open('https://wa.me/?text='+encodeURIComponent(msg));
+}async function slSave(){
   const btn=document.getElementById('sl-save-btn');
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
   const active=Object.entries(SL.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l])=>{
@@ -1408,7 +1437,7 @@ async function renderSupplyLedger(){
   if(!SL.history.length)await slLoadHistory();
   const daily=slCalcDaily();
   const groups=slGroupHistory();
-  const monthLabel=SL.date?new Date(SL.date+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'}):'';
+const monthLabel=SL.date?new Date(SL.date.slice(0,7)+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'}):'';
 
   let prodHTML='';
   SL_CATALOG.forEach(function(group){
@@ -1537,7 +1566,8 @@ async function renderSupplyLedger(){
       +'<option value="">All outlets</option>'+filterOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
       +'<input type="date" value="'+SL.filterDate+'" onchange="SL.filterDate=this.value;slLoadHistory().then(function(){renderSupplyLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
-      +'<button onclick="SL.filterOutlet=\'\';SL.filterDate=\'\';slLoadHistory().then(function(){renderSupplyLedger();})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
+      +'<button onclick="slExport()" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #1D9E75;color:#0F6E56;background:none;font-family:var(--font)">Download Excel</button>'
++'<button onclick="slWhatsApp()" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #25D366;color:#128C7E;background:none;font-family:var(--font)">WhatsApp</button>'+'<button onclick="SL.filterOutlet=\'\';SL.filterDate=\'\';slLoadHistory().then(function(){renderSupplyLedger();})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
       +'</div>'
       +histHTML
     )
