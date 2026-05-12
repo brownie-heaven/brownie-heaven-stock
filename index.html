@@ -1328,7 +1328,7 @@ const SL_CATALOG=[
     {name:'Assorted Box 3 Pcs',rate:250},{name:'Choco Lava',rate:110}]}
 ];
 
-let SL={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:'',editKey:null};
+let SL={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:'',editKey:null,outletType:'outlets'};
 
 function slFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function slSafeId(name){return name.replace(/[^a-zA-Z0-9]/g,'_');}
@@ -1642,7 +1642,7 @@ const ACC_CATALOG=[
     {name:'Eggless Mayonnaise Dip',rate:120},{name:'Tomato Ketchup 8gms',rate:110}]}
 ];
 
-let ACC={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:'',editKey:null};
+let ACC={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:'',editKey:null,outletType:'outlets'};
 
 function accFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function accSafeId(n){return n.replace(/[^a-zA-Z0-9]/g,'_');}
