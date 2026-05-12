@@ -296,7 +296,7 @@ async function sbDelete(table, params) {
   if (!r.ok) throw new Error(await r.text());
 }
 
-const OUTLET_PINS = {'1001':'Royapettah','1002':'Anna Nagar','1003':'Porur','1004':'BSR Mall','1005':'Tambaram','1006':'RA Puram','1007':'Adyar','1008':'Perumbakkam'};
+const OUTLET_PINS = {'1001':'Royapettah','1002':'Anna Nagar','1003':'Porur','1004':'BSR Mall','1005':'Tambaram','1006':'RA Puram','1007':'Adyar','1008':'Perumbakkam','1111':'Egmore','2222':'Thiruvanmiyur (ECR)','3333':'Kovilambakkam','4444':'Besant Nagar'};
 const CAT_LABELS = {brownies:'Brownies',eggless:'Eggless Brownies',boxes:'Boxes & Lava',tubs:'Dessert Tubs',savouries:'Savouries',half_cakes:'1/2kg Cakes',one_cakes:'1kg Cakes',pastry:'Pastry Slices',mini_cups:'Mini Cups',cheesecake:'Cheesecake',medovik:'Medovik',eclair:'Eclair',special:'Special Items'};
 const CAT_ORDER = ['brownies','eggless','boxes','tubs','savouries','half_cakes','one_cakes','pastry','mini_cups','cheesecake','medovik','eclair','special'];
 const DISABLED_BY_OUTLET = {'1005':['medovik','eclair'],'1008':['medovik','eclair','cheesecake']};
