@@ -1805,7 +1805,8 @@ async function renderAccessoriesLedger(){
     }).join('');}
   }
 
-  var activeList=SL.outletType==='hotels'?SL_HOTELS:SL_OUTLETS;
+  var accActiveList=ACC.outletType==='hotels'?ACC_HOTELS:SL_OUTLETS;
+var outletOptions=accActiveList.map(function(o){return '<option value="'+o+'" '+(ACC.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
   var filterOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(ACC.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
 
   document.getElementById('screen').innerHTML=
