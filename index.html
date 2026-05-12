@@ -1333,7 +1333,7 @@ let SL={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry
 
 function slFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function slSafeId(name){return name.replace(/[^a-zA-Z0-9]/g,'_');}
-const SL_HOTELS=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)','Jalpaan','Food Nirvana','Abids','Juice World','Flower Drum','Thalapakati','Veda Dairy','Roll Baby Roll','Frutta','Far East','Sona Foods (Sangam)'];function slGetLine(name){
+{
   if(!SL.lines[name]){const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);SL.lines[name]={qty:'',rate:def?def.rate:0,amount:0};}
   return SL.lines[name];
 }
