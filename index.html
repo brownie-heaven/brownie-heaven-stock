@@ -254,6 +254,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
     <button class="mt" id="mt2" onclick="setTab(2)">Monthly</button>
     <button class="mt" id="mt3" onclick="setTab(3)">Admin</button>
     <button class="mt" id="mt4" onclick="setTab(4)">Supply Ledger</button>
+    <button class="mt" id="mt5" onclick="setTab(5)">Accessories</button>
   </div>
   <div class="screen" id="screen"></div>
 </div>
@@ -414,7 +415,7 @@ function setHdr(sub, showTabs) {
   document.getElementById('main-tabs').style.display = showTabs ? 'flex' : 'none';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
-    ['mt0','mt1','mt2','mt3','mt4'].forEach((id,i) => {
+    ['mt0','mt1','mt2','mt3','mt4','mt5'].forEach((id,i) => {
       document.getElementById(id).classList.toggle('active', i === S.mainTab);
     });
   }
@@ -445,6 +446,7 @@ function setTab(i) {
   else if (i===2) renderMonthly();
   else if (i===3) renderAdmin();
   else if (i===4) renderSupplyLedger();
+  else if (i===5) renderAccessoriesLedger();
 }
 
 // ── PIN ──────────────────────────────────────────────────────────────────────
@@ -1575,8 +1577,294 @@ const monthLabel=SL.date?new Date(SL.date.slice(0,7)+'-01').toLocaleString('en-I
 
   slMonthlyTotal().then(function(mt){var me=document.getElementById('sl-monthly-disp');if(me)me.textContent=slFmt(mt);});
 }
+  // ── ACCESSORIES LEDGER ───────────────────────────────────────────────────────
+const ACC_CATALOG=[
+  {cat:'Dairy & Ingredients',items:[
+    {name:'Butter',rate:262},{name:'Milk',rate:65},{name:'Almond',rate:123},
+    {name:'Whipped Topping Dairy',rate:30},{name:'Caramel Topping',rate:256},
+    {name:'Coffee Powder',rate:65},{name:'Stick 6-inch',rate:25},
+    {name:'Nutella',rate:600},{name:'Biscoff',rate:400},
+    {name:'Cashew Kernel',rate:140},{name:'Milo Powder',rate:20},
+    {name:'Salt',rate:22},{name:'Mint Leaf',rate:10},{name:'Lemon',rate:5}]},
+  {cat:'Syrups & Toppings',items:[
+    {name:'Chocolate Syrup',rate:118},{name:'Irish Cream Syrup',rate:475},
+    {name:'Vanilla Syrup',rate:475},{name:'Blue Ocean Syrup',rate:475},
+    {name:'Watermelon Syrup',rate:475},{name:'Caramel Syrup',rate:475},
+    {name:'Hazelnut Syrup',rate:475}]},
+  {cat:'Chips & Toppings',items:[
+    {name:'White Chocolate Chips',rate:110},{name:'Dark Chocolate Chips',rate:100},
+    {name:'Butterscotch Chips',rate:110}]},
+  {cat:'Ice Creams',items:[
+    {name:'Vanilla Ice Cream 4ltr',rate:244},{name:'Chocolate Ice Cream 4ltr',rate:271},
+    {name:'Brownie Butterscotch 4ltr',rate:578},{name:'Brownie Salted Caramel 4ltr',rate:711},
+    {name:'Brownie French Vanilla 4ltr',rate:578},{name:'Brownie Filter Coffee 4ltr',rate:630},
+    {name:'Brownie Chocolate 4ltr',rate:711},{name:'Mango 4ltr',rate:572},
+    {name:'Brownie Milo 4ltr',rate:580},{name:'Vanilla Ice Cream Bar 750ml',rate:120},
+    {name:'Roasted Sicilian 4ltr',rate:1333},{name:'Swiss Chocolate 4ltr',rate:1100},
+    {name:'Chocolate Overload 4ltr',rate:1250},{name:'Coffee Mocha Swirl 4ltr',rate:990},
+    {name:'Madagascar Vanilla 4ltr',rate:990}]},
+  {cat:'Packaging',items:[
+    {name:'1 Pc Box',rate:4},{name:'2 Pc Box',rate:5.5},{name:'4 Pc Box',rate:7},
+    {name:'Cake Box 1kg (Printed)',rate:15},{name:'Cake Bag 1kg',rate:18},
+    {name:'Cake Box 1/2kg',rate:11},{name:'Cotton Cake Bag 1/2kg',rate:12},
+    {name:'Cotton BH Carry Bag',rate:5.5},{name:'100ml Container',rate:1.5},
+    {name:'250ml Container',rate:2.5},{name:'650ml Container',rate:6},
+    {name:'Shake Bottle 300ml',rate:16},{name:'Jar 350ml',rate:6},
+    {name:'DUNK Box',rate:100},{name:'7 Layer Box',rate:15},
+    {name:'50ml Cup',rate:1},{name:'Piping Bag',rate:25}]},
+  {cat:'Housekeeping',items:[
+    {name:'Garbage Bag XL',rate:170},{name:'Blue Hand Gloves',rate:210},
+    {name:'Fresh on Cling Wrap (1 Box)',rate:410},{name:'Cloth',rate:12},
+    {name:'Soap Oil',rate:30},{name:'Broom',rate:120},
+    {name:'Floor Cleaner',rate:30},{name:'Colin/Glass Cleaner',rate:30},
+    {name:'Scrubber',rate:15},{name:'Hairnet',rate:35},
+    {name:'Tissue Roll (Big)',rate:420},{name:'Tissues',rate:20}]},
+  {cat:'Stationery & Consumables',items:[
+    {name:'Wooden Spoon',rate:40},{name:'Wooden Knife',rate:25},
+    {name:'Bill Roll (Big)',rate:50},{name:'Bill Roll (Small)',rate:35},
+    {name:'Paper Straw',rate:30},{name:'Candle (1 Box)',rate:280},
+    {name:'BH Tape',rate:60},{name:'Green Pen',rate:9},
+    {name:'Brownie Heaven Sticker Sheet',rate:30}]},
+  {cat:'Celebration Items',items:[
+    {name:'Plain Card',rate:1.5},{name:'Birthday Card',rate:1.5},
+    {name:'Anniversary Card',rate:1.5},{name:'Candle No 0',rate:16},
+    {name:'Candle No 1',rate:16},{name:'Candle No 2',rate:16},
+    {name:'Candle No 3',rate:16},{name:'Candle No 4',rate:16},
+    {name:'Candle No 5',rate:16},{name:'Candle No 6',rate:16},
+    {name:'Candle No 7',rate:16},{name:'Candle No 8',rate:16},
+    {name:'Candle No 9',rate:16},{name:'Party Poppers',rate:35},
+    {name:'Party Poppers Money',rate:35},{name:'Party Poppers Rose Petal',rate:35},
+    {name:'Party Poppers Star',rate:35},{name:'Happy Birthday Acrylic',rate:20},
+    {name:'Happy Anniversary Acrylic',rate:20},{name:'Twister Chocolate Stick',rate:250}]},
+  {cat:'Beverages & Snacks',items:[
+    {name:'7-UP',rate:24},{name:'Soda',rate:18},{name:'Water Bottle',rate:8},
+    {name:'Oreo Biscuit',rate:8},{name:'Dairy Milk MRP5',rate:10},
+    {name:'Eggless Mayonnaise Dip',rate:120},{name:'Tomato Ketchup 8gms',rate:110}]}
+];
+
+let ACC={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:'',editKey:null};
+
+function accFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function accSafeId(n){return n.replace(/[^a-zA-Z0-9]/g,'_');}
+function accGetLine(name){
+  if(!ACC.lines[name]){const def=ACC_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);ACC.lines[name]={qty:'',rate:def?def.rate:0,amount:0};}
+  return ACC.lines[name];
+}
+function accCalcDaily(){return Object.values(ACC.lines).reduce((s,l)=>s+(l.amount||0),0);}
+
+async function accMonthlyTotal(){
+  if(!ACC.outlet||!ACC.date)return accCalcDaily();
+  const ym=ACC.date.slice(0,7);const[y,m]=ym.split('-');
+  const last=new Date(+y,+m,0).getDate();
+  try{
+    const rows=await sbGet('accessories_ledger',`?outlet=eq.${encodeURIComponent(ACC.outlet)}&date=gte.${ym}-01&date=lte.${ym}-${last}&select=amount`);
+    return rows.reduce((s,r)=>s+Number(r.amount||0),0)+accCalcDaily();
+  }catch(e){return accCalcDaily();}
+}
+
+async function accLoadHistory(){
+  try{
+    let q='accessories_ledger?order=date.desc,outlet,category,product';
+    if(ACC.filterOutlet)q+=`&outlet=eq.${encodeURIComponent(ACC.filterOutlet)}`;
+    if(ACC.filterDate)q+=`&date=eq.${ACC.filterDate}`;
+    ACC.history=await sbGet(q);
+  }catch(e){ACC.history=[];}
+}
+
+async function accSave(){
+  const btn=document.getElementById('acc-save-btn');
+  if(btn){btn.disabled=true;btn.textContent='Saving...';}
+  const active=Object.entries(ACC.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l])=>{
+    const def=ACC_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);
+    return{outlet:ACC.outlet,date:ACC.date,product:name,category:def?def.cat:'Other',qty:Number(l.qty),rate:Number(l.rate)};
+  });
+  if(!ACC.outlet){alert('Select an outlet');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
+  if(!active.length){alert('Enter at least one quantity');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
+  try{
+    await sbDelete('accessories_ledger',`?outlet=eq.${encodeURIComponent(ACC.outlet)}&date=eq.${ACC.date}`);
+    await sbPost('accessories_ledger',active);
+    ACC.editKey=null;ACC.lines={};
+    toast('Accessories entry saved!');
+    await accLoadHistory();renderAccessoriesLedger();
+  }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
+}
+
+async function accDelete(outlet,date){
+  if(!confirm('Delete all entries for '+outlet+' on '+date+'?'))return;
+  try{await sbDelete('accessories_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await accLoadHistory();renderAccessoriesLedger();}
+  catch(e){toast('Error: '+e.message);}
+}
+
+function accEdit(dataStr){
+  const rows=JSON.parse(decodeURIComponent(dataStr));
+  ACC.outlet=rows[0].outlet;ACC.date=rows[0].date;ACC.editKey=ACC.outlet+'|'+ACC.date;ACC.lines={};
+  rows.forEach(r=>{ACC.lines[r.product]={qty:String(r.qty),rate:Number(r.rate),amount:Number(r.amount||0)};});
+  ACC.view='entry';renderAccessoriesLedger();window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function accUpdateLine(name,field,val){
+  const l=accGetLine(name);l[field]=val;
+  const q=Number(l.qty)||0,r=Number(l.rate)||0;l.amount=q*r;
+  const el=document.getElementById('acc-amt-'+accSafeId(name));
+  if(el)el.textContent=q>0?accFmt(l.amount):'—';
+  const daily=accCalcDaily();
+  const dt=document.getElementById('acc-daily-total');if(dt)dt.textContent=accFmt(daily);
+  const dd=document.getElementById('acc-daily-disp');if(dd)dd.textContent=accFmt(daily);
+  accMonthlyTotal().then(mt=>{const me=document.getElementById('acc-monthly-disp');if(me)me.textContent=accFmt(mt);});
+}
+
+function accGroupHistory(){
+  const g={};
+  ACC.history.forEach(r=>{const k=r.outlet+'|'+r.date;if(!g[k])g[k]={outlet:r.outlet,date:r.date,rows:[],total:0};g[k].rows.push(r);g[k].total+=Number(r.amount||0);});
+  return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date)||a.outlet.localeCompare(b.outlet));
+}
+
+async function accExport(){
+  try{
+    let q='accessories_ledger?order=date.desc,outlet,product';
+    if(ACC.filterOutlet)q+=`&outlet=eq.${encodeURIComponent(ACC.filterOutlet)}`;
+    if(ACC.filterDate)q+=`&date=eq.${ACC.filterDate}`;
+    const rows=await sbGet(q);
+    if(!rows.length){toast('No data to export');return;}
+    const csv=[['Date','Outlet','Category','Product','Qty','Rate','Amount'].join(','),
+      ...rows.map(r=>[r.date,r.outlet,'"'+(r.category||'')+'"','"'+r.product+'"',r.qty,r.rate,r.amount].join(','))
+    ].join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));
+    a.download='BH_Accessories_'+(ACC.filterOutlet||'All')+'_'+(ACC.filterDate||new Date().toISOString().slice(0,7))+'.csv';
+    a.click();toast('Downloaded! Open in Excel');
+  }catch(e){toast('Error: '+e.message);}
+}
+
+async function renderAccessoriesLedger(){
+  setHdr('Dashboard',true);
+  if(!ACC.history.length)await accLoadHistory();
+  const daily=accCalcDaily();
+  const groups=accGroupHistory();
+  const monthLabel=ACC.date?new Date(ACC.date.slice(0,7)+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'}):'';
+  const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam'];
+
+  var prodHTML='';
+  ACC_CATALOG.forEach(function(group){
+    var sub=0;
+    var rowsHtml=group.items.map(function(p){
+      var l=accGetLine(p.name);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=accSafeId(p.name);
+      return '<tr style="'+(hasQty?'background:#f0fbf7':'')+'">'
+        +'<td style="padding:5px 8px;font-size:13px;border-bottom:.5px solid #f0f0ee">'+p.name+'</td>'
+        +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee">'
+        +'<input type="number" min="0" step="1" placeholder="0" value="'+(l.qty||'')+'"'
+        +' style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right;font-family:var(--mono)"'
+        +' oninput="accUpdateLine(\''+p.name+'\',\'qty\',this.value)"></td>'
+        +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee">'
+        +'<input type="number" min="0" step="0.01" value="'+(l.rate||p.rate)+'"'
+        +' style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right;font-family:var(--mono)"'
+        +' oninput="accUpdateLine(\''+p.name+'\',\'rate\',this.value)"></td>'
+        +'<td id="acc-amt-'+sid+'" style="padding:5px 8px;text-align:right;font-size:13px;font-family:var(--mono);border-bottom:.5px solid #f0f0ee;color:'+(hasQty?'#0F6E56':'#bbb')+'">'+(hasQty?accFmt(l.amount):'—')+'</td>'
+        +'</tr>';
+    }).join('');
+    prodHTML+='<div style="margin-bottom:1rem">'
+      +'<div style="font-size:11px;font-weight:600;color:#1D9E75;text-transform:uppercase;letter-spacing:.05em;padding:6px 0 4px;border-bottom:1px solid #E1F5EE">'+group.cat+'</div>'
+      +'<div style="border:.5px solid #e5e5e3;border-radius:0 0 8px 8px;overflow:hidden">'
+      +'<table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup>'
+      +'<tbody>'+rowsHtml+'</tbody>'
+      +'<tfoot><tr style="background:#f7f7f5"><td colspan="3" style="padding:5px 8px;font-size:12px;font-weight:500">Subtotal</td>'
+      +'<td style="padding:5px 8px;text-align:right;font-size:12px;font-weight:500;font-family:var(--mono)">'+accFmt(sub)+'</td></tr></tfoot>'
+      +'</table></div></div>';
+  });
+
+  var histHTML='';
+  if(ACC.view==='history'){
+    if(!groups.length){histHTML='<p style="color:var(--txt3);font-size:13px;text-align:center;padding:2rem">No entries found.</p>';}
+    else{histHTML=groups.map(function(g){
+      var rowsHtml=g.rows.map(function(r){
+        return '<tr><td style="padding:5px 10px;font-size:12px">'+(r.category||'')+'</td><td style="padding:5px 10px;font-size:12px">'+r.product+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-family:var(--mono);font-size:12px">'+r.qty+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-family:var(--mono);font-size:12px">'+Number(r.rate).toFixed(2)+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-family:var(--mono);font-size:12px">'+accFmt(r.amount)+'</td></tr>';
+      }).join('');
+      var encoded=encodeURIComponent(JSON.stringify(g.rows));
+      return '<div style="border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:8px;background:white">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;background:#fafaf8" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">'
+        +'<div><span style="font-weight:500;font-size:14px;margin-right:8px">'+g.outlet+'</span><span style="font-size:12px;color:#888">'+g.date+'</span><span style="font-size:11px;color:#aaa;margin-left:6px">'+g.rows.length+' items</span></div>'
+        +'<div style="display:flex;align-items:center;gap:10px"><span style="font-weight:600;font-size:15px;color:#0F6E56;font-family:var(--mono)">'+accFmt(g.total)+'</span><span style="color:#aaa;font-size:11px">▼</span></div></div>'
+        +'<div style="display:none">'
+        +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5">'
+        +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Category</th>'
+        +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Item</th>'
+        +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th>'
+        +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th>'
+        +'<th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th>'
+        +'</tr></thead><tbody>'+rowsHtml+'</tbody>'
+        +'<tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="4" style="padding:6px 10px">Total</td>'
+        +'<td style="padding:6px 10px;text-align:right;font-family:var(--mono)">'+accFmt(g.total)+'</td></tr></tfoot></table>'
+        +'<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f0f0ee">'
+        +'<button onclick="accEdit(\''+encoded+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #1D9E75;color:#0F6E56;background:none;font-family:var(--font)">Edit</button>'
+        +'<button onclick="accDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none;font-family:var(--font)">Delete</button>'
+        +'</div></div></div>';
+    }).join('');}
+  }
+
+  var outletOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(ACC.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
+  var filterOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(ACC.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
+
+  document.getElementById('screen').innerHTML=
+    '<div style="padding:0 0 3rem">'
+    +'<div style="display:flex;gap:2px;border-bottom:1px solid #e5e5e3;margin-bottom:1.5rem;margin-top:12px">'
+    +'<button onclick="ACC.view=\'entry\';renderAccessoriesLedger()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(ACC.view==='entry'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(ACC.view==='entry'?'#0F6E56':'#888')+';font-weight:'+(ACC.view==='entry'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">New entry'+(ACC.editKey?' (editing)':'')+'</button>'
+    +'<button onclick="ACC.view=\'history\';accLoadHistory().then(function(){renderAccessoriesLedger();})" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(ACC.view==='history'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(ACC.view==='history'?'#0F6E56':'#888')+';font-weight:'+(ACC.view==='history'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">History '+(groups.length?'('+groups.length+')':'')+'</button>'
+    +'</div>'
+    +(ACC.view==='entry'?
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Outlet</label>'
+      +'<select onchange="ACC.outlet=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;color:var(--txt);font-family:var(--font)">'
+      +'<option value="">Select outlet...</option>'+outletOptions+'</select></div>'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
+      +'<input type="date" value="'+ACC.date+'" onchange="ACC.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
+      +'<div style="padding:14px 16px;border-radius:10px;border:.5px solid #e5e5e3;background:#fafaf8">'
+      +'<div style="font-size:12px;color:#666;margin-bottom:4px">Daily total</div>'
+      +'<div id="acc-daily-disp" style="font-size:22px;font-weight:600;font-family:var(--mono)">'+accFmt(daily)+'</div></div>'
+      +'<div style="padding:14px 16px;border-radius:10px;border:.5px solid #1D9E75;background:#fafaf8">'
+      +'<div style="font-size:12px;color:#666;margin-bottom:4px">Monthly total <span style="font-size:11px;background:#E1F5EE;color:#0F6E56;padding:1px 6px;border-radius:99px;font-weight:500">'+monthLabel+'</span></div>'
+      +'<div id="acc-monthly-disp" style="font-size:22px;font-weight:600;color:#0F6E56;font-family:var(--mono)">...</div>'
+      +'<div style="font-size:11px;color:#aaa;margin-top:2px">'+(ACC.outlet||'—')+' · from database</div></div>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:40% 20% 20% 20%;background:#fafaf8;padding:6px 8px;border-radius:6px 6px 0 0;border:.5px solid #e5e5e3;border-bottom:none">'
+      +'<div style="font-size:11px;font-weight:500;color:#888">Item</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Qty</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Rate ₹</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Amount ₹</div>'
+      +'</div>'
+      +prodHTML
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:#E1F5EE;border-radius:8px;margin-bottom:1.5rem;font-weight:500">'
+      +'<span>Grand total (daily)</span>'
+      +'<span id="acc-daily-total" style="font-size:20px;font-weight:600;color:#0F6E56;font-family:var(--mono)">'+accFmt(daily)+'</span>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:2rem">'
+      +'<button id="acc-save-btn" onclick="accSave()" style="background:#1D9E75;color:white;border:none;padding:10px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:500;font-family:var(--font)">'+(ACC.editKey?'Update entry':'Save entry')+'</button>'
+      +'<button onclick="ACC.lines={};ACC.editKey=null;renderAccessoriesLedger()" style="background:none;border:.5px solid #d5d5d0;color:#555;padding:10px 16px;border-radius:8px;font-size:13px;cursor:pointer;font-family:var(--font)">Clear</button>'
+      +(ACC.editKey?'<button onclick="ACC.editKey=null;ACC.lines={};renderAccessoriesLedger()" style="background:none;border:.5px solid #e24b4a;color:#e24b4a;padding:10px 16px;border-radius:8px;font-size:13px;cursor:pointer;font-family:var(--font)">Cancel edit</button>':'')
+      +'</div>'
+    :
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.5rem;align-items:flex-end">'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Outlet</label>'
+      +'<select onchange="ACC.filterOutlet=this.value;accLoadHistory().then(function(){renderAccessoriesLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
+      +'<option value="">All outlets</option>'+filterOptions+'</select></div>'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
+      +'<input type="date" value="'+ACC.filterDate+'" onchange="ACC.filterDate=this.value;accLoadHistory().then(function(){renderAccessoriesLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'<button onclick="accExport()" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #1D9E75;color:#0F6E56;background:none;font-family:var(--font)">Download Excel</button>'
+      +'<button onclick="ACC.filterOutlet=\'\';ACC.filterDate=\'\';accLoadHistory().then(function(){renderAccessoriesLedger();})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
+      +'</div>'
+      +histHTML
+    )
+    +'</div>';
+
+  accMonthlyTotal().then(function(mt){var me=document.getElementById('acc-monthly-disp');if(me)me.textContent=accFmt(mt);});
+}
 </script>
 <script src="js/test.js"></script>
 <script src="js/supply.js"></script>
 </body>
 </html>
+// App starts via welcome screen
