@@ -1514,9 +1514,7 @@ const monthLabel=SL.date?new Date(SL.date.slice(0,7)+'-01').toLocaleString('en-I
       }).join('');
     }
   }
-
-  var activeList=SL.outletType==='hotels'?SL_HOTELS:SL_OUTLETS;
-var outletOptions=activeList.map(function(o){return '<option value="'+o+'" '+(SL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
+var outletOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(SL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
 var typeTabs='<div style="display:flex;gap:0;margin-bottom:10px;border:0.5px solid #e5e5e3;border-radius:8px;overflow:hidden">'+'<button onclick="SL.outletType=\'outlets\';SL.outlet=\'\';renderSupplyLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:'+(SL.outletType!=='hotels'?'#1D9E75':'#fafaf8')+';color:'+(SL.outletType!=='hotels'?'white':'#888')+';font-family:var(--font)">Our Outlets</button>'+'<button onclick="SL.outletType=\'hotels\';SL.outlet=\'\';renderSupplyLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;border-left:0.5px solid #e5e5e3;background:'+(SL.outletType==='hotels'?'#1D9E75':'#fafaf8')+';color:'+(SL.outletType==='hotels'?'white':'#888')+';font-family:var(--font)">Hotels & Partners</button>'+'</div>';
   var filterOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(SL.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
 
@@ -1821,7 +1819,7 @@ var outletOptions=activeList.map(function(o){return '<option value="'+o+'" '+(AC
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Outlet</label>'
       +'<select onchange="ACC.outlet=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;color:var(--txt);font-family:var(--font)">'
-      +typeTabs+'<option value="">Select outlet...</option>'+outletOptions+'</select></div>+'</select></div>'
+      +'<option value="">Select outlet...</option>'+outletOptions+'</select></div>
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
       +'<input type="date" value="'+ACC.date+'" onchange="ACC.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
       +'</div>'
