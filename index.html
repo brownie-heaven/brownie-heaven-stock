@@ -1280,8 +1280,6 @@ const HOTEL_LIST=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapet
 let HL={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:''};
 function hlFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 const HL_CATALOG=SL_CATALOG.filter(function(g){return g.cat==='Brownies & Boxes';});
-const HL_CATALOG=SL_CATALOG.filter(function(g){return g.cat==='Brownies & Boxes';});
-fconst HL_CATALOG=SL_CATALOG.filter(function(g){return g.cat==='Brownies & Boxes';});
 function hlGetLine(name){if(!HL.lines[name]){const def=HL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);;HL.lines[name]={qty:'',rate:def?def.rate:0,amount:0};}return HL.lines[name];}
 function hlCalcDaily(){return Object.values(HL.lines).reduce((s,l)=>s+(l.amount||0),0);}
 function hlUpdateLine(name,field,val){const l=hlGetLine(name);l[field]=val;const q=Number(l.qty)||0,r=Number(l.rate)||0;l.amount=q*r;const el=document.getElementById('hl-amt-'+name.replace(/[^a-zA-Z0-9]/g,'_'));if(el)el.textContent=q>0?hlFmt(l.amount):'—';const dt=document.getElementById('hl-daily-total');if(dt)dt.textContent=hlFmt(hlCalcDaily());}
@@ -1327,7 +1325,7 @@ async function renderHotelsLedger(){
     if(HL.outlet==='Sona Foods (Sangam)')return g.cat==='Pastry Slices';
     return g.cat==='Brownies & Boxes';
   });
-  hlCatalog.forEach(function(group){
+   SL_CATALOG.forEach(function(group){
     var sub=0;
     var rowsHtml=group.items.map(function(p){
       var l=hlGetLine(p.name);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=p.name.replace(/[^a-zA-Z0-9]/g,'_');
