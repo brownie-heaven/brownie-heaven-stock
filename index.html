@@ -1324,7 +1324,7 @@ async function renderHotelsLedger(){
     if(HL.outlet==='Sona Foods (Sangam)')return g.cat==='Pastry Slices';
     return g.cat==='Brownies & Boxes';
   });
-   hlCatalog.forEach.forEach(function(group){
+   hlCatalog.forEach(function(group){
     var sub=0;
     var rowsHtml=group.items.map(function(p){
       var l=hlGetLine(p.name);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=p.name.replace(/[^a-zA-Z0-9]/g,'_');
