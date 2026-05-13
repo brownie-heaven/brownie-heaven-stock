@@ -832,52 +832,135 @@ async function renderOverview() {
   setHdr('Dashboard', true);
   showLoading("Loading today's data...");
   try {
-    const today=new Date().toISOString().split('T')[0];
-    // Fetch both real and demo entries separately
-    const entries=await sbGet('shift_entries',`?entry_date=eq.${today}&is_demo=eq.false&select=*,stock_lines(*,products(name,price))`);
-    const demoEntries=await sbGet('shift_entries',`?entry_date=eq.${today}&is_demo=eq.true&select=id&limit=1`);
+    const today = new Date().toISOString().split('T')[0];
+    const ym = today.slice(0, 7);
+    const [y, m] = ym.split('-');
+    const lastDay = new Date(+y, +m, 0).getDate();
+    const monthStart = `${ym}-01`;
+    const monthEnd = `${ym}-${lastDay}`;
+
+    // ── Fetch ledger totals (today) ──
+    const [slToday, accToday, hlToday] = await Promise.all([
+      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount`),
+      sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
+      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount&outlet=in.(${HOTEL_LIST.map(h=>encodeURIComponent(h)).join(',')})`)
+    ]);
+
+    // ── Fetch ledger totals (this month) ──
+    const [slMonth, accMonth, hlMonth] = await Promise.all([
+      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+      sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount&outlet=in.(${HOTEL_LIST.map(h=>encodeURIComponent(h)).join(',')})`)
+    ]);
+
+    const sum = arr => arr.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+    const slTodayAmt  = sum(slToday);
+    const accTodayAmt = sum(accToday);
+    const hlTodayAmt  = sum(hlToday);
+    const todayGrand  = slTodayAmt + accTodayAmt + hlTodayAmt;
+
+    const slMonthAmt  = sum(slMonth);
+    const accMonthAmt = sum(accMonth);
+    const hlMonthAmt  = sum(hlMonth);
+    const monthGrand  = slMonthAmt + accMonthAmt + hlMonthAmt;
+
+    const fmt = n => '₹' + Number(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const monthLabel = new Date(monthStart).toLocaleString('en-IN', {month: 'long', year: 'numeric'});
+
+    // ── Existing stock data ──
+    const entries = await sbGet('shift_entries', `?entry_date=eq.${today}&is_demo=eq.false&select=*,stock_lines(*,products(name,price))`);
+    const demoEntries = await sbGet('shift_entries', `?entry_date=eq.${today}&is_demo=eq.true&select=id&limit=1`);
     const hasDemoData = demoEntries.length > 0;
-    const byOutlet={};
-    entries.forEach(e=>{
-      if(!byOutlet[e.outlet_id]) byOutlet[e.outlet_id]={shifts:[],lines:[]};
+    const byOutlet = {};
+    entries.forEach(e => {
+      if (!byOutlet[e.outlet_id]) byOutlet[e.outlet_id] = {shifts: [], lines: []};
       byOutlet[e.outlet_id].shifts.push(e.shift);
-      (e.stock_lines||[]).forEach(l=>byOutlet[e.outlet_id].lines.push(l));
+      (e.stock_lines || []).forEach(l => byOutlet[e.outlet_id].lines.push(l));
     });
-    let totalSold=0,totalWaste=0,allAlerts=[];
-    const outletRows=Object.entries(OUTLET_PINS).map(([pin,name])=>{
-      const data=byOutlet[pin]||{shifts:[],lines:[]};
-      const shiftsCount=new Set(data.shifts).size;
-      let critical=0,low=0,expiring=0,outletSold=0;
-      data.lines.forEach(l=>{
-        const sold=(+l.dine_in||0)+(+l.swiggy||0)+(+l.zomato||0);
-        outletSold+=sold;
-        const cl=+l.closing||0;
-        if(cl===0&&sold>0) critical++;
-        else if(cl<=2&&cl>0) low++;
-        if(+l.expiry_qty>0){
+    let totalSold = 0, totalWaste = 0, allAlerts = [];
+    const outletRows = Object.entries(OUTLET_PINS).map(([pin, name]) => {
+      const data = byOutlet[pin] || {shifts: [], lines: []};
+      const shiftsCount = new Set(data.shifts).size;
+      let critical = 0, low = 0, expiring = 0, outletSold = 0;
+      data.lines.forEach(l => {
+        const sold = (+l.dine_in || 0) + (+l.swiggy || 0) + (+l.zomato || 0);
+        outletSold += sold;
+        const cl = +l.closing || 0;
+        if (cl === 0 && sold > 0) critical++;
+        else if (cl <= 2 && cl > 0) low++;
+        if (+l.expiry_qty > 0) {
           expiring++;
-          const lv=(+l.expiry_qty)*(+l.products?.price||0);
-          totalWaste+=lv;
-          allAlerts.push({prod:l.products?.name,outlet:name,qty:l.expiry_qty,val:lv});
+          const lv = (+l.expiry_qty) * (+l.products?.price || 0);
+          totalWaste += lv;
+          allAlerts.push({prod: l.products?.name, outlet: name, qty: l.expiry_qty, val: lv});
         }
       });
-      totalSold+=outletSold;
-      const dotClass=shiftsCount===0?'dot-r':shiftsCount<3?'dot-o':'dot-g';
+      totalSold += outletSold;
+      const dotClass = shiftsCount === 0 ? 'dot-r' : shiftsCount < 3 ? 'dot-o' : 'dot-g';
       return `<div class="outlet-row" onclick="showOutletDetail('${pin}','${name}')">
         <div class="dot ${dotClass}"></div>
-        <div class="outlet-name">${name}${pin==='1001'?' ⭐':''}</div>
+        <div class="outlet-name">${name}${pin === '1001' ? ' ⭐' : ''}</div>
         <div class="badges-wrap">
-          ${shiftsCount?`<span class="badge b-brown">${shiftsCount}/3</span>`:'<span class="badge b-gray">No data</span>'}
-          ${critical?`<span class="badge b-red">🔴 ${critical}</span>`:''}
-          ${low?`<span class="badge b-orange">🟡 ${low}</span>`:''}
-          ${expiring?`<span class="badge b-red">⚠️ ${expiring}</span>`:''}
+          ${shiftsCount ? `<span class="badge b-brown">${shiftsCount}/3</span>` : '<span class="badge b-gray">No data</span>'}
+          ${critical ? `<span class="badge b-red">🔴 ${critical}</span>` : ''}
+          ${low ? `<span class="badge b-orange">🟡 ${low}</span>` : ''}
+          ${expiring ? `<span class="badge b-red">⚠️ ${expiring}</span>` : ''}
         </div>
       </div>`;
     }).join('');
-    const alertHtml=allAlerts.length?`<div class="card"><div class="card-title">⚠️ Expiry alerts today</div>${allAlerts.map(a=>`<div class="alert-row"><div class="alert-dot" style="background:var(--red)"></div><div><div class="alert-title">${a.prod}</div><div class="alert-sub">${a.outlet} · ${a.qty} units · ₹${a.val} lost</div></div></div>`).join('')}</div>`:'';
-    document.getElementById('screen').innerHTML=`
+    const alertHtml = allAlerts.length ? `<div class="card"><div class="card-title">⚠️ Expiry alerts today</div>${allAlerts.map(a => `<div class="alert-row"><div class="alert-dot" style="background:var(--red)"></div><div><div class="alert-title">${a.prod}</div><div class="alert-sub">${a.outlet} · ${a.qty} units · ₹${a.val} lost</div></div></div>`).join('')}</div>` : '';
+
+    document.getElementById('screen').innerHTML = `
     <div style="margin-top:12px">
-      ${hasDemoData?`<div class="demo-banner">⚠️ Demo data exists for today. It is hidden from this view and does NOT affect production. Use "Clear demo data" below to remove it.</div>`:''}
+      ${hasDemoData ? `<div class="demo-banner">⚠️ Demo data exists for today. It is hidden from this view and does NOT affect production. Use "Clear demo data" below to remove it.</div>` : ''}
+
+      <!-- TODAY REVENUE CARD -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">💰 Today's Revenue — ${new Date().toLocaleDateString('en-GB')}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Supply Ledger</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(slTodayAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Accessories</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(accTodayAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Hotels</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(hlTodayAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:15px;padding:8px 0;font-weight:600">
+            <span style="color:var(--brown)">Grand Total</span>
+            <span style="font-family:var(--mono);color:var(--green)">${fmt(todayGrand)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- THIS MONTH REVENUE CARD -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">📅 ${monthLabel} Revenue</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Supply Ledger</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(slMonthAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Accessories</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(accMonthAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Hotels</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(hlMonthAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:15px;padding:8px 0;font-weight:600">
+            <span style="color:var(--brown)">Grand Total</span>
+            <span style="font-family:var(--mono);color:var(--green)">${fmt(monthGrand)}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="dash-grid">
         <div class="metric-card"><div class="mv">${totalSold}</div><div class="ml">Units sold today</div></div>
         <div class="metric-card"><div class="mv" style="color:var(--red)">₹${totalWaste}</div><div class="ml">Wastage today</div></div>
@@ -895,120 +978,9 @@ async function renderOverview() {
         <button class="btn btn-danger" onclick="clearTestData()">Clear demo data</button>
       </div>
     </div>`;
-  } catch(e){ document.getElementById('screen').innerHTML=`<div class="card" style="margin-top:14px"><p style="color:var(--red);font-size:13px">Error loading data.</p></div>`; }
-}
-
-async function clearTestData() {
-  if(!confirm('Clear all DEMO/TEST entries for today? Real outlet submissions will NOT be affected.')) return;
-  try {
-    const today=new Date().toISOString().split('T')[0];
-    // Only delete entries where is_demo = true
-    await sbDelete('shift_entries',`?entry_date=eq.${today}&is_demo=eq.true`);
-    // Delete demand requests created by demo (staff_name = 'Demo Staff')
-    // demand_requests don't have is_demo, so we delete by cross-referencing
-    // For safety, only delete tomorrow's demands that match demo outlets pattern
-    const tmrw=new Date(); tmrw.setDate(tmrw.getDate()+1);
-    const tmrwStr=tmrw.toISOString().split('T')[0];
-    // Check if any real night shifts exist for tomorrow — if not safe to clear
-    const realNight=await sbGet('shift_entries',
-      `?entry_date=eq.${today}&shift=eq.night&is_demo=eq.false&select=id`);
-    if(realNight.length===0){
-      // No real night shifts submitted yet — safe to clear all tomorrow demands
-      await sbDelete('demand_requests',`?entry_date=eq.${tmrwStr}`);
-      toast('Demo data cleared ✓ (no real night shifts found)');
-    } else {
-      toast('Demo shift entries cleared ✓ (tomorrow demands kept — real night shifts exist)');
-    }
-    renderOverview();
-  } catch(e){ toast('Error clearing data: '+e.message); }
-}
-
-async function loadAllDemoData() {
-  const btn = document.querySelector('.btn-gold');
-  if(btn){btn.disabled=true;btn.textContent='Loading...';}
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const tmrw = new Date(); tmrw.setDate(tmrw.getDate()+1);
-    const tmrwStr = tmrw.toISOString().split('T')[0];
-    const d0 = today;
-    const d1 = tmrw.toISOString().split('T')[0];
-    const d2 = new Date(new Date().setDate(new Date().getDate()+2)).toISOString().split('T')[0];
-    const expiryDates = [d0, d1, d2];
-    for (const [pin, name] of Object.entries(OUTLET_PINS)) {
-      const disabled = DISABLED_BY_OUTLET[pin]||[];
-      const disabledProds = DB.outletConfig[pin]||{};
-      for (const shift of ['morning','evening','night']) {
-        const ent = await sbPost('shift_entries',[{outlet_id:pin,entry_date:today,shift,staff_name:'Demo Staff',is_demo:true}]);
-        const entryId = ent[0].id;
-        const lines = [];
-        CAT_ORDER.filter(c=>!disabled.includes(c)).forEach(catId=>{
-          const prods = DB.products.filter(p=>p.category_id===catId&&disabledProds[p.id]!==false&&!DISCONTINUED.includes(p.name));
-          const d = DUMMY[catId]||DUMMY.brownies;
-          prods.forEach((p,idx)=>{
-            const v=idx%3;
-            const expIdx=idx%3;
-            lines.push({entry_id:entryId,product_id:p.id,
-              opening:d.opening-v, incoming:d.incoming,
-              dine_in:d.dineIn, swiggy:d.swiggy,
-              zomato:Math.max(0,d.zomato-(v>1?1:0)),
-              expiry_qty: expIdx===0?1:0,
-              expiry_date: expIdx===0?expiryDates[idx%3]:null});
-          });
-        });
-        if(lines.length) await sbPost('stock_lines',lines);
-        if(shift==='night'){
-          const demands=[];
-          CAT_ORDER.filter(c=>!disabled.includes(c)).forEach(catId=>{
-            const prods=DB.products.filter(p=>p.category_id===catId&&disabledProds[p.id]!==false&&!DISCONTINUED.includes(p.name));
-            const d=DUMMY[catId]||DUMMY.brownies;
-            prods.forEach(p=>{
-              const cl=Math.max(0,d.opening+d.incoming-d.dineIn-d.swiggy-d.zomato-0);
-              demands.push({outlet_id:pin,entry_date:tmrwStr,product_id:p.id,requested_qty:cl+2});
-            });
-          });
-          if(demands.length) await sbPost('demand_requests',demands);
-        }
-      }
-    }
-    toast('Demo data loaded for all 8 outlets ✓');
-    renderOverview();
   } catch(e) {
-    toast('Error: '+e.message);
-    const btn2=document.querySelector('.btn-gold');
-    if(btn2){btn2.disabled=false;btn2.textContent='Load demo data for all outlets';}
+    document.getElementById('screen').innerHTML = `<div class="card" style="margin-top:14px"><p style="color:var(--red);font-size:13px">Error loading data.</p></div>`;
   }
-}
-
-async function showOutletDetail(pin, name) {
-  showLoading(`Loading ${name}...`);
-  try {
-    const today=new Date().toISOString().split('T')[0];
-    const entries=await sbGet('shift_entries',`?outlet_id=eq.${pin}&entry_date=eq.${today}&select=*,stock_lines(*,products(name,price,category_id))&order=submitted_at.desc&limit=3`);
-    if(!entries.length){ toast('No data for '+name+' today'); renderOverview(); return; }
-    const lastEntry=entries[0];
-    const lines=lastEntry.stock_lines||[];
-    const byCat={};
-    lines.forEach(l=>{ const cat=l.products?.category_id||'other'; if(!byCat[cat]) byCat[cat]=[]; byCat[cat].push(l); });
-    const catHtml=CAT_ORDER.map(catId=>{
-      if(!byCat[catId]) return '';
-      const prodRows=byCat[catId].map(l=>{
-        const sold=(+l.dine_in||0)+(+l.swiggy||0)+(+l.zomato||0);
-        const cl=+l.closing||0;
-        const color=cl===0?'var(--red)':cl<=2?'var(--orange)':'var(--green)';
-        return `<div class="tp-row"><div class="tp-name">${l.products?.name}</div><div style="text-align:right"><div class="tp-val" style="color:${color}">Cl: ${cl}</div><div class="tp-sub">Sold: ${sold}</div></div></div>`;
-      }).join('');
-      return `<div class="sec-hdr">${CAT_LABELS[catId]}</div>${prodRows}`;
-    }).join('');
-    document.getElementById('screen').innerHTML=`
-    <div style="margin-top:12px">
-      <div class="card">
-        <div class="card-title">${name} — ${lastEntry.shift} shift snapshot</div>
-        <div style="font-size:12px;color:var(--txt3);margin-bottom:12px">Staff: ${lastEntry.staff_name} · ${new Date(lastEntry.submitted_at).toLocaleTimeString()}</div>
-        ${catHtml||'<p style="font-size:13px;color:var(--txt2)">No stock data in this entry.</p>'}
-      </div>
-      <button class="btn btn-s" onclick="renderOverview()">← Back to overview</button>
-    </div>`;
-  } catch(e){ toast('Error'); renderOverview(); }
 }
 
 // ── PRODUCTION (paper format) ────────────────────────────────────────────────
