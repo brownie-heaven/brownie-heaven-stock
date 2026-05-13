@@ -1279,7 +1279,7 @@ async function addProd(catId){
 const HOTEL_LIST=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)','Jalpaan','Food Nirvana','Abids','Juice World','Flower Drum','Thalapakati','Veda Dairy','Roll Baby Roll','Frutta','Far East','Sona Foods (Sangam)'];
 let HL={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:''};
 function hlFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
-function hlGetLine(name){if(!HL.lines[name]){const def=HL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);;HL.lines[name]={qty:'',rate:def?def.rate:0,amount:0};}return HL.lines[name];}
+function hlGetLine(name){if(!HL.lines[name]){const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);;HL.lines[name]={qty:'',rate:def?def.rate:0,amount:0};}return HL.lines[name];}
 function hlCalcDaily(){return Object.values(HL.lines).reduce((s,l)=>s+(l.amount||0),0);}
 function hlUpdateLine(name,field,val){const l=hlGetLine(name);l[field]=val;const q=Number(l.qty)||0,r=Number(l.rate)||0;l.amount=q*r;const el=document.getElementById('hl-amt-'+name.replace(/[^a-zA-Z0-9]/g,'_'));if(el)el.textContent=q>0?hlFmt(l.amount):'—';const dt=document.getElementById('hl-daily-total');if(dt)dt.textContent=hlFmt(hlCalcDaily());}
 async function hlSave(){
