@@ -1569,7 +1569,7 @@ async function renderSupplyLedger(){
 const monthLabel=SL.date?new Date(SL.date.slice(0,7)+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'}):'';
 
   let prodHTML='';
-  HL_CATALOG.forEach.forEach(function(group){
+SL_CATALOG.forEach(function(group){
     var sub=0;
     var rowsHtml=group.items.map(function(p){
       var l=slGetLine(p.name);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=slSafeId(p.name);
