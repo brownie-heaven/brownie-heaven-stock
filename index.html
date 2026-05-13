@@ -858,6 +858,8 @@ async function renderOverview() {
     const hlMonthAmt  = sum(slMonthRaw.filter(r=>HOTEL_LIST.includes(r.outlet)));
     const accMonthAmt = sum(accMonth);
     const monthGrand  = slMonthAmt + accMonthAmt + hlMonthAmt;
+    const fmt = n => '₹' + Number(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const monthLabel = new Date(monthStart).toLocaleString('en-IN', {month: 'long', year: 'numeric'});
 
     // ── Existing stock data ──
     const entries = await sbGet('shift_entries', `?entry_date=eq.${today}&is_demo=eq.false&select=*,stock_lines(*,products(name,price))`);
