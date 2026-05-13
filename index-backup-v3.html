@@ -255,6 +255,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
     <button class="mt" id="mt3" onclick="setTab(3)">Admin</button>
     <button class="mt" id="mt4" onclick="setTab(4)">Supply Ledger</button>
     <button class="mt" id="mt5" onclick="setTab(5)">Accessories</button>
+    <button class="mt" id="mt6" onclick="setTab(6)">Hotels</button>
   </div>
   <div class="screen" id="screen"></div>
 </div>
@@ -415,7 +416,7 @@ function setHdr(sub, showTabs) {
   document.getElementById('main-tabs').style.display = showTabs ? 'flex' : 'none';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
-    ['mt0','mt1','mt2','mt3','mt4','mt5'].forEach((id,i) => {
+    ['mt0','mt1','mt2','mt3','mt4','mt5','mt6'].forEach((id,i) => {
       document.getElementById(id).classList.toggle('active', i === S.mainTab);
     });
   }
@@ -447,6 +448,7 @@ function setTab(i) {
   else if (i===3) renderAdmin();
   else if (i===4) renderSupplyLedger();
   else if (i===5) renderAccessoriesLedger();
+  else if (i===6) renderHotelsLedger();
 }
 
 // ── PIN ──────────────────────────────────────────────────────────────────────
@@ -830,52 +832,135 @@ async function renderOverview() {
   setHdr('Dashboard', true);
   showLoading("Loading today's data...");
   try {
-    const today=new Date().toISOString().split('T')[0];
-    // Fetch both real and demo entries separately
-    const entries=await sbGet('shift_entries',`?entry_date=eq.${today}&is_demo=eq.false&select=*,stock_lines(*,products(name,price))`);
-    const demoEntries=await sbGet('shift_entries',`?entry_date=eq.${today}&is_demo=eq.true&select=id&limit=1`);
+    const today = new Date().toISOString().split('T')[0];
+    const ym = today.slice(0, 7);
+    const [y, m] = ym.split('-');
+    const lastDay = new Date(+y, +m, 0).getDate();
+    const monthStart = `${ym}-01`;
+    const monthEnd = `${ym}-${lastDay}`;
+
+    // ── Fetch ledger totals (today) ──
+    const [slToday, accToday, hlToday] = await Promise.all([
+      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount`),
+      sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
+      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount&outlet=in.(${HOTEL_LIST.map(h=>encodeURIComponent(h)).join(',')})`)
+    ]);
+
+    // ── Fetch ledger totals (this month) ──
+    const [slMonth, accMonth, hlMonth] = await Promise.all([
+      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+      sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount&outlet=in.(${HOTEL_LIST.map(h=>encodeURIComponent(h)).join(',')})`)
+    ]);
+
+    const sum = arr => arr.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+    const slTodayAmt  = sum(slToday);
+    const accTodayAmt = sum(accToday);
+    const hlTodayAmt  = sum(hlToday);
+    const todayGrand  = slTodayAmt + accTodayAmt + hlTodayAmt;
+
+    const slMonthAmt  = sum(slMonth);
+    const accMonthAmt = sum(accMonth);
+    const hlMonthAmt  = sum(hlMonth);
+    const monthGrand  = slMonthAmt + accMonthAmt + hlMonthAmt;
+
+    const fmt = n => '₹' + Number(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const monthLabel = new Date(monthStart).toLocaleString('en-IN', {month: 'long', year: 'numeric'});
+
+    // ── Existing stock data ──
+    const entries = await sbGet('shift_entries', `?entry_date=eq.${today}&is_demo=eq.false&select=*,stock_lines(*,products(name,price))`);
+    const demoEntries = await sbGet('shift_entries', `?entry_date=eq.${today}&is_demo=eq.true&select=id&limit=1`);
     const hasDemoData = demoEntries.length > 0;
-    const byOutlet={};
-    entries.forEach(e=>{
-      if(!byOutlet[e.outlet_id]) byOutlet[e.outlet_id]={shifts:[],lines:[]};
+    const byOutlet = {};
+    entries.forEach(e => {
+      if (!byOutlet[e.outlet_id]) byOutlet[e.outlet_id] = {shifts: [], lines: []};
       byOutlet[e.outlet_id].shifts.push(e.shift);
-      (e.stock_lines||[]).forEach(l=>byOutlet[e.outlet_id].lines.push(l));
+      (e.stock_lines || []).forEach(l => byOutlet[e.outlet_id].lines.push(l));
     });
-    let totalSold=0,totalWaste=0,allAlerts=[];
-    const outletRows=Object.entries(OUTLET_PINS).map(([pin,name])=>{
-      const data=byOutlet[pin]||{shifts:[],lines:[]};
-      const shiftsCount=new Set(data.shifts).size;
-      let critical=0,low=0,expiring=0,outletSold=0;
-      data.lines.forEach(l=>{
-        const sold=(+l.dine_in||0)+(+l.swiggy||0)+(+l.zomato||0);
-        outletSold+=sold;
-        const cl=+l.closing||0;
-        if(cl===0&&sold>0) critical++;
-        else if(cl<=2&&cl>0) low++;
-        if(+l.expiry_qty>0){
+    let totalSold = 0, totalWaste = 0, allAlerts = [];
+    const outletRows = Object.entries(OUTLET_PINS).map(([pin, name]) => {
+      const data = byOutlet[pin] || {shifts: [], lines: []};
+      const shiftsCount = new Set(data.shifts).size;
+      let critical = 0, low = 0, expiring = 0, outletSold = 0;
+      data.lines.forEach(l => {
+        const sold = (+l.dine_in || 0) + (+l.swiggy || 0) + (+l.zomato || 0);
+        outletSold += sold;
+        const cl = +l.closing || 0;
+        if (cl === 0 && sold > 0) critical++;
+        else if (cl <= 2 && cl > 0) low++;
+        if (+l.expiry_qty > 0) {
           expiring++;
-          const lv=(+l.expiry_qty)*(+l.products?.price||0);
-          totalWaste+=lv;
-          allAlerts.push({prod:l.products?.name,outlet:name,qty:l.expiry_qty,val:lv});
+          const lv = (+l.expiry_qty) * (+l.products?.price || 0);
+          totalWaste += lv;
+          allAlerts.push({prod: l.products?.name, outlet: name, qty: l.expiry_qty, val: lv});
         }
       });
-      totalSold+=outletSold;
-      const dotClass=shiftsCount===0?'dot-r':shiftsCount<3?'dot-o':'dot-g';
+      totalSold += outletSold;
+      const dotClass = shiftsCount === 0 ? 'dot-r' : shiftsCount < 3 ? 'dot-o' : 'dot-g';
       return `<div class="outlet-row" onclick="showOutletDetail('${pin}','${name}')">
         <div class="dot ${dotClass}"></div>
-        <div class="outlet-name">${name}${pin==='1001'?' ⭐':''}</div>
+        <div class="outlet-name">${name}${pin === '1001' ? ' ⭐' : ''}</div>
         <div class="badges-wrap">
-          ${shiftsCount?`<span class="badge b-brown">${shiftsCount}/3</span>`:'<span class="badge b-gray">No data</span>'}
-          ${critical?`<span class="badge b-red">🔴 ${critical}</span>`:''}
-          ${low?`<span class="badge b-orange">🟡 ${low}</span>`:''}
-          ${expiring?`<span class="badge b-red">⚠️ ${expiring}</span>`:''}
+          ${shiftsCount ? `<span class="badge b-brown">${shiftsCount}/3</span>` : '<span class="badge b-gray">No data</span>'}
+          ${critical ? `<span class="badge b-red">🔴 ${critical}</span>` : ''}
+          ${low ? `<span class="badge b-orange">🟡 ${low}</span>` : ''}
+          ${expiring ? `<span class="badge b-red">⚠️ ${expiring}</span>` : ''}
         </div>
       </div>`;
     }).join('');
-    const alertHtml=allAlerts.length?`<div class="card"><div class="card-title">⚠️ Expiry alerts today</div>${allAlerts.map(a=>`<div class="alert-row"><div class="alert-dot" style="background:var(--red)"></div><div><div class="alert-title">${a.prod}</div><div class="alert-sub">${a.outlet} · ${a.qty} units · ₹${a.val} lost</div></div></div>`).join('')}</div>`:'';
-    document.getElementById('screen').innerHTML=`
+    const alertHtml = allAlerts.length ? `<div class="card"><div class="card-title">⚠️ Expiry alerts today</div>${allAlerts.map(a => `<div class="alert-row"><div class="alert-dot" style="background:var(--red)"></div><div><div class="alert-title">${a.prod}</div><div class="alert-sub">${a.outlet} · ${a.qty} units · ₹${a.val} lost</div></div></div>`).join('')}</div>` : '';
+
+    document.getElementById('screen').innerHTML = `
     <div style="margin-top:12px">
-      ${hasDemoData?`<div class="demo-banner">⚠️ Demo data exists for today. It is hidden from this view and does NOT affect production. Use "Clear demo data" below to remove it.</div>`:''}
+      ${hasDemoData ? `<div class="demo-banner">⚠️ Demo data exists for today. It is hidden from this view and does NOT affect production. Use "Clear demo data" below to remove it.</div>` : ''}
+
+      <!-- TODAY REVENUE CARD -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">💰 Today's Revenue — ${new Date().toLocaleDateString('en-GB')}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Supply Ledger</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(slTodayAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Accessories</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(accTodayAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Hotels</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(hlTodayAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:15px;padding:8px 0;font-weight:600">
+            <span style="color:var(--brown)">Grand Total</span>
+            <span style="font-family:var(--mono);color:var(--green)">${fmt(todayGrand)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- THIS MONTH REVENUE CARD -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">📅 ${monthLabel} Revenue</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Supply Ledger</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(slMonthAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Accessories</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(accMonthAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Hotels</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(hlMonthAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:15px;padding:8px 0;font-weight:600">
+            <span style="color:var(--brown)">Grand Total</span>
+            <span style="font-family:var(--mono);color:var(--green)">${fmt(monthGrand)}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="dash-grid">
         <div class="metric-card"><div class="mv">${totalSold}</div><div class="ml">Units sold today</div></div>
         <div class="metric-card"><div class="mv" style="color:var(--red)">₹${totalWaste}</div><div class="ml">Wastage today</div></div>
@@ -893,120 +978,9 @@ async function renderOverview() {
         <button class="btn btn-danger" onclick="clearTestData()">Clear demo data</button>
       </div>
     </div>`;
-  } catch(e){ document.getElementById('screen').innerHTML=`<div class="card" style="margin-top:14px"><p style="color:var(--red);font-size:13px">Error loading data.</p></div>`; }
-}
-
-async function clearTestData() {
-  if(!confirm('Clear all DEMO/TEST entries for today? Real outlet submissions will NOT be affected.')) return;
-  try {
-    const today=new Date().toISOString().split('T')[0];
-    // Only delete entries where is_demo = true
-    await sbDelete('shift_entries',`?entry_date=eq.${today}&is_demo=eq.true`);
-    // Delete demand requests created by demo (staff_name = 'Demo Staff')
-    // demand_requests don't have is_demo, so we delete by cross-referencing
-    // For safety, only delete tomorrow's demands that match demo outlets pattern
-    const tmrw=new Date(); tmrw.setDate(tmrw.getDate()+1);
-    const tmrwStr=tmrw.toISOString().split('T')[0];
-    // Check if any real night shifts exist for tomorrow — if not safe to clear
-    const realNight=await sbGet('shift_entries',
-      `?entry_date=eq.${today}&shift=eq.night&is_demo=eq.false&select=id`);
-    if(realNight.length===0){
-      // No real night shifts submitted yet — safe to clear all tomorrow demands
-      await sbDelete('demand_requests',`?entry_date=eq.${tmrwStr}`);
-      toast('Demo data cleared ✓ (no real night shifts found)');
-    } else {
-      toast('Demo shift entries cleared ✓ (tomorrow demands kept — real night shifts exist)');
-    }
-    renderOverview();
-  } catch(e){ toast('Error clearing data: '+e.message); }
-}
-
-async function loadAllDemoData() {
-  const btn = document.querySelector('.btn-gold');
-  if(btn){btn.disabled=true;btn.textContent='Loading...';}
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const tmrw = new Date(); tmrw.setDate(tmrw.getDate()+1);
-    const tmrwStr = tmrw.toISOString().split('T')[0];
-    const d0 = today;
-    const d1 = tmrw.toISOString().split('T')[0];
-    const d2 = new Date(new Date().setDate(new Date().getDate()+2)).toISOString().split('T')[0];
-    const expiryDates = [d0, d1, d2];
-    for (const [pin, name] of Object.entries(OUTLET_PINS)) {
-      const disabled = DISABLED_BY_OUTLET[pin]||[];
-      const disabledProds = DB.outletConfig[pin]||{};
-      for (const shift of ['morning','evening','night']) {
-        const ent = await sbPost('shift_entries',[{outlet_id:pin,entry_date:today,shift,staff_name:'Demo Staff',is_demo:true}]);
-        const entryId = ent[0].id;
-        const lines = [];
-        CAT_ORDER.filter(c=>!disabled.includes(c)).forEach(catId=>{
-          const prods = DB.products.filter(p=>p.category_id===catId&&disabledProds[p.id]!==false&&!DISCONTINUED.includes(p.name));
-          const d = DUMMY[catId]||DUMMY.brownies;
-          prods.forEach((p,idx)=>{
-            const v=idx%3;
-            const expIdx=idx%3;
-            lines.push({entry_id:entryId,product_id:p.id,
-              opening:d.opening-v, incoming:d.incoming,
-              dine_in:d.dineIn, swiggy:d.swiggy,
-              zomato:Math.max(0,d.zomato-(v>1?1:0)),
-              expiry_qty: expIdx===0?1:0,
-              expiry_date: expIdx===0?expiryDates[idx%3]:null});
-          });
-        });
-        if(lines.length) await sbPost('stock_lines',lines);
-        if(shift==='night'){
-          const demands=[];
-          CAT_ORDER.filter(c=>!disabled.includes(c)).forEach(catId=>{
-            const prods=DB.products.filter(p=>p.category_id===catId&&disabledProds[p.id]!==false&&!DISCONTINUED.includes(p.name));
-            const d=DUMMY[catId]||DUMMY.brownies;
-            prods.forEach(p=>{
-              const cl=Math.max(0,d.opening+d.incoming-d.dineIn-d.swiggy-d.zomato-0);
-              demands.push({outlet_id:pin,entry_date:tmrwStr,product_id:p.id,requested_qty:cl+2});
-            });
-          });
-          if(demands.length) await sbPost('demand_requests',demands);
-        }
-      }
-    }
-    toast('Demo data loaded for all 8 outlets ✓');
-    renderOverview();
   } catch(e) {
-    toast('Error: '+e.message);
-    const btn2=document.querySelector('.btn-gold');
-    if(btn2){btn2.disabled=false;btn2.textContent='Load demo data for all outlets';}
+    document.getElementById('screen').innerHTML = `<div class="card" style="margin-top:14px"><p style="color:var(--red);font-size:13px">Error loading data.</p></div>`;
   }
-}
-
-async function showOutletDetail(pin, name) {
-  showLoading(`Loading ${name}...`);
-  try {
-    const today=new Date().toISOString().split('T')[0];
-    const entries=await sbGet('shift_entries',`?outlet_id=eq.${pin}&entry_date=eq.${today}&select=*,stock_lines(*,products(name,price,category_id))&order=submitted_at.desc&limit=3`);
-    if(!entries.length){ toast('No data for '+name+' today'); renderOverview(); return; }
-    const lastEntry=entries[0];
-    const lines=lastEntry.stock_lines||[];
-    const byCat={};
-    lines.forEach(l=>{ const cat=l.products?.category_id||'other'; if(!byCat[cat]) byCat[cat]=[]; byCat[cat].push(l); });
-    const catHtml=CAT_ORDER.map(catId=>{
-      if(!byCat[catId]) return '';
-      const prodRows=byCat[catId].map(l=>{
-        const sold=(+l.dine_in||0)+(+l.swiggy||0)+(+l.zomato||0);
-        const cl=+l.closing||0;
-        const color=cl===0?'var(--red)':cl<=2?'var(--orange)':'var(--green)';
-        return `<div class="tp-row"><div class="tp-name">${l.products?.name}</div><div style="text-align:right"><div class="tp-val" style="color:${color}">Cl: ${cl}</div><div class="tp-sub">Sold: ${sold}</div></div></div>`;
-      }).join('');
-      return `<div class="sec-hdr">${CAT_LABELS[catId]}</div>${prodRows}`;
-    }).join('');
-    document.getElementById('screen').innerHTML=`
-    <div style="margin-top:12px">
-      <div class="card">
-        <div class="card-title">${name} — ${lastEntry.shift} shift snapshot</div>
-        <div style="font-size:12px;color:var(--txt3);margin-bottom:12px">Staff: ${lastEntry.staff_name} · ${new Date(lastEntry.submitted_at).toLocaleTimeString()}</div>
-        ${catHtml||'<p style="font-size:13px;color:var(--txt2)">No stock data in this entry.</p>'}
-      </div>
-      <button class="btn btn-s" onclick="renderOverview()">← Back to overview</button>
-    </div>`;
-  } catch(e){ toast('Error'); renderOverview(); }
 }
 
 // ── PRODUCTION (paper format) ────────────────────────────────────────────────
@@ -1274,11 +1248,137 @@ async function addProd(catId){
     toast('Product added ✓'); renderAdmin();
   } catch(e){ toast('Error adding product'); }
 }
-
+const HOTEL_LIST=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)','Jalpaan','Food Nirvana','Abids','Juice World','Flower Drum','Thalapakati','Veda Dairy','Roll Baby Roll','Frutta','Far East','Sona Foods (Sangam)'];
+let HL={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:''};
+function hlFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function hlGetLine(name){if(!HL.lines[name]){const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);;HL.lines[name]={qty:'',rate:def?def.rate:0,amount:0};}return HL.lines[name];}
+function hlCalcDaily(){return Object.values(HL.lines).reduce((s,l)=>s+(l.amount||0),0);}
+function hlUpdateLine(name,field,val){const l=hlGetLine(name);l[field]=val;const q=Number(l.qty)||0,r=Number(l.rate)||0;l.amount=q*r;const el=document.getElementById('hl-amt-'+name.replace(/[^a-zA-Z0-9]/g,'_'));if(el)el.textContent=q>0?hlFmt(l.amount):'—';const dt=document.getElementById('hl-daily-total');if(dt)dt.textContent=hlFmt(hlCalcDaily());}
+async function hlSave(){
+  const btn=document.getElementById('hl-save-btn');
+  if(btn){btn.disabled=true;btn.textContent='Saving...';}
+  const active=Object.entries(HL.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l])=>{
+    const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);
+    return{outlet:HL.outlet,date:HL.date,product:name,category:def?def.cat:'Other',qty:Number(l.qty),rate:Number(l.rate)};
+  });
+  if(!HL.outlet){alert('Select a hotel');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
+  if(!active.length){alert('Enter at least one quantity');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
+  try{
+    await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(HL.outlet)}&date=eq.${HL.date}`);
+    await sbPost('outlet_supply_ledger',active);
+    HL.lines={};toast('Hotel entry saved!');
+    await hlLoadHistory();renderHotelsLedger();
+  }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
+}
+async function hlLoadHistory(){
+  try{
+    let q='outlet_supply_ledger?order=date.desc,outlet,product';
+    const hotelFilter=HOTEL_LIST.map(h=>`outlet=eq.${encodeURIComponent(h)}`).join(',');
+    q+=`&or=(${hotelFilter})`;
+    if(HL.filterOutlet)q=`outlet_supply_ledger?order=date.desc&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
+    if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
+    HL.history=await sbGet(q);
+  }catch(e){HL.history=[];}
+}
+function hlGroupHistory(){
+  const g={};
+  HL.history.forEach(r=>{const k=r.outlet+'|'+r.date;if(!g[k])g[k]={outlet:r.outlet,date:r.date,rows:[],total:0};g[k].rows.push(r);g[k].total+=Number(r.amount||0);});
+  return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date)||a.outlet.localeCompare(b.outlet));
+}
+async function renderHotelsLedger(){
+  setHdr('Dashboard',true);
+  if(!HL.history.length)await hlLoadHistory();
+  const daily=hlCalcDaily();
+  const groups=hlGroupHistory();
+  const monthLabel=HL.date?new Date(HL.date.slice(0,7)+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'}):'';
+  var prodHTML='';
+  var hlCatalog=SL_CATALOG.filter(function(g){
+    if(HL.outlet==='Sona Foods (Sangam)')return g.cat==='Pastry Slices';
+    return g.cat==='Brownies & Boxes';
+  });
+   hlCatalog.forEach(function(group){
+    var sub=0;
+    var rowsHtml=group.items.map(function(p){
+      var l=hlGetLine(p.name);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=p.name.replace(/[^a-zA-Z0-9]/g,'_');
+      return '<tr style="'+(hasQty?'background:#f0fbf7':'')+'">'
+        +'<td style="padding:5px 8px;font-size:13px;border-bottom:.5px solid #f0f0ee">'+p.name+'</td>'
+        +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee"><input type="number" min="0" step="1" placeholder="0" value="'+(l.qty||'')+'" style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right" oninput="hlUpdateLine(\''+p.name+'\',\'qty\',this.value)"></td>'
+        +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee"><input type="number" min="0" step="0.01" value="'+(l.rate||p.rate)+'" style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right" oninput="hlUpdateLine(\''+p.name+'\',\'rate\',this.value)"></td>'
+        +'<td id="hl-amt-'+sid+'" style="padding:5px 8px;text-align:right;font-size:13px;color:'+(hasQty?'#0F6E56':'#bbb')+'">'+(hasQty?hlFmt(l.amount):'—')+'</td></tr>';
+    }).join('');
+    prodHTML+='<div style="margin-bottom:1rem"><div style="font-size:11px;font-weight:600;color:#1D9E75;text-transform:uppercase;letter-spacing:.05em;padding:6px 0 4px;border-bottom:1px solid #E1F5EE">'+group.cat+'</div>'
+      +'<div style="border:.5px solid #e5e5e3;border-radius:0 0 8px 8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup>'
+      +'<tbody>'+rowsHtml+'</tbody>'
+      +'<tfoot><tr style="background:#f7f7f5"><td colspan="3" style="padding:5px 8px;font-size:12px;font-weight:500">Subtotal</td><td style="padding:5px 8px;text-align:right;font-size:12px;font-weight:500">'+hlFmt(sub)+'</td></tr></tfoot>'
+      +'</table></div></div>';
+  });
+  var histHTML='';
+  if(HL.view==='history'){
+    if(!groups.length){histHTML='<p style="color:#aaa;font-size:13px;text-align:center;padding:2rem">No entries found.</p>';}
+    else{histHTML=groups.map(function(g){
+      var rowsHtml=g.rows.map(function(r){return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+Number(r.rate).toFixed(2)+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+hlFmt(r.amount)+'</td></tr>';}).join('');
+      return '<div style="border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:8px;background:white">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;background:#fafaf8" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">'
+        +'<div><span style="font-weight:500;font-size:14px;margin-right:8px">'+g.outlet+'</span><span style="font-size:12px;color:#888">'+g.date+'</span></div>'
+        +'<div><span style="font-weight:600;font-size:15px;color:#0F6E56">'+hlFmt(g.total)+'</span><span style="color:#aaa;font-size:11px;margin-left:8px">▼</span></div></div>'
+        +'<div style="display:none"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5"><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th></tr></thead><tbody>'+rowsHtml+'</tbody>'
+        +'<tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="3" style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+hlFmt(g.total)+'</td></tr></tfoot></table>'
+        +'<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f0f0ee">'
+        +'<button onclick="hlDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none">Delete</button>'
+        +'</div></div></div>';
+    }).join('');}
+  }
+  var hotelOptions=HOTEL_LIST.map(function(o){return '<option value="'+o+'" '+(HL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
+  var filterOptions=HOTEL_LIST.map(function(o){return '<option value="'+o+'" '+(HL.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
+  document.getElementById('screen').innerHTML=
+    '<div style="padding:0 0 3rem">'
+    +'<div style="display:flex;gap:2px;border-bottom:1px solid #e5e5e3;margin-bottom:1.5rem;margin-top:12px">'
+    +'<button onclick="HL.view=\'entry\';renderHotelsLedger()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='entry'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='entry'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='entry'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">New entry</button>'
+    +'<button onclick="HL.view=\'history\';hlLoadHistory().then(function(){renderHotelsLedger();})" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='history'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='history'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='history'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">History '+(groups.length?'('+groups.length+')':'')+'</button>'
+    +'</div>'
+    +(HL.view==='entry'?
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel / Partner</label>'
+      +'<select onchange="HL.outlet=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
+      +'<option value="">Select hotel...</option>'+hotelOptions+'</select></div>'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
+      +'<input type="date" value="'+HL.date+'" onchange="HL.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:40% 20% 20% 20%;background:#fafaf8;padding:6px 8px;border-radius:6px 6px 0 0;border:.5px solid #e5e5e3;border-bottom:none">'
+      +'<div style="font-size:11px;font-weight:500;color:#888">Product</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Qty</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Rate ₹</div>'
+      +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Amount ₹</div>'
+      +'</div>'
+      +prodHTML
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:#E1F5EE;border-radius:8px;margin-bottom:1.5rem;font-weight:500">'
+      +'<span>Grand total (daily)</span>'
+      +'<span id="hl-daily-total" style="font-size:20px;font-weight:600;color:#0F6E56;font-family:var(--mono)">'+hlFmt(daily)+'</span>'
+      +'</div>'
+      +'<button id="hl-save-btn" onclick="hlSave()" style="background:#1D9E75;color:white;border:none;padding:10px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:500;font-family:var(--font)">Save entry</button>'
+    :
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.5rem;align-items:flex-end">'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel</label>'
+      +'<select onchange="HL.filterOutlet=this.value;hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
+      +'<option value="">All hotels</option>'+filterOptions+'</select></div>'
+      +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
+      +'<input type="date" value="'+HL.filterDate+'" onchange="HL.filterDate=this.value;hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'<button onclick="HL.filterOutlet=\'\';HL.filterDate=\'\';hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
+      +'</div>'
+      +histHTML
+    )
+    +'</div>';
+}
+async function hlDelete(outlet,date){
+  if(!confirm('Delete entry for '+outlet+' on '+date+'?'))return;
+  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();renderHotelsLedger();}
+  catch(e){toast('Error: '+e.message);}
+}
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar'];
-const SL_CATALOG=[{cat:'Cakes – ½ kg',items:[
+const SL_HOTELS=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)','Jalpaan','Food Nirvana','Abids','Juice World','Flower Drum','Thalapakati','Veda Dairy','Roll Baby Roll','Frutta','Far East','Sona Foods (Sangam)'];
+const ACC_HOTELS=SL_HOTELS;const SL_CATALOG=[{cat:'Cakes – ½ kg',items:[
     {name:'Chocolate Truffle 1/2kg',rate:595},{name:'Overloaded Cake 750g',rate:775},
     {name:'Tiramisu Cake 1/2kg',rate:595},{name:'Triple Chocolate Truffle 1/2kg',rate:695},
     {name:'Butterscotch Cake 1/2kg',rate:695},{name:'Biscoff Cake 1/2kg',rate:695},
@@ -1441,7 +1541,7 @@ async function renderSupplyLedger(){
 const monthLabel=SL.date?new Date(SL.date.slice(0,7)+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'}):'';
 
   let prodHTML='';
-  SL_CATALOG.forEach(function(group){
+SL_CATALOG.forEach(function(group){
     var sub=0;
     var rowsHtml=group.items.map(function(p){
       var l=slGetLine(p.name);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=slSafeId(p.name);
@@ -1512,8 +1612,9 @@ const monthLabel=SL.date?new Date(SL.date.slice(0,7)+'-01').toLocaleString('en-I
       }).join('');
     }
   }
-var outletOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(SL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
-var typeTabs='<div style="display:flex;gap:0;margin-bottom:10px;border:0.5px solid #e5e5e3;border-radius:8px;overflow:hidden">'+'<button onclick="SL.outletType=\'outlets\';SL.outlet=\'\';renderSupplyLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:'+(SL.outletType!=='hotels'?'#1D9E75':'#fafaf8')+';color:'+(SL.outletType!=='hotels'?'white':'#888')+';font-family:var(--font)">Our Outlets</button>'+'<button onclick="SL.outletType=\'hotels\';SL.outlet=\'\';renderSupplyLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;border-left:0.5px solid #e5e5e3;background:'+(SL.outletType==='hotels'?'#1D9E75':'#fafaf8')+';color:'+(SL.outletType==='hotels'?'white':'#888')+';font-family:var(--font)">Hotels & Partners</button>'+'</div>';
+var activeList=SL.outletType==='hotels'?SL_HOTELS:SL_OUTLETS;
+var typeTabs='<div style="display:flex;gap:0;margin-bottom:10px;border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden"><button onclick="SL.outletType=\'outlets\';SL.outlet=\'\';renderSupplyLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:'+(SL.outletType!=='hotels'?'\'#1D9E75\'':'\'#fafaf8\'')+';color:'+(SL.outletType!=='hotels'?'\'white\'':'\'#888\'')+';font-family:var(--font)">Our Outlets</button><button onclick="SL.outletType=\'hotels\';SL.outlet=\'\';renderSupplyLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;border-left:.5px solid #e5e5e3;background:'+(SL.outletType==='hotels'?'\'#1D9E75\'':'\'#fafaf8\'')+';color:'+(SL.outletType==='hotels'?'\'white\'':'\'#888\'')+';font-family:var(--font)">Hotels & Partners</button></div>';
+var outletOptions=activeList.map(function(o){return '<option value="'+o+'" '+(SL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
   var filterOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(SL.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
 
   document.getElementById('screen').innerHTML=
@@ -1530,7 +1631,7 @@ var typeTabs='<div style="display:flex;gap:0;margin-bottom:10px;border:0.5px sol
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Outlet</label>'
       +'<select onchange="SL.outlet=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;color:var(--txt);font-family:var(--font)">'
-      +'<option value="">Select outlet...</option>'+outletOptions+'</select></div>'
+     +typeTabs+'<div style="display:flex;gap:0;margin-bottom:10px;border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden"><button onclick="SL.outletType=\'outlets\';SL.outlet=\'\';renderSupplyLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:'+(SL.outletType==='hotels'?'#fafaf8':'#1D9E75')+';color:'+(SL.outletType==='hotels'?'#888':'white')+';font-family:var(--font)">Our Outlets</button><button onclick="SL.outletType=\'hotels\';SL.outlet=\'\';renderSupplyLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;border-left:.5px solid #e5e5e3;background:'+(SL.outletType==='hotels'?'#1D9E75':'#fafaf8')+';color:'+(SL.outletType==='hotels'?'white':'#888')+';font-family:var(--font)">Hotels & Partners</button></div>'+'<option value="">Select outlet...</option>'+outletOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
       +'<input type="date" value="'+SL.date+'" onchange="SL.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
       +'</div>'
@@ -1803,8 +1904,8 @@ async function renderAccessoriesLedger(){
     }).join('');}
   }
 
-  var activeList=SL.outletType==='hotels'?SL_HOTELS:SL_OUTLETS;
-var outletOptions=activeList.map(function(o){return '<option value="'+o+'" '+(ACC.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
+  var accActiveList=ACC.outletType==='hotels'?ACC_HOTELS:SL_OUTLETS;
+var outletOptions=accActiveList.map(function(o){return '<option value="'+o+'" '+(ACC.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
   var filterOptions=SL_OUTLETS.map(function(o){return '<option value="'+o+'" '+(ACC.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
 
   document.getElementById('screen').innerHTML=
@@ -1817,7 +1918,7 @@ var outletOptions=activeList.map(function(o){return '<option value="'+o+'" '+(AC
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Outlet</label>'
       +'<select onchange="ACC.outlet=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;color:var(--txt);font-family:var(--font)">'
-      +'<option value="">Select outlet...</option>'+outletOptions+'</select></div>'
+     +'<div style="display:flex;gap:0;margin-bottom:10px;border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden"><button onclick="ACC.outletType=\'outlets\';ACC.outlet=\'\';renderAccessoriesLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:'+(ACC.outletType==='hotels'?'#fafaf8':'#1D9E75')+';color:'+(ACC.outletType==='hotels'?'#888':'white')+';font-family:var(--font)">Our Outlets</button><button onclick="ACC.outletType=\'hotels\';ACC.outlet=\'\';renderAccessoriesLedger()" style="flex:1;padding:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;border-left:.5px solid #e5e5e3;background:'+(ACC.outletType==='hotels'?'#1D9E75':'#fafaf8')+';color:'+(ACC.outletType==='hotels'?'white':'#888')+';font-family:var(--font)">Hotels & Partners</button></div>'+'<option value="">Select outlet...</option>'+outletOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
       +'<input type="date" value="'+ACC.date+'" onchange="ACC.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
       +'</div>'
