@@ -1241,18 +1241,23 @@ async function addProd(catId){
     toast('Product added ✓'); renderAdmin();
   } catch(e){ toast('Error adding product'); }
 }
-const HOTEL_LIST=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)','Jalpaan','Food Nirvana','Abids','Juice World','Flower Drum','Thalapakati','Veda Dairy','Roll Baby Roll','Frutta','Far East','Sona Foods (Sangam)'];
+const HOTEL_LIST=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)','Jalpaan Brownies','Food Nirvana Brownies','Abids Brownies','Juice World Brownies','Flower Drum Brownies','Thalapakatti Brownies','Veda Dairy','Roll Baby Roll Brownies','Frutta Brownies','Far East Brownies','Sona Foods (Sangam)'];
+
+const HL_HOTEL_CATALOG={'Sona Foods (Sangam)':[{name:'Black Forest Pastry Slice',rate:60,unit:'piece'},{name:'Triple Chocolate Pastry Slice',rate:105,unit:'piece'}],'Veda Dairy':[{name:'Brownies',rate:0,unit:'kg'}],'Food Nirvana Brownies':[{name:'Brownies',rate:550,unit:'kg'}],'Juice World Brownies':[{name:'Brownies',rate:650,unit:'kg'}],'Far East Brownies':[{name:'Brownies',rate:660,unit:'kg'}],'Jalpaan Brownies':[{name:'Brownies',rate:64,unit:'piece'}],'Abids Brownies':[{name:'Brownies',rate:55,unit:'piece'}],'Flower Drum Brownies':[{name:'Brownies',rate:66,unit:'piece'}],'Thalapakatti Brownies':[{name:'Brownies',rate:57.05,unit:'piece'}],'Roll Baby Roll Brownies':[{name:'Brownies',rate:31,unit:'piece'}],'Frutta Brownies':[{name:'Brownies',rate:33,unit:'piece'}]};
+['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)'].forEach(function(z){HL_HOTEL_CATALOG[z]=[{name:'Brownies',rate:59,unit:'piece'}];});
+
+function hlGetCatalog(outlet){return HL_HOTEL_CATALOG[outlet]||[];}
 let HL={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:''};
 function hlFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
-function hlGetLine(name){if(!HL.lines[name]){const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);;HL.lines[name]={qty:'',rate:def?def.rate:0,amount:0};}return HL.lines[name];}
+function hlGetLine(name,defaultRate){if(!HL.lines[name]){HL.lines[name]={qty:'',rate:defaultRate||0,amount:0};}return HL.lines[name];}
 function hlCalcDaily(){return Object.values(HL.lines).reduce((s,l)=>s+(l.amount||0),0);}
-function hlUpdateLine(name,field,val){const l=hlGetLine(name);l[field]=val;const q=Number(l.qty)||0,r=Number(l.rate)||0;l.amount=q*r;const el=document.getElementById('hl-amt-'+name.replace(/[^a-zA-Z0-9]/g,'_'));if(el)el.textContent=q>0?hlFmt(l.amount):'—';const dt=document.getElementById('hl-daily-total');if(dt)dt.textContent=hlFmt(hlCalcDaily());}
+function hlUpdateLine(name,field,val){const l=HL.lines[name];if(!l)return;l[field]=val;const q=Number(l.qty)||0,r=Number(l.rate)||0;l.amount=q*r;const el=document.getElementById('hl-amt-'+name.replace(/[^a-zA-Z0-9]/g,'_'));if(el)el.textContent=q>0?hlFmt(l.amount):'—';const dt=document.getElementById('hl-daily-total');if(dt)dt.textContent=hlFmt(hlCalcDaily());}
 async function hlSave(){
   const btn=document.getElementById('hl-save-btn');
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
   const active=Object.entries(HL.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l])=>{
-    const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);
-    return{outlet:HL.outlet,date:HL.date,product:name,category:def?def.cat:'Other',qty:Number(l.qty),rate:Number(l.rate)};
+    const catalog=hlGetCatalog(HL.outlet);const def=catalog.find(p=>p.name===name);
+    return{outlet:HL.outlet,date:HL.date,product:name,category:def?def.unit:'piece',qty:Number(l.qty),rate:Number(l.rate)};
   });
   if(!HL.outlet){alert('Select a hotel');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
   if(!active.length){alert('Enter at least one quantity');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
@@ -1283,42 +1288,35 @@ async function renderHotelsLedger(){
   if(!HL.history.length)await hlLoadHistory();
   const daily=hlCalcDaily();
   const groups=hlGroupHistory();
-  const monthLabel=HL.date?new Date(HL.date.slice(0,7)+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'}):'';
+  const catalog=hlGetCatalog(HL.outlet);
   var prodHTML='';
-  var hlCatalog=SL_CATALOG.filter(function(g){
-    if(HL.outlet==='Sona Foods (Sangam)')return g.cat==='Pastry Slices';
-    return g.cat==='Brownies & Boxes';
-  });
-   hlCatalog.forEach(function(group){
+  if(!HL.outlet){
+    prodHTML='<p style="color:#aaa;font-size:13px;text-align:center;padding:2rem">Select a hotel to see products.</p>';
+  }else if(!catalog.length){
+    prodHTML='<p style="color:#aaa;font-size:13px;text-align:center;padding:2rem">No products configured for this hotel.</p>';
+  }else{
     var sub=0;
-    var rowsHtml=group.items.map(function(p){
-      var l=hlGetLine(p.name);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=p.name.replace(/[^a-zA-Z0-9]/g,'_');
+    var rowsHtml=catalog.map(function(p){
+      var l=hlGetLine(p.name,p.rate);var hasQty=Number(l.qty)>0;sub+=l.amount||0;var sid=p.name.replace(/[^a-zA-Z0-9]/g,'_');var unitLabel=p.unit==='kg'?'kg':'pcs';
       return '<tr style="'+(hasQty?'background:#f0fbf7':'')+'">'
-        +'<td style="padding:5px 8px;font-size:13px;border-bottom:.5px solid #f0f0ee">'+p.name+'</td>'
-        +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee"><input type="number" min="0" step="1" placeholder="0" value="'+(l.qty||'')+'" style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right" oninput="hlUpdateLine(\''+p.name+'\',\'qty\',this.value)"></td>'
+        +'<td style="padding:5px 8px;font-size:13px;border-bottom:.5px solid #f0f0ee">'+p.name+' <span style="font-size:10px;color:#aaa">(per '+unitLabel+')</span></td>'
+        +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee"><input type="number" min="0" step="'+(p.unit==='kg'?'0.1':'1')+'" placeholder="0" value="'+(l.qty||'')+'" style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right" oninput="hlUpdateLine(\''+p.name+'\',\'qty\',this.value)"></td>'
         +'<td style="padding:4px 5px;border-bottom:.5px solid #f0f0ee"><input type="number" min="0" step="0.01" value="'+(l.rate||p.rate)+'" style="width:100%;font-size:13px;padding:4px 5px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right" oninput="hlUpdateLine(\''+p.name+'\',\'rate\',this.value)"></td>'
         +'<td id="hl-amt-'+sid+'" style="padding:5px 8px;text-align:right;font-size:13px;color:'+(hasQty?'#0F6E56':'#bbb')+'">'+(hasQty?hlFmt(l.amount):'—')+'</td></tr>';
     }).join('');
-    prodHTML+='<div style="margin-bottom:1rem"><div style="font-size:11px;font-weight:600;color:#1D9E75;text-transform:uppercase;letter-spacing:.05em;padding:6px 0 4px;border-bottom:1px solid #E1F5EE">'+group.cat+'</div>'
-      +'<div style="border:.5px solid #e5e5e3;border-radius:0 0 8px 8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup>'
-      +'<tbody>'+rowsHtml+'</tbody>'
-      +'<tfoot><tr style="background:#f7f7f5"><td colspan="3" style="padding:5px 8px;font-size:12px;font-weight:500">Subtotal</td><td style="padding:5px 8px;text-align:right;font-size:12px;font-weight:500">'+hlFmt(sub)+'</td></tr></tfoot>'
-      +'</table></div></div>';
-  });
+    prodHTML='<div style="margin-bottom:1rem"><div style="border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><tbody>'+rowsHtml+'</tbody><tfoot><tr style="background:#f7f7f5"><td colspan="3" style="padding:5px 8px;font-size:12px;font-weight:500">Subtotal</td><td style="padding:5px 8px;text-align:right;font-size:12px;font-weight:500">'+hlFmt(sub)+'</td></tr></tfoot></table></div></div>';
+  }
   var histHTML='';
   if(HL.view==='history'){
     if(!groups.length){histHTML='<p style="color:#aaa;font-size:13px;text-align:center;padding:2rem">No entries found.</p>';}
     else{histHTML=groups.map(function(g){
-      var rowsHtml=g.rows.map(function(r){return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+Number(r.rate).toFixed(2)+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+hlFmt(r.amount)+'</td></tr>';}).join('');
+      var rowsHtml=g.rows.map(function(r){return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+' '+(r.category||'')+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+Number(r.rate).toFixed(2)+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+hlFmt(r.amount)+'</td></tr>';}).join('');
       return '<div style="border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:8px;background:white">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;background:#fafaf8" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">'
         +'<div><span style="font-weight:500;font-size:14px;margin-right:8px">'+g.outlet+'</span><span style="font-size:12px;color:#888">'+g.date+'</span></div>'
         +'<div><span style="font-weight:600;font-size:15px;color:#0F6E56">'+hlFmt(g.total)+'</span><span style="color:#aaa;font-size:11px;margin-left:8px">▼</span></div></div>'
-        +'<div style="display:none"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5"><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th></tr></thead><tbody>'+rowsHtml+'</tbody>'
-        +'<tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="3" style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+hlFmt(g.total)+'</td></tr></tfoot></table>'
-        +'<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f0f0ee">'
-        +'<button onclick="hlDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none">Delete</button>'
-        +'</div></div></div>';
+        +'<div style="display:none"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5"><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th></tr></thead><tbody>'+rowsHtml+'</tbody><tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="3" style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+hlFmt(g.total)+'</td></tr></tfoot></table>'
+        +'<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f0f0ee"><button onclick="hlDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none">Delete</button></div></div></div>';
     }).join('');}
   }
   var hotelOptions=HOTEL_LIST.map(function(o){return '<option value="'+o+'" '+(HL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
@@ -1332,7 +1330,7 @@ async function renderHotelsLedger(){
     +(HL.view==='entry'?
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel / Partner</label>'
-      +'<select onchange="HL.outlet=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
+      +'<select onchange="HL.outlet=this.value;HL.lines={};renderHotelsLedger()" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
       +'<option value="">Select hotel...</option>'+hotelOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
       +'<input type="date" value="'+HL.date+'" onchange="HL.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
