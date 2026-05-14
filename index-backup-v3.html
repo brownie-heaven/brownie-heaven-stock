@@ -839,32 +839,25 @@ async function renderOverview() {
     const monthStart = `${ym}-01`;
     const monthEnd = `${ym}-${lastDay}`;
 
-    // ── Fetch ledger totals (today) ──
-    const [slToday, accToday, hlToday] = await Promise.all([
-      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount`),
+   // ── Fetch ledger totals ──
+    const [slTodayRaw, accToday, slMonthRaw, accMonth] = await Promise.all([
+      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount,outlet`),
       sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
-      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount&outlet=in.(${HOTEL_LIST.map(h=>encodeURIComponent(h)).join(',')})`)
-    ]);
-
-    // ── Fetch ledger totals (this month) ──
-    const [slMonth, accMonth, hlMonth] = await Promise.all([
-      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
-      sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
-      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount&outlet=in.(${HOTEL_LIST.map(h=>encodeURIComponent(h)).join(',')})`)
+      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
+      sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`)
     ]);
 
     const sum = arr => arr.reduce((s, r) => s + Number(r.amount || 0), 0);
 
-    const slTodayAmt  = sum(slToday);
+    const slTodayAmt  = sum(slTodayRaw.filter(r=>!HOTEL_LIST.includes(r.outlet)));
+    const hlTodayAmt  = sum(slTodayRaw.filter(r=>HOTEL_LIST.includes(r.outlet)));
     const accTodayAmt = sum(accToday);
-    const hlTodayAmt  = sum(hlToday);
     const todayGrand  = slTodayAmt + accTodayAmt + hlTodayAmt;
 
-    const slMonthAmt  = sum(slMonth);
+    const slMonthAmt  = sum(slMonthRaw.filter(r=>!HOTEL_LIST.includes(r.outlet)));
+    const hlMonthAmt  = sum(slMonthRaw.filter(r=>HOTEL_LIST.includes(r.outlet)));
     const accMonthAmt = sum(accMonth);
-    const hlMonthAmt  = sum(hlMonth);
     const monthGrand  = slMonthAmt + accMonthAmt + hlMonthAmt;
-
     const fmt = n => '₹' + Number(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const monthLabel = new Date(monthStart).toLocaleString('en-IN', {month: 'long', year: 'numeric'});
 
