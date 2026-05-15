@@ -256,6 +256,7 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
     <button class="mt" id="mt4" onclick="setTab(4)">Supply Ledger</button>
     <button class="mt" id="mt5" onclick="setTab(5)">Accessories</button>
     <button class="mt" id="mt6" onclick="setTab(6)">Hotels</button>
+    <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
   </div>
   <div class="screen" id="screen"></div>
 </div>
@@ -463,8 +464,353 @@ function setTab(i) {
   else if (i===4) renderSupplyLedger();
   else if (i===5) renderAccessoriesLedger();
   else if (i===6) renderHotelsLedger();
+  else if (i===7) renderPurchase();
+}
+// ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
+const PURCHASE_PRODUCTS = [
+  {name:'1 Pc Box',agency:'Progressive Cuisine',category:'Accessories',unit:'pcs',rate:0},
+  {name:'Tiramisu Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:347.5},
+  {name:'Butterscotch Cake 1/2 KG',agency:'Progressive Cuisine',category:'Tubs',unit:'pcs',rate:297.5},
+  {name:'Chocolate Overload Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:397.5},
+  {name:'Tiramisu Tub',agency:'Progressive Cuisine',category:'Tubs',unit:'pcs',rate:150},
+  {name:'Black Forest Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:595},
+  {name:'Hazelnut Jar',agency:'Progressive Cuisine',category:'Jars',unit:'pcs',rate:140},
+  {name:'Brooklyn Blackout Tub',agency:'Progressive Cuisine',category:'Tubs',unit:'pcs',rate:150},
+  {name:'Chocolate Truffle Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:297.5},
+  {name:'Milo Tub',agency:'Progressive Cuisine',category:'Tubs',unit:'pcs',rate:140},
+  {name:'Red Velvet Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:297.5},
+  {name:'Fresh Cream Chocolate Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:347.5},
+  {name:'Biscoff Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:347.5},
+  {name:'Hazelnut Truffle Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:347.5},
+  {name:'Classic Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:74},
+  {name:'Red Velvet Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:89},
+  {name:'Roasted Nuts Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:81},
+  {name:'Triple Chocolate Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:89},
+  {name:'Eggless Roasted Nuts Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:65},
+  {name:'Choco Hazelnut Spread Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:100},
+  {name:'White Chocolate Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:81},
+  {name:'Eggless Triple Chocolate Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:70},
+  {name:'Eggless Classic Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:55},
+  {name:'Caramel Fudge Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:95},
+  {name:'Oreo Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:96},
+  {name:'Walnut Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:105},
+  {name:'Overloaded Brownie',agency:'Progressive Cuisine',category:'Brownies',unit:'pcs',rate:87},
+  {name:'Assorted Box 8 Pcs',agency:'Progressive Cuisine',category:'Assorted Boxes',unit:'pcs',rate:350},
+  {name:'Assorted Box 3 Pcs',agency:'Progressive Cuisine',category:'Assorted Boxes',unit:'pcs',rate:175},
+  {name:'Assorted Box 6 Pcs',agency:'Progressive Cuisine',category:'Assorted Boxes',unit:'pcs',rate:315},
+  {name:'Triple Chocolate Truffle Cake 1/2 KG',agency:'Progressive Cuisine',category:'Cakes',unit:'pcs',rate:347.5},
+  {name:'Chocolate Truffle Pastry Slice',agency:'Progressive Cuisine',category:'Pastry Slices',unit:'pcs',rate:62.5},
+  {name:'Tiramisu Pastry Slice',agency:'Progressive Cuisine',category:'Pastry Slices',unit:'pcs',rate:62.5},
+  {name:'Triple Chocolate Pastry Slice',agency:'Progressive Cuisine',category:'Pastry Slices',unit:'pcs',rate:67.5},
+  {name:'Butterscotch Pastry Slice',agency:'Progressive Cuisine',category:'Pastry Slices',unit:'pcs',rate:60},
+  {name:'Unsalted Butter Amul 500 gm',agency:'HYPERPURE',category:'Ingredients',unit:'pcs',rate:253},
+  {name:'Milk 1L',agency:'Fathima Agency',category:'Ingredients',unit:'pcs',rate:63},
+  {name:'Vanilla Extract 500 ml',agency:'PRK DECORK',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Sugar 50 Kg Bag',agency:'ARAVIND TRADERS',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Maida 10 Kg Bag',agency:'ARAVIND TRADERS',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Davidoff Coffee 100 gm',agency:'BALAJI FOODS',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Amul Fresh Cream 1 L',agency:'HYPERPURE',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Arla Cream Cheese 1.5 Kg',agency:'FORTUNE',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Tower Gel 1 kg',agency:'viveka essence',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Blueberry Filling 2.5 kg',agency:'BALAJI FOODS',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Amul Cream Cheese 1 kg',agency:'HYPERPURE',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Chocolate Egg Free Pre Mix 2.5 kg',agency:'BALAJI FOODS',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Vanilla Egg Free Pre Mix 2.5 kg',agency:'BALAJI FOODS',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Dry Yeast 500 gm',agency:'viveka essence',category:'Ingredients',unit:'pcs',rate:399},
+  {name:'Brown Sugar 1 kg',agency:'BALAJI FOODS',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Whipped Cream Star 1 Kg',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'KG',rate:135},
+  {name:'Caramel Topping 1.3kg',agency:'JSR PAPER PRODUCTS',category:'Ingredients',unit:'pcs',rate:246},
+  {name:'Baking Powder 1 kg',agency:'ARAVIND TRADERS',category:'Ingredients',unit:'pcs',rate:180},
+  {name:'Muffin Cup 1000 pcs',agency:'viveka essence',category:'Accessories',unit:'pcs',rate:265},
+  {name:'Natural Red Colouring',agency:'viveka essence',category:'Ingredients',unit:'pcs',rate:395},
+  {name:'Disposable Piping Bag Medium',agency:'viveka essence',category:'Accessories',unit:'pcs',rate:110},
+  {name:'Gelatin 1 kg',agency:'viveka essence',category:'Ingredients',unit:'pcs',rate:750},
+  {name:'Ferrero Rocher 1 pc',agency:'HYPERPURE',category:'Ingredients',unit:'pcs',rate:24},
+  {name:'Biscoff Bottle',agency:'supercart',category:'Ingredients',unit:'pcs',rate:450},
+  {name:'Chocolate Syrup Bottle',agency:'deepak agencies',category:'Ingredients',unit:'pcs',rate:125},
+  {name:'Cashew 1 kg',agency:'SANTHI & COMPANY',category:'Ingredients',unit:'kg',rate:700},
+  {name:'Refined Sunflower Oil',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:155},
+  {name:'Choco Filling Dark Tub',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:430},
+  {name:'Choco Filling Milk Tub',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:349},
+  {name:'Choco Filling White Tub',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:326.67},
+  {name:'Choco Filling Hazelnut',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:620},
+  {name:'Choco Filling Caramel Tub',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:326.67},
+  {name:'Choco Filling Butterscotch Tub',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:460},
+  {name:'Butterscotch Chips 1 kg',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:250},
+  {name:'Irish Cream Syrup Bottle',agency:'SHREE AGENCIES',category:'Ingredients',unit:'pcs',rate:425},
+  {name:'Vanilla Syrup Bottle',agency:'SHREE AGENCIES',category:'Ingredients',unit:'pcs',rate:425},
+  {name:'Blue Ocean Syrup Bottle',agency:'SHREE AGENCIES',category:'Ingredients',unit:'pcs',rate:425},
+  {name:'Caramel Syrup Bottle',agency:'SHREE AGENCIES',category:'Ingredients',unit:'pcs',rate:425},
+  {name:'Hazelnut Syrup',agency:'SHREE AGENCIES',category:'Ingredients',unit:'pcs',rate:425},
+  {name:'Garbage Bag XL',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:75},
+  {name:'Blue Hand Gloves box',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:354},
+  {name:'Bio Cling Wrap Roll',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:500},
+  {name:'Candle box',agency:'AAK CANDLES',category:'Accessories',unit:'pcs',rate:360},
+  {name:'Printed Brown Cover',agency:'VERDE PACKAGING',category:'Accessories',unit:'pcs',rate:5},
+  {name:'Wooden Spoon',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:65},
+  {name:'Wooden Knife',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:55},
+  {name:'1 pc BH Box',agency:'VERDE PACKAGING',category:'Accessories',unit:'pcs',rate:4.5},
+  {name:'2 pc BH Box',agency:'VERDE PACKAGING',category:'Accessories',unit:'pcs',rate:6},
+  {name:'6 pc BH Box',agency:'VERDE PACKAGING',category:'Accessories',unit:'pcs',rate:5.3},
+  {name:'Bill Roll Big',agency:'MANGALA AGENCIES',category:'Accessories',unit:'pcs',rate:55},
+  {name:'Bill Roll Small',agency:'MANGALA AGENCIES',category:'Accessories',unit:'pcs',rate:30},
+  {name:'100 ml Container',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:2.75},
+  {name:'250 ml Container',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:4},
+  {name:'650 ml Container',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:7},
+  {name:'Butter Cookie Box',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:7},
+  {name:'Paper Straw',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:50},
+  {name:'BH Sticker Sheet',agency:'SHINE PRINTS',category:'Accessories',unit:'pcs',rate:30},
+  {name:'Bento Box Small',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:10},
+  {name:'Plastic Tub',agency:'NATRAAJ',category:'Accessories',unit:'pcs',rate:19},
+  {name:'Cake Box 1 kg',agency:'VERDE PACKAGING',category:'Accessories',unit:'pcs',rate:22},
+  {name:'Cake Bag 1 kg',agency:'VERDE PACKAGING',category:'Accessories',unit:'pcs',rate:20},
+  {name:'Hairnet Packet',agency:'TAHERI TRADERS',category:'Accessories',unit:'pcs',rate:38},
+  {name:'Cleaning Cloth',agency:'S.G.HYGIENE',category:'Accessories',unit:'pcs',rate:12},
+  {name:'Shake Bottle 300 ml',agency:'UNICORN',category:'Accessories',unit:'pcs',rate:16},
+  {name:'Jar 350 ml',agency:'UNICORN',category:'Accessories',unit:'pcs',rate:6},
+  {name:'Jar 190 ml',agency:'HINDUSTAN',category:'Accessories',unit:'pcs',rate:12},
+  {name:'Soap oil 500 ml',agency:'S.G.HYGIENE',category:'Accessories',unit:'pcs',rate:35},
+  {name:'Broom',agency:'S.G.HYGIENE',category:'Accessories',unit:'pcs',rate:120},
+  {name:'Mop',agency:'S.G.HYGIENE',category:'Accessories',unit:'pcs',rate:140},
+  {name:'Floor Cleaner',agency:'HYPERPURE',category:'Accessories',unit:'pcs',rate:350},
+  {name:'Glass Cleaner',agency:'HYPERPURE',category:'Accessories',unit:'pcs',rate:350},
+  {name:'Walnut 250 gm',agency:'SANTHI & COMPANY',category:'Ingredients',unit:'pcs',rate:309.52},
+  {name:'White C 500 gm',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Milk C 500 gm',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Cocoa Powder 25 KG',agency:'NUTAN INDUSTRIES',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Rich Dark C 500 gm',agency:'supercart',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Couverture Dark C 1 kg',agency:'supercart',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Couverture White C 1 kg',agency:'supercart',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Couverture Milk C 1 Kg',agency:'supercart',category:'Ingredients',unit:'pcs',rate:0},
+  {name:'Kitkat 3F',agency:'supercart',category:'Ingredients',unit:'pcs',rate:18},
+];
+
+let purchaseRows = [{id:1,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
+let purchaseRowId = 1;
+
+function renderPurchase(){
+  const today = new Date().toISOString().split('T')[0];
+  const ma = document.getElementById('main-area');
+  ma.innerHTML = `
+  <div style="max-width:900px;margin:0 auto;padding:16px">
+    <h2 style="color:#6B2400;margin-bottom:16px">🛒 Purchase Entry</h2>
+
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <label style="font-size:12px;color:#888">Date</label><br>
+        <input type="date" id="pur-date" value="${today}" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+      </div>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:#6B2400;color:white">
+          <th style="padding:10px;text-align:left;width:28%">Product</th>
+          <th style="padding:10px;text-align:left;width:15%">Agency</th>
+          <th style="padding:10px;text-align:left;width:10%">Category</th>
+          <th style="padding:10px;text-align:center;width:8%">Qty</th>
+          <th style="padding:10px;text-align:center;width:7%">Unit</th>
+          <th style="padding:10px;text-align:center;width:9%">Rate (₹)</th>
+          <th style="padding:10px;text-align:center;width:7%">GST %</th>
+          <th style="padding:10px;text-align:center;width:10%">Amount (₹)</th>
+          <th style="padding:10px;width:6%"></th>
+        </tr>
+      </thead>
+      <tbody id="pur-rows"></tbody>
+      <tfoot>
+        <tr style="background:#f9f5f2">
+          <td colspan="7" style="padding:10px;font-weight:600;text-align:right">Grand Total</td>
+          <td style="padding:10px;font-weight:700;color:#6B2400;text-align:center" id="pur-grand-total">₹0.00</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div style="margin-top:12px;display:flex;gap:10px">
+      <button onclick="addPurchaseRow()" style="padding:8px 18px;background:#f0f0f0;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:13px">+ Add Item</button>
+      <button onclick="savePurchase()" style="padding:8px 24px;background:#6B2400;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">💾 Save Bill</button>
+    </div>
+
+    <hr style="margin:28px 0;border-color:#eee">
+
+    <h3 style="color:#6B2400;margin-bottom:12px">📋 Purchase History</h3>
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <input type="month" id="pur-filter-month" value="${today.slice(0,7)}" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
+      <select id="pur-filter-agency" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
+        <option value="">All Agencies</option>
+        ${[...new Set(PURCHASE_PRODUCTS.map(p=>p.agency))].sort().map(a=>`<option value="${a}">${a}</option>`).join('')}
+      </select>
+    </div>
+    <div id="pur-history">Loading...</div>
+  </div>`;
+
+  renderPurchaseRows();
+  loadPurchaseHistory();
 }
 
+function renderPurchaseRows(){
+  const tbody = document.getElementById('pur-rows');
+  if(!tbody) return;
+  tbody.innerHTML = purchaseRows.map(r=>`
+    <tr id="purrow-${r.id}" style="border-bottom:1px solid #eee">
+      <td style="padding:6px">
+        <select onchange="onPurchaseProductSelect(${r.id},this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
+          <option value="">-- Select Product --</option>
+          ${PURCHASE_PRODUCTS.map(p=>`<option value="${p.name}" ${r.product===p.name?'selected':''}>${p.name}</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:6px"><input value="${r.agency}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
+      <td style="padding:6px"><input value="${r.category}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
+      <td style="padding:6px"><input type="number" value="${r.qty}" min="0" onchange="onPurchaseFieldChange(${r.id},'qty',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
+      <td style="padding:6px"><input value="${r.unit}" onchange="onPurchaseFieldChange(${r.id},'unit',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
+      <td style="padding:6px"><input type="number" value="${r.rate}" onchange="onPurchaseFieldChange(${r.id},'rate',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
+      <td style="padding:6px">
+        <select onchange="onPurchaseFieldChange(${r.id},'gst',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
+          ${[0,5,12,18].map(g=>`<option value="${g}" ${r.gst==g?'selected':''}>${g}%</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:6px;text-align:center;font-weight:600;color:#6B2400">₹${(r.amount||0).toFixed(2)}</td>
+      <td style="padding:6px;text-align:center">
+        <button onclick="removePurchaseRow(${r.id})" style="background:#fee;border:1px solid #fcc;border-radius:4px;padding:4px 8px;cursor:pointer;color:#c00;font-size:12px">✕</button>
+      </td>
+    </tr>`).join('');
+  updatePurchaseTotal();
+}
+
+function onPurchaseProductSelect(id, productName){
+  const p = PURCHASE_PRODUCTS.find(x=>x.name===productName);
+  const r = purchaseRows.find(x=>x.id===id);
+  if(!r) return;
+  r.product = productName;
+  r.agency = p ? p.agency : '';
+  r.category = p ? p.category : '';
+  r.unit = p ? p.unit : '';
+  r.rate = p ? p.rate : 0;
+  calcPurchaseRowAmount(r);
+  renderPurchaseRows();
+}
+
+function onPurchaseFieldChange(id, field, value){
+  const r = purchaseRows.find(x=>x.id===id);
+  if(!r) return;
+  r[field] = field==='gst' ? Number(value) : (field==='qty'||field==='rate' ? parseFloat(value)||0 : value);
+  calcPurchaseRowAmount(r);
+  updatePurchaseTotal();
+  renderPurchaseRows();
+}
+
+function calcPurchaseRowAmount(r){
+  const base = (r.qty||0) * (r.rate||0);
+  const gstAmt = base * (r.gst||0) / 100;
+  r.amount = base + gstAmt;
+}
+
+function updatePurchaseTotal(){
+  const total = purchaseRows.reduce((s,r)=>s+(r.amount||0),0);
+  const el = document.getElementById('pur-grand-total');
+  if(el) el.textContent = '₹'+total.toFixed(2);
+}
+
+function addPurchaseRow(){
+  purchaseRowId++;
+  purchaseRows.push({id:purchaseRowId,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0});
+  renderPurchaseRows();
+}
+
+function removePurchaseRow(id){
+  if(purchaseRows.length===1){alert('At least one item required');return;}
+  purchaseRows = purchaseRows.filter(r=>r.id!==id);
+  renderPurchaseRows();
+}
+
+async function savePurchase(){
+  const date = document.getElementById('pur-date').value;
+  if(!date){alert('Please select a date');return;}
+  const valid = purchaseRows.filter(r=>r.product && r.qty>0);
+  if(!valid.length){alert('Please add at least one product with quantity');return;}
+
+  const rows = valid.map(r=>({
+    date, agency:r.agency, product:r.product, category:r.category,
+    qty:r.qty, unit:r.unit, rate:r.rate,
+    gst_percent:r.gst,
+    gst_amount: (r.qty*r.rate*r.gst/100),
+    amount:r.amount
+  }));
+
+  const res = await fetch(`${SUPA_URL}/rest/v1/purchase_ledger`,{
+    method:'POST',
+    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify(rows)
+  });
+
+  if(res.ok){
+    alert('✅ Purchase bill saved!');
+    purchaseRows = [{id:1,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
+    purchaseRowId = 1;
+    renderPurchase();
+  } else {
+    alert('❌ Error saving. Please try again.');
+  }
+}
+
+async function loadPurchaseHistory(){
+  const month = document.getElementById('pur-filter-month')?.value;
+  const agency = document.getElementById('pur-filter-agency')?.value;
+  const el = document.getElementById('pur-history');
+  if(!el) return;
+
+  let url = `${SUPA_URL}/rest/v1/purchase_ledger?order=date.desc,agency.asc`;
+  if(month){ url += `&date=gte.${month}-01&date=lte.${month}-31`; }
+  if(agency){ url += `&agency=eq.${encodeURIComponent(agency)}`; }
+
+  const res = await fetch(url,{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+  const data = await res.json();
+
+  if(!data.length){ el.innerHTML='<p style="color:#999;font-size:13px">No purchases found.</p>'; return; }
+
+  // Group by date + agency
+  const groups = {};
+  data.forEach(r=>{
+    const key = r.date+'|'+r.agency;
+    if(!groups[key]) groups[key]={date:r.date,agency:r.agency,items:[],total:0};
+    groups[key].items.push(r);
+    groups[key].total += r.amount;
+  });
+
+  el.innerHTML = Object.values(groups).map(g=>`
+    <div style="border:1px solid #eee;border-radius:8px;margin-bottom:12px;overflow:hidden">
+      <div style="background:#f9f5f2;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span style="font-weight:600;color:#6B2400">${g.agency}</span>
+          <span style="font-size:12px;color:#999;margin-left:10px">${g.date}</span>
+        </div>
+        <span style="font-weight:700;color:#6B2400">₹${g.total.toFixed(2)}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#fafafa">
+          <th style="padding:6px 10px;text-align:left">Product</th>
+          <th style="padding:6px;text-align:center">Qty</th>
+          <th style="padding:6px;text-align:center">Unit</th>
+          <th style="padding:6px;text-align:center">Rate</th>
+          <th style="padding:6px;text-align:center">GST%</th>
+          <th style="padding:6px;text-align:center">GST Amt</th>
+          <th style="padding:6px;text-align:center">Amount</th>
+        </tr></thead>
+        <tbody>
+          ${g.items.map(i=>`<tr style="border-top:1px solid #f0f0f0">
+            <td style="padding:6px 10px">${i.product} <span style="color:#bbb;font-size:11px">(${i.category})</span></td>
+            <td style="padding:6px;text-align:center">${i.qty}</td>
+            <td style="padding:6px;text-align:center">${i.unit}</td>
+            <td style="padding:6px;text-align:center">₹${Number(i.rate).toFixed(2)}</td>
+            <td style="padding:6px;text-align:center">${i.gst_percent}%</td>
+            <td style="padding:6px;text-align:center">₹${Number(i.gst_amount).toFixed(2)}</td>
+            <td style="padding:6px;text-align:center;font-weight:600">₹${Number(i.amount).toFixed(2)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`).join('');
+}
+// ── END PURCHASE ──────────────────────────────────────────────────────────────
 // ── PIN ──────────────────────────────────────────────────────────────────────
 function renderPin() {
   setHdr('Stock Management', false);
