@@ -505,8 +505,7 @@ function renderShift() {
       <div class="field"><label>Shift</label>
         <div class="shift-grid">
           <button class="shift-btn ${S.shift==='morning'?'sel':''}" onclick="selShift('morning')">Morning<div class="st">9:30 AM – 6:30 PM</div></button>
-          <button class="shift-btn ${S.shift==='evening'?'sel':''}" onclick="selShift('evening')">Evening<div class="st">2:30 PM – 11:00 PM</div></button>
-          <button class="shift-btn ${S.shift==='night'?'sel':''}" onclick="selShift('night')">Night<div class="st">6:30 PM – 3:00 AM</div></button>
+          <button class="shift-btn ${S.shift==='night'?'sel':''}" onclick="selShift('night')">Night<div class="st">6:00 PM – 3:00 AM</div></button>
         </div>
       </div>
       <button class="btn btn-p" id="cbtn" onclick="goStock()" ${!S.shift||!S.staffName?'disabled':''}>Continue to stock entry →</button>
@@ -828,11 +827,12 @@ async function renderDispatch() {
 
 // ── OVERVIEW ──────────────────────────────────────────────────────────────────
 async function renderOverview() {
+  if(!window._overviewDate) window._overviewDate = new Date().toISOString().split('T')[0];
   setHdr('Dashboard', true);
   showLoading("Loading today's data...");
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const ym = today.slice(0, 7);
+    const today = window._overviewDate || new Date().toISOString().split('T')[0];
+    const ym = window._overviewMonth || today.slice(0, 7);
     const [y, m] = ym.split('-');
     const lastDay = new Date(+y, +m, 0).getDate();
     const monthStart = `${ym}-01`;
@@ -909,7 +909,10 @@ async function renderOverview() {
 
       <!-- TODAY REVENUE CARD -->
       <div class="card" style="margin-bottom:12px">
-        <div class="card-title">💰 Today's Revenue — ${new Date().toLocaleDateString('en-GB')}</div>
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>💰 Today's Revenue — ${new Date(today).toLocaleDateString('en-GB')}</span>
+        <input type="date" value="${today}" max="${today}" onchange="window._overviewDate=this.value;renderOverview()" style="font-size:12px;padding:3px 6px;border-radius:6px;border:.5px solid var(--border2);font-family:var(--font);cursor:pointer;color:var(--txt2)">
+       </div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
             <span style="color:var(--txt2)">Supply Ledger</span>
@@ -932,7 +935,10 @@ async function renderOverview() {
 
       <!-- THIS MONTH REVENUE CARD -->
       <div class="card" style="margin-bottom:12px">
-        <div class="card-title">📅 ${monthLabel} Revenue</div>
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>📅 ${monthLabel} Revenue</span>
+        <input type="month" value="${ym}" onchange="window._overviewMonth=this.value;renderOverview()" style="font-size:12px;padding:3px 6px;border-radius:6px;border:.5px solid var(--border2);font-family:var(--font);cursor:pointer;color:var(--txt2)">
+       </div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
             <span style="color:var(--txt2)">Supply Ledger</span>
