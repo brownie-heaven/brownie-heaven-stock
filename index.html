@@ -737,9 +737,9 @@ async function savePurchase(){
     amount:r.amount
   }));
 
-  const res = await fetch(`${SUPA_URL}/rest/v1/purchase_ledger`,{
+  const res = await fetch(`${SB_URL}/rest/v1/purchase_ledger`
     method:'POST',
-    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
     body:JSON.stringify(rows)
   });
 
@@ -759,11 +759,11 @@ async function loadPurchaseHistory(){
   const el = document.getElementById('pur-history');
   if(!el) return;
 
-  let url = `${SUPA_URL}/rest/v1/purchase_ledger?order=date.desc,agency.asc`;
+  `${SB_URL}/rest/v1/purchase_ledger?order=date.desc,agency.asc`
   if(month){ url += `&date=gte.${month}-01&date=lte.${month}-31`; }
   if(agency){ url += `&agency=eq.${encodeURIComponent(agency)}`; }
 
-  const res = await fetch(url,{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
+  const res = await fetch(url,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
   const data = await res.json();
 
   if(!data.length){ el.innerHTML='<p style="color:#999;font-size:13px">No purchases found.</p>'; return; }
