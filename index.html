@@ -451,8 +451,7 @@ function goHome() {
 function setTab(i) {
   if(S.role==='admin' && i===1) return;
   S.mainTab = i;
- setHdr('Dashboard', true);
-document.getElementById('main-area').innerHTML = '';
+setHdr('Dashboard', true);
   if(S.role==='dispatch'){
   if(i===1) renderProduction();
   else if(i===2) renderDispatch();
@@ -591,7 +590,7 @@ let purchaseRowId = 1;
 
 function renderPurchase(){
   const today = new Date().toISOString().split('T')[0];
-  const ma = document.getElementById('main-area');
+  const ma = document.getElementById('screen');
   ma.innerHTML = `
   <div style="max-width:900px;margin:0 auto;padding:16px">
     <h2 style="color:#6B2400;margin-bottom:16px">🛒 Purchase Entry</h2>
