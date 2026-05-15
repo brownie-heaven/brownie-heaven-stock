@@ -451,7 +451,8 @@ function goHome() {
 function setTab(i) {
   if(S.role==='admin' && i===1) return;
   S.mainTab = i;
-  setHdr('Dashboard', true);
+ setHdr('Dashboard', true);
+document.getElementById('main-area').innerHTML = '';
   if(S.role==='dispatch'){
   if(i===1) renderProduction();
   else if(i===2) renderDispatch();
