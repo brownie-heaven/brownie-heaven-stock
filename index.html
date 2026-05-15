@@ -505,8 +505,7 @@ function renderShift() {
       <div class="field"><label>Shift</label>
         <div class="shift-grid">
           <button class="shift-btn ${S.shift==='morning'?'sel':''}" onclick="selShift('morning')">Morning<div class="st">9:30 AM – 6:30 PM</div></button>
-          <button class="shift-btn ${S.shift==='evening'?'sel':''}" onclick="selShift('evening')">Evening<div class="st">2:30 PM – 11:00 PM</div></button>
-          <button class="shift-btn ${S.shift==='night'?'sel':''}" onclick="selShift('night')">Night<div class="st">6:30 PM – 3:00 AM</div></button>
+          <button class="shift-btn ${S.shift==='night'?'sel':''}" onclick="selShift('night')">Night<div class="st">6:00 PM – 3:00 AM</div></button>
         </div>
       </div>
       <button class="btn btn-p" id="cbtn" onclick="goStock()" ${!S.shift||!S.staffName?'disabled':''}>Continue to stock entry →</button>
