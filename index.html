@@ -759,7 +759,7 @@ async function loadPurchaseHistory(){
   const el = document.getElementById('pur-history');
   if(!el) return;
 
-  `${SB_URL}/rest/v1/purchase_ledger?order=date.desc,agency.asc`
+  let url = `${SB_URL}/rest/v1/purchase_ledger?order=date.desc,agency.asc`;
   if(month){ url += `&date=gte.${month}-01&date=lte.${month}-31`; }
   if(agency){ url += `&agency=eq.${encodeURIComponent(agency)}`; }
 
