@@ -737,11 +737,11 @@ async function savePurchase(){
     amount:r.amount
   }));
 
-  const res = await fetch(`${SB_URL}/rest/v1/purchase_ledger`
+const res = await fetch(`${SB_URL}/rest/v1/purchase_ledger`,{
     method:'POST',
     headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
     body:JSON.stringify(rows)
-  });
+});
 
   if(res.ok){
     alert('✅ Purchase bill saved!');
