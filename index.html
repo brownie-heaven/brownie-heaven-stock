@@ -418,7 +418,7 @@ function setHdr(sub, showTabs) {
 if(S.role==='dispatch' && document.getElementById('mt2')) document.getElementById('mt2').textContent='Dispatch';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
- ['mt0','mt1','mt2','mt3','mt4','mt5','mt6'].forEach((id,i) => {
+ ['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7'].forEach((id,i) => {
   const el = document.getElementById(id);
   if(S.role==='dispatch') {
     el.style.display = (i===1||i===2) ? '' : 'none';
