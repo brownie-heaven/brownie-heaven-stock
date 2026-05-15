@@ -787,7 +787,20 @@ function renderSuccess() {
     <button class="btn btn-p" style="max-width:220px;margin:16px auto 0" onclick="goHome()">🏠 Back to Home</button>
   </div>`;
 }
-
+function downloadDispatch() {
+  const table = document.querySelector('.dtbl');
+  if(!table) return;
+  let csv = '';
+  table.querySelectorAll('tr').forEach(row => {
+    const cells = Array.from(row.querySelectorAll('th,td')).map(c => '"'+c.innerText.replace(/"/g,'""')+'"');
+    csv += cells.join(',') + '\n';
+  });
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `dispatch_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
 // ── DISPATCH ──────────────────────────────────────────────────────────────────
 async function renderDispatch() {
   showLoading('Loading dispatch data...');
@@ -867,6 +880,7 @@ async function renderDispatch() {
     <div style="margin-top:14px">
       <button class="btn btn-s" style="width:auto;padding:7px 14px;margin-bottom:12px;display:inline-flex;align-items:center;gap:6px" onclick="goHome()">← Home</button>
       <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="window.print()">🖨 Print</button>
+      <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="downloadDispatch()">⬇️ Download Excel</button>
       <div class="card">
         <div class="card-title">📦 Dispatch Sheet — ${today} (${dayType})</div>
         <p style="font-size:12px;color:var(--txt2);margin-bottom:12px">Based on last night's closing stock vs ${dayType} par stock. Highlighted = needs dispatch.</p>
