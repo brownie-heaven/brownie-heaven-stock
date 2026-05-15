@@ -593,11 +593,9 @@ function renderStock() {
          ${S.shift==='night'?`<div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"></div><div class="fg"><label style="color:var(--red)">Wastage</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"></div>`:''}
         <div class="fg"><label>Closing</label><input id="cl_${cat.id}_${p.id}" class="cl" type="number" value="${cl||''}" readonly></div>
       </div>
-      <div class="sales-lbl">Sales</div>
-      <div class="g3">
-        <div class="fg"><label style="color:var(--brown)">Dine-in</label><input type="number" min="0" value="${d.dineIn||''}" placeholder="0" oninput="setStock('${cat.id}',${p.id},'dineIn',this.value)" style="border-color:var(--brown)"></div>
-        <div class="fg"><label style="color:#E07000">Swiggy</label><input type="number" min="0" value="${d.swiggy||''}" placeholder="0" oninput="setStock('${cat.id}',${p.id},'swiggy',this.value)" style="border-color:#E07000"></div>
-        <div class="fg"><label style="color:#D92B3A">Zomato</label><input type="number" min="0" value="${d.zomato||''}" placeholder="0" oninput="setStock('${cat.id}',${p.id},'zomato',this.value)" style="border-color:#D92B3A"></div>
+      <div class="sales-lbl">Dine-in + Online</div>
+      <div class="g1">
+       <div class="fg"><input type="number" min="0" value="${(+d.dineIn||0)+(+d.swiggy||0)+(+d.zomato||0)||''}" placeholder="0" oninput="setStock('${cat.id}','${p.id}','dineIn',this.value);setStock('${cat.id}','${p.id}','swiggy','0');setStock('${cat.id}','${p.id}','zomato','0')"></div>
       </div>
     </div>`;
   }).join('');
