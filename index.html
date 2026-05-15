@@ -842,7 +842,7 @@ async function renderDispatch() {
         const cells = outletList.map(outletId => {
           const cl = (closing[outletId] && closing[outletId][p.id] !== undefined) ? closing[outletId][p.id] : null;
           const parVal = (par[outletId] && par[outletId][p.id] !== undefined) ? par[outletId][p.id] : 0;
-          const toSend = cl !== null ? Math.max(0, parVal - cl) : parVal;
+          const toSend = cl !== null ? Math.max(0, parVal - cl) : 0;
           if(toSend > 0) hasDispatch = true;
           const bg = toSend > 0 ? '#fff3cd' : 'transparent';
           const color = toSend > 0 ? 'var(--brown)' : 'var(--txt3)';
