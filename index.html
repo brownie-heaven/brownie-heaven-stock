@@ -423,7 +423,7 @@ if(S.role==='dispatch' && document.getElementById('mt2')) document.getElementByI
     el.style.display = (i===1||i===2) ? '' : 'none';
    el.classList.toggle('active', i===1 ? S.mainTab===1 : S.mainTab===2);
   } else {
-    el.style.display = '';
+   el.style.display = (i===1) ? 'none' : '';
     el.classList.toggle('active', i === S.mainTab);
   }
 });
