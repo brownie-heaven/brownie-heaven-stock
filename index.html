@@ -1073,136 +1073,406 @@ async function renderOverview() {
 }
 
 // ── PRODUCTION (paper format) ────────────────────────────────────────────────
+
+// Kitchen-level par stock (weekday | weekend) — from your sheets
+const KITCHEN_PAR = {
+  // ── BROWNIES ──
+  'Classic Brownie':                  {wd:96,  we:112},
+  'Roasted Nuts Brownie':             {wd:24,  we:24},
+  'Choco Hazelnut Spread Brownie':    {wd:40,  we:48},
+  'Triple Chocolate Brownie':         {wd:40,  we:48},
+  'Red Velvet Brownie':               {wd:16,  we:16},
+  'White Chocolate Brownie':          {wd:24,  we:32},
+  'Caramel Fudge Brownie':            {wd:16,  we:16},
+  'Oreo Brownie':                     {wd:8,   we:8},
+  'Walnut Brownie':                   {wd:8,   we:8},
+  'Overloaded Brownie':               {wd:32,  we:40},
+  'Eggless Classic Brownie':          {wd:32,  we:32},
+  'Eggless Roasted Nuts Brownie':     {wd:16,  we:16},
+  'Eggless Triple Chocolate Brownie': {wd:16,  we:16},
+  'Indulgence Box – 8 Pcs':           {wd:16,  we:16},
+  'Assorted Box 6 Pcs':               {wd:15,  we:30},
+  'Assorted Box 3 Pcs':               {wd:60,  we:90},
+  'Choco Lava':                       {wd:36,  we:36},
+  // ── CAKES 1/2kg ──
+  'Chocolate Truffle 1/2kg':          {wd:48,  we:50},
+  'Overloaded Cake 750g':             {wd:22,  we:24},
+  'Tiramisu 1/2kg':                   {wd:20,  we:22},
+  'Triple Chocolate Truffle 1/2kg':   {wd:6,   we:8},
+  'Butterscotch 1/2kg':               {wd:22,  we:24},
+  'Biscoff Cake 1/2kg':               {wd:14,  we:16},
+  'Hazelnut Truffle 1/2kg':           {wd:10,  we:12},
+  'Fresh Cream Chocolate 1/2kg':      {wd:8,   we:10},
+  'Red Velvet 1/2kg':                 {wd:4,   we:6},
+  'BH Signature Chocolate 1/2kg':     {wd:20,  we:20},
+  'Pink Rose Strawberry 850g':        {wd:8,   we:10},
+  'Fresh Cream Pineapple 1/2kg':      {wd:3,   we:5},
+  // ── CAKES 1kg ──
+  'Chocolate Truffle Cake 1kg':       {wd:8,   we:8},
+  'Tiramisu Cake 1kg':                {wd:6,   we:8},
+  'Butterscotch Cake 1kg':            {wd:3,   we:4},
+  'BH Signature Chocolate Cake 1kg':  {wd:6,   we:8},
+  // ── PASTRY SLICES ──
+  'Chocolate Truffle Pastry Slice':         {wd:45, we:45},
+  'Tiramisu Pastry Slice':                  {wd:30, we:30},
+  'Triple Choc Truffle Pastry Slice':       {wd:30, we:30},
+  'Butterscotch Pastry Slice':              {wd:15, we:15},
+  'Biscoff Pastry Slice':                   {wd:15, we:15},
+  'Caramelised White Chocolate Pastry Slice':{wd:15, we:15},
+  // ── CHEESECAKES ──
+  'Blueberry Cheesecake Piece':       {wd:4,  we:5},
+  'Biscoff Cheesecake Piece':         {wd:5,  we:6},
+  // ── TUBS ──
+  'Brooklyn Blackout Tub':            {wd:6,  we:8},
+  'Tiramisu Tub':                     {wd:8,  we:12},
+};
+
+function getKitchenPar(productName) {
+  const p = KITCHEN_PAR[productName];
+  if (!p) return null;
+  return isWeekend() ? p.we : p.wd;
+}
+
 async function renderProduction() {
   setHdr('Dashboard', true);
   showLoading('Loading production data...');
   try {
-    // Get yesterday night shift closing as morning stock — REAL entries only
     const yest = new Date(); yest.setDate(yest.getDate()-1);
     const yStr = yest.toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
-    const nightData = await sbGet('shift_entries',`?entry_date=eq.${yStr}&shift=eq.night&is_demo=eq.false&select=*,stock_lines(product_id,closing)`);
-    const morningStock = {};
-    nightData.forEach(e=>(e.stock_lines||[]).forEach(l=>{
-      morningStock[l.product_id]=(morningStock[l.product_id]||0)+(+l.closing||0);
-    }));
-    // Also check today closing for live balance — REAL entries only
-    const todayData = await sbGet('shift_entries',`?entry_date=eq.${today}&is_demo=eq.false&select=*,stock_lines(product_id,closing)`);
-    const todayClosing = {};
-    todayData.forEach(e=>(e.stock_lines||[]).forEach(l=>{
-      todayClosing[l.product_id]=(todayClosing[l.product_id]||0)+(+l.closing||0);
-    }));
-    // Dispatch = demand requests for today — only from real night shifts
-    const dispData = await sbGet('demand_requests',`?entry_date=eq.${today}&select=product_id,requested_qty`);
+
+    // Morning stock = yesterday night kitchen closing (from production_lists)
+    // Fall back to outlet closing if no production entry yet
+    let morningStock = {};
+
+    // Check production_lists for yesterday's closing stock
+    const prodYest = await sbGet('production_lists',
+      `?list_date=eq.${yStr}&select=product_id,closing_stock`);
+    if (prodYest.length > 0) {
+      prodYest.forEach(r => {
+        morningStock[r.product_id] = (morningStock[r.product_id]||0) + (+r.closing_stock||0);
+      });
+    } else {
+      // Fallback: yesterday night shift outlet closing (sum across outlets)
+      const nightData = await sbGet('shift_entries',
+        `?entry_date=eq.${yStr}&shift=eq.night&is_demo=eq.false&select=*,stock_lines(product_id,closing)`);
+      nightData.forEach(e => (e.stock_lines||[]).forEach(l => {
+        morningStock[l.product_id] = (morningStock[l.product_id]||0) + (+l.closing||0);
+      }));
+    }
+
+    // Dispatched today = demand requests for today
+    const dispData = await sbGet('demand_requests',
+      `?entry_date=eq.${today}&select=product_id,requested_qty`);
     const dispatched = {};
-    dispData.forEach(d=>{dispatched[d.product_id]=(dispatched[d.product_id]||0)+(+d.requested_qty||0);});
-    window._prodMorning = morningStock;
-    window._prodDisp = dispatched;
-    window._prodTodayClose = todayClosing;
+    dispData.forEach(d => {
+      dispatched[d.product_id] = (dispatched[d.product_id]||0) + (+d.requested_qty||0);
+    });
+
+    // Load any saved production data for today
+    const todayProd = await sbGet('production_lists',
+      `?list_date=eq.${today}&select=*`);
+    const savedProd = {};
+    todayProd.forEach(r => { savedProd[r.product_id] = r; });
+
+    window._prodMorning   = morningStock;
+    window._prodDisp      = dispatched;
+    window._prodSaved     = savedProd;
     renderProductionUI();
-  } catch(e){ console.warn(e); window._prodMorning={}; window._prodDisp={}; window._prodTodayClose={}; renderProductionUI(); }
+  } catch(e) {
+    console.warn(e);
+    window._prodMorning = {}; window._prodDisp = {}; window._prodSaved = {};
+    renderProductionUI();
+  }
 }
 
 function renderProductionUI() {
+  const isDispatch = S.role === 'dispatch';
+  const dayLabel = isWeekend() ? 'Weekend' : 'Weekday';
+
   const lists = [
-    {id:'cakes_pastry',label:'Cakes & Pastries',cats:['half_cakes','one_cakes','pastry','mini_cups']},
-    {id:'brownies_list',label:'Brownies',cats:['brownies','eggless','boxes']},
-    {id:'evening_list',label:'Evening Kitchen',cats:['medovik','eclair','tubs','cheesecake','special']}
+    {id:'cakes_pastry',  label:'Cakes & Pastries', cats:['half_cakes','one_cakes','pastry','cheesecake']},
+    {id:'brownies_list', label:'Brownies',          cats:['brownies','eggless','boxes']},
+    {id:'evening_list',  label:'Evening Kitchen',   cats:['medovik','eclair','tubs','special']}
   ];
-  const tabs = lists.map((l,i)=>`<button class="tab ${S.productionTab===i?'active':''}" onclick="S.productionTab=${i};renderProductionUI()">${l.label}</button>`).join('');
+
+  const tabs = lists.map((l,i) =>
+    `<button class="tab ${S.productionTab===i?'active':''}" onclick="S.productionTab=${i};renderProductionUI()">${l.label}</button>`
+  ).join('');
+
   const cur = lists[S.productionTab];
-  const prods = DB.products.filter(p=>cur.cats.includes(p.category_id)&&!DISCONTINUED.includes(p.name));
-  const morningStock = window._prodMorning||{};
-  const dispatched = window._prodDisp||{};
-  let lastCat='', tableRows='';
-  let gTotMs=0,gTotBal=0,gTotMake=0,gTotCl=0;
-  let cTotMs=0,cTotBal=0,cTotMake=0,cTotCl=0;
-  let prevCatId='';
-  prods.forEach((p,i)=>{
-    const pd=(S.productionData[cur.id]||{})[p.id]||{};
-    const ms = pd.morning!==undefined ? +pd.morning : (morningStock[p.id]||0);
-    const disp = dispatched[p.id]||0;
-    const bal = Math.max(0, ms-disp);
-    const tm = +pd.toMake||0;
-    const cl = bal+tm;
-    if(p.category_id!==lastCat){
-      if(lastCat){
-        tableRows+=`<tr class="ptotal"><td>Subtotal</td><td>${cTotMs}</td><td>${cTotBal}</td><td>${cTotMake}</td><td>${cTotCl}</td></tr>`;
-        cTotMs=0;cTotBal=0;cTotMake=0;cTotCl=0;
+  const prods = DB.products.filter(p =>
+    cur.cats.includes(p.category_id) && !DISCONTINUED.includes(p.name)
+  );
+
+  const morningStock = window._prodMorning || {};
+  const dispatched   = window._prodDisp    || {};
+  const savedProd    = window._prodSaved   || {};
+
+  let lastCat = '', tableRows = '';
+  let gTotMs=0, gTotBal=0, gTotMake=0, gTotCl=0;
+  let cTotMs=0, cTotBal=0, cTotMake=0, cTotCl=0;
+
+  prods.forEach(p => {
+    const pd = (S.productionData[cur.id]||{})[p.id] || {};
+    const saved = savedProd[p.id] || {};
+
+    // Morning stock: user override > saved in production_lists > auto from yesterday
+    const ms = pd.morning !== undefined
+      ? +pd.morning
+      : (saved.morning_stock !== undefined ? +saved.morning_stock : (morningStock[p.id]||0));
+
+    // Balance: user override (dispatch can edit) > auto calc
+    const autobal = Math.max(0, ms - (dispatched[p.id]||0));
+    const bal = pd.balance !== undefined ? +pd.balance : autobal;
+
+    // To Make: user override > par - balance > saved
+    const par = getKitchenPar(p.name);
+    const autoMake = par !== null ? Math.max(0, par - bal) : 0;
+    const tm = pd.toMake !== undefined
+      ? +pd.toMake
+      : (saved.production_qty !== undefined ? +saved.production_qty : autoMake);
+
+    // Closing = balance + to make
+    const cl = bal + tm;
+
+    if (p.category_id !== lastCat) {
+      if (lastCat) {
+        tableRows += `<tr class="ptotal"><td>Subtotal</td><td>${cTotMs}</td><td>${cTotBal}</td><td>${cTotMake}</td><td>${cTotCl}</td></tr>`;
+        cTotMs=0; cTotBal=0; cTotMake=0; cTotCl=0;
       }
-      tableRows+=`<tr class="pcat"><td colspan="5">${CAT_LABELS[p.category_id]}</td></tr>`;
-      lastCat=p.category_id;
+      tableRows += `<tr class="pcat"><td colspan="5">${CAT_LABELS[p.category_id]||p.category_id}</td></tr>`;
+      lastCat = p.category_id;
     }
-    cTotMs+=ms;cTotBal+=bal;cTotMake+=tm;cTotCl+=cl;
-    gTotMs+=ms;gTotBal+=bal;gTotMake+=tm;gTotCl+=cl;
-    tableRows+=`<tr>
-      <td>${p.name}</td>
-      <td><input type="number" min="0" value="${ms||''}" placeholder="0" oninput="setProdField('${cur.id}',${p.id},'morning',this.value,${disp})"></td>
-      <td id="pb_${cur.id}_${p.id}" style="font-family:var(--mono)">${bal||0}</td>
-      <td><input class="tomake" type="number" min="0" value="${tm||''}" placeholder="0" oninput="setProdField('${cur.id}',${p.id},'toMake',this.value,${disp})"></td>
-      <td id="pc_${cur.id}_${p.id}" style="font-family:var(--mono);color:var(--green);font-weight:600">${cl||0}</td>
+    cTotMs+=ms; cTotBal+=bal; cTotMake+=tm; cTotCl+=cl;
+    gTotMs+=ms; gTotBal+=bal; gTotMake+=tm; gTotCl+=cl;
+
+    // Par badge
+    const parBadge = par !== null
+      ? `<span style="font-size:9px;color:var(--brown);margin-left:4px;font-family:var(--mono)">(par:${par})</span>`
+      : '';
+
+    // Column editability
+    const msRo    = isDispatch ? ' readonly style="background:var(--bg);color:var(--txt2)"' : '';
+    const tomakeRo = isDispatch ? ' readonly style="background:var(--bg);color:var(--txt2)"' : '';
+
+    tableRows += `<tr>
+      <td>${p.name}${parBadge}</td>
+      <td><input type="number" min="0" value="${ms||''}" placeholder="0"
+          ${msRo} oninput="setProdField('${cur.id}',${p.id},'morning',this.value)"></td>
+      <td><input type="number" min="0" value="${bal||''}" placeholder="0"
+          ${!isDispatch?' readonly style="background:var(--bg);color:var(--txt2)"':''}
+          id="pb_${cur.id}_${p.id}"
+          oninput="setProdField('${cur.id}',${p.id},'balance',this.value)"></td>
+      <td><input class="tomake" type="number" min="0" value="${tm||''}" placeholder="0"
+          ${tomakeRo} id="ptm_${cur.id}_${p.id}"
+          oninput="setProdField('${cur.id}',${p.id},'toMake',this.value)"></td>
+      <td id="pc_${cur.id}_${p.id}"
+          style="font-family:var(--mono);color:var(--green);font-weight:600">${cl||0}</td>
     </tr>`;
   });
-  if(lastCat) tableRows+=`<tr class="ptotal"><td>Subtotal</td><td>${cTotMs}</td><td>${cTotBal}</td><td>${cTotMake}</td><td>${cTotCl}</td></tr>`;
-  tableRows+=`<tr class="ptotal" style="font-size:13px"><td><strong>GRAND TOTAL</strong></td><td><strong>${gTotMs}</strong></td><td><strong>${gTotBal}</strong></td><td><strong>${gTotMake}</strong></td><td><strong>${gTotCl}</strong></td></tr>`;
-  document.getElementById('screen').innerHTML=`
+
+  if (lastCat) {
+    tableRows += `<tr class="ptotal"><td>Subtotal</td><td>${cTotMs}</td><td>${cTotBal}</td><td>${cTotMake}</td><td>${cTotCl}</td></tr>`;
+  }
+  tableRows += `<tr class="ptotal" style="font-size:13px">
+    <td><strong>GRAND TOTAL</strong></td>
+    <td><strong>${gTotMs}</strong></td>
+    <td><strong>${gTotBal}</strong></td>
+    <td><strong>${gTotMake}</strong></td>
+    <td><strong>${gTotCl}</strong></td>
+  </tr>`;
+
+  const permNote = isDispatch
+    ? `<div class="demo-banner" style="background:var(--orange-pale);border-color:var(--orange)">
+        📦 Dispatch view — you can edit <strong>Balance Stock</strong> only.
+       </div>`
+    : '';
+
+  document.getElementById('screen').innerHTML = `
   <div style="margin-top:12px">
     <div class="tabs no-print">${tabs}</div>
     <div class="card">
       <div class="status-bar">
-        <div><div class="card-title" style="margin:0">${cur.label}</div><div style="font-size:11px;color:var(--txt3);margin-top:2px">${new Date().toLocaleDateString('en-GB')} · Brownie Heaven</div></div>
+        <div>
+          <div class="card-title" style="margin:0">${cur.label}</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:2px">
+            ${new Date().toLocaleDateString('en-GB')} · ${dayLabel} par stock active
+          </div>
+        </div>
       </div>
-      <p style="font-size:12px;color:var(--txt2);margin-bottom:10px">Morning Stock = yesterday closing. Balance = Morning minus dispatched. Edit To Make freely.</p>
+      ${permNote}
+      <p style="font-size:12px;color:var(--txt2);margin-bottom:10px">
+        Morning = yesterday's kitchen closing. Balance = Morning − dispatched.
+        To Make auto-fills from par stock. Edit any field as needed.
+      </p>
       <div class="ptbl-wrap">
         <table class="ptbl">
-          <thead><tr><th>Product</th><th>Morning<br>Stock</th><th>Balance<br>Stock</th><th>To Make</th><th>Closing<br>Stock</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Morning<br>Stock</th>
+              <th>Balance<br>Stock</th>
+              <th>To Make</th>
+              <th>Closing<br>Stock</th>
+            </tr>
+          </thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
+      ${!isDispatch ? `
       <div class="nav-row no-print" style="margin-top:14px">
-        <button class="btn btn-p" onclick="finaliseProduction('${cur.id}','${cur.label}')">✓ Finalise & Share</button>
-        <button class="btn btn-s" style="flex:0;padding:12px 16px;white-space:nowrap" onclick="window.print()">🖨️ Print</button>
-      </div>
+        <button class="btn btn-p" onclick="finaliseProduction('${cur.id}','${cur.label}')">
+          ✓ Save & Share
+        </button>
+        <button class="btn btn-s" style="flex:0;padding:12px 16px;white-space:nowrap"
+            onclick="window.print()">🖨️ Print</button>
+      </div>` : `
+      <div class="nav-row no-print" style="margin-top:14px">
+        <button class="btn btn-p" onclick="saveBalanceStock('${cur.id}')">
+          ✓ Save Balance Stock
+        </button>
+      </div>`}
     </div>
   </div>`;
 }
 
-function setProdField(listId,prodId,field,val,disp){
-  if(!S.productionData[listId]) S.productionData[listId]={};
-  if(!S.productionData[listId][prodId]) S.productionData[listId][prodId]={};
-  S.productionData[listId][prodId][field]=+val||0;
-  const pd=S.productionData[listId][prodId];
-  const ms=pd.morning!==undefined?pd.morning:((window._prodMorning||{})[prodId]||0);
-  const bal=Math.max(0,ms-(+disp||0));
-  const tm=pd.toMake||0;
-  const cl=bal+tm;
-  const bEl=document.getElementById(`pb_${listId}_${prodId}`);
-  const cEl=document.getElementById(`pc_${listId}_${prodId}`);
-  if(bEl) bEl.textContent=bal;
-  if(cEl) cEl.textContent=cl||0;
+function setProdField(listId, prodId, field, val) {
+  if (!S.productionData[listId]) S.productionData[listId] = {};
+  if (!S.productionData[listId][prodId]) S.productionData[listId][prodId] = {};
+  S.productionData[listId][prodId][field] = +val || 0;
+
+  const pd      = S.productionData[listId][prodId];
+  const saved   = (window._prodSaved||{})[prodId] || {};
+  const ms      = pd.morning !== undefined ? pd.morning
+                  : (saved.morning_stock !== undefined ? +saved.morning_stock
+                  : ((window._prodMorning||{})[prodId]||0));
+  const disp    = (window._prodDisp||{})[prodId] || 0;
+  const autobal = Math.max(0, ms - disp);
+  const bal     = pd.balance !== undefined ? pd.balance : autobal;
+  const par     = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
+  const autoMake= par !== null ? Math.max(0, par - bal) : 0;
+  const tm      = pd.toMake !== undefined ? pd.toMake : autoMake;
+  const cl      = bal + tm;
+
+  const bEl = document.getElementById(`pb_${listId}_${prodId}`);
+  const tmEl= document.getElementById(`ptm_${listId}_${prodId}`);
+  const cEl = document.getElementById(`pc_${listId}_${prodId}`);
+
+  // Update balance display only when morning changes (auto-recalc)
+  if (field === 'morning' && bEl && !S.productionData[listId][prodId].balance) {
+    bEl.value = autobal;
+    S.productionData[listId][prodId]._autobal = autobal;
+  }
+  // Update to-make display only when balance changes & toMake not manually set
+  if (field === 'balance' && tmEl && pd.toMake === undefined) {
+    const newPar = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
+    if (newPar !== null) tmEl.value = Math.max(0, newPar - (+val||0));
+  }
+  if (cEl) cEl.textContent = cl || 0;
 }
 
-// Keep old setProd for compatibility
-function setProd(listId,prodId,val){setProdField(listId,prodId,'toMake',val,0);}
+async function saveBalanceStock(listId) {
+  // Dispatch role: save balance stock adjustments
+  const today = new Date().toISOString().split('T')[0];
+  const entries = Object.entries(S.productionData[listId]||{})
+    .filter(([,d]) => d.balance !== undefined)
+    .map(([prodId, d]) => {
+      const saved = (window._prodSaved||{})[prodId] || {};
+      const ms = d.morning !== undefined ? d.morning
+                 : (saved.morning_stock !== undefined ? +saved.morning_stock
+                 : ((window._prodMorning||{})[prodId]||0));
+      const bal = d.balance;
+      const par = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
+      const tm = d.toMake !== undefined ? d.toMake : (par !== null ? Math.max(0, par-bal) : 0);
+      return {
+        list_date: today, list_type: listId,
+        product_id: parseInt(prodId),
+        morning_stock: ms,
+        balance_stock: bal,
+        production_qty: tm,
+        closing_stock: bal + tm,
+        created_by: 'dispatch'
+      };
+    });
+  if (!entries.length) { toast('No changes to save'); return; }
+  try {
+    // Upsert — delete existing for today+listId first
+    await sbDelete('production_lists',
+      `?list_date=eq.${today}&list_type=eq.${listId}`);
+    await sbPost('production_lists', entries);
+    toast('Balance stock saved ✓');
+    // Refresh saved data
+    const todayProd = await sbGet('production_lists',`?list_date=eq.${today}&select=*`);
+    window._prodSaved = {};
+    todayProd.forEach(r => { window._prodSaved[r.product_id] = r; });
+  } catch(e) { toast('Error: ' + e.message); }
+}
 
-async function finaliseProduction(listId,label){
-  const today=new Date().toISOString().split('T')[0];
-  const entries=Object.entries(S.productionData[listId]||{}).map(([prodId,d])=>({
-    list_date:today,list_type:listId,product_id:parseInt(prodId),
-    production_qty:+d.toMake||0,
-    balance_stock:Math.max(0,(+d.morning||0)-((window._prodDisp||{})[prodId]||0)),
-    closing_stock:(Math.max(0,(+d.morning||0)-((window._prodDisp||{})[prodId]||0)))+(+d.toMake||0)
-  }));
-  try{
-    if(entries.length) await sbPost('production_lists',entries);
-    toast(label+' list saved ✓');
-    if(confirm('Share on WhatsApp?')){
-      window.open('https://wa.me/?text='+encodeURIComponent('Brownie Heaven — '+label+' Production List\nDate: '+new Date().toLocaleDateString('en-GB')+'\nstock.brownieheaven.in'));
+async function finaliseProduction(listId, label) {
+  const today = new Date().toISOString().split('T')[0];
+  const morningStock = window._prodMorning || {};
+  const dispatched   = window._prodDisp    || {};
+  const savedProd    = window._prodSaved   || {};
+
+  const prods = DB.products.filter(p => {
+    const lists = {
+      cakes_pastry:  ['half_cakes','one_cakes','pastry','cheesecake'],
+      brownies_list: ['brownies','eggless','boxes'],
+      evening_list:  ['medovik','eclair','tubs','special']
+    };
+    return (lists[listId]||[]).includes(p.category_id) && !DISCONTINUED.includes(p.name);
+  });
+
+  const entries = prods.map(p => {
+    const pd   = (S.productionData[listId]||{})[p.id] || {};
+    const saved = savedProd[p.id] || {};
+    const ms   = pd.morning !== undefined ? pd.morning
+                 : (saved.morning_stock !== undefined ? +saved.morning_stock
+                 : (morningStock[p.id]||0));
+    const disp = dispatched[p.id]||0;
+    const bal  = pd.balance !== undefined ? pd.balance : Math.max(0, ms - disp);
+    const par  = getKitchenPar(p.name);
+    const tm   = pd.toMake !== undefined ? pd.toMake
+                 : (saved.production_qty !== undefined ? +saved.production_qty
+                 : (par !== null ? Math.max(0, par - bal) : 0));
+    return {
+      list_date: today, list_type: listId,
+      product_id: p.id,
+      morning_stock: ms,
+      balance_stock: bal,
+      production_qty: tm,
+      closing_stock: bal + tm,
+      created_by: 'admin'
+    };
+  }).filter(e => e.morning_stock > 0 || e.production_qty > 0 || e.balance_stock > 0);
+
+  try {
+    if (entries.length) {
+      await sbDelete('production_lists',
+        `?list_date=eq.${today}&list_type=eq.${listId}`);
+      await sbPost('production_lists', entries);
     }
-  }catch(e){toast('Error saving: '+e.message);}
+    toast(label + ' saved ✓');
+    if (confirm('Share on WhatsApp?')) {
+      const lines = entries
+        .filter(e => e.production_qty > 0)
+        .map(p => {
+          const prod = DB.products.find(pr => pr.id === p.product_id);
+          return `${prod?.name||'?'}: make ${p.production_qty} (bal ${p.balance_stock})`;
+        }).join('\n');
+      window.open('https://wa.me/?text=' + encodeURIComponent(
+        `*Brownie Heaven — ${label} Production*\n${new Date().toLocaleDateString('en-GB')} (${isWeekend()?'Weekend':'Weekday'})\n\n${lines}\n\nstock.brownieheaven.in`
+      ));
+    }
+    // Refresh
+    const todayProd = await sbGet('production_lists',`?list_date=eq.${today}&select=*`);
+    window._prodSaved = {};
+    todayProd.forEach(r => { window._prodSaved[r.product_id] = r; });
+  } catch(e) { toast('Error saving: ' + e.message); }
 }
 
-async function saveProduction(listId){finaliseProduction(listId,listId);}
+async function saveProduction(listId) { finaliseProduction(listId, listId); }
 
 // ── MONTHLY ───────────────────────────────────────────────────────────────────
 async function renderMonthly() {
