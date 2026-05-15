@@ -421,7 +421,7 @@ if(S.role==='dispatch' && document.getElementById('mt2')) document.getElementByI
   const el = document.getElementById(id);
   if(S.role==='dispatch') {
     el.style.display = (i===1||i===2) ? '' : 'none';
-    el.classList.toggle('active', i===1 ? S.mainTab===0 : S.mainTab===1);
+   el.classList.toggle('active', i===1 ? S.mainTab===1 : S.mainTab===2);
   } else {
     el.style.display = '';
     el.classList.toggle('active', i === S.mainTab);
@@ -450,11 +450,11 @@ function goHome() {
 function setTab(i) {
   S.mainTab = i;
   setHdr('Dashboard', true);
-  if(S.role==='dispatch'){
-    if(i===0) renderProduction();
-    else if(i===1) renderDispatch();
-    return;
-  }
+ if(S.role==='dispatch'){
+  if(i===1) renderProduction();
+  else if(i===2) renderDispatch();
+  return;
+}
   if (i===0) renderOverview();
   else if (i===1) renderProduction();
   else if (i===2) renderMonthly();
@@ -495,7 +495,7 @@ function pressNum(n) {
     } else if (S.pin==='9999') {
       S.role='admin'; S.mainTab=0; setTab(0);
    } else if (S.pin==='3001'||S.pin==='2001') {
-  S.role='dispatch'; S.mainTab=0; setTab(0);
+ S.role='dispatch'; S.mainTab=1; setTab(1);
     } else {
       S.pinError=true; S.pin=''; renderPin();
     }
