@@ -414,11 +414,19 @@ function toast(msg) {
 function setHdr(sub, showTabs) {
   document.getElementById('hdr-sub').textContent = sub;
   document.getElementById('main-tabs').style.display = showTabs ? 'flex' : 'none';
+if(S.role==='dispatch' && document.getElementById('mt2')) document.getElementById('mt2').textContent='Dispatch';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
-    ['mt0','mt1','mt2','mt3','mt4','mt5','mt6'].forEach((id,i) => {
-      document.getElementById(id).classList.toggle('active', i === S.mainTab);
-    });
+ ['mt0','mt1','mt2','mt3','mt4','mt5','mt6'].forEach((id,i) => {
+  const el = document.getElementById(id);
+  if(S.role==='dispatch') {
+    el.style.display = (i===1||i===2) ? '' : 'none';
+    el.classList.toggle('active', i===1 ? S.mainTab===0 : S.mainTab===1);
+  } else {
+    el.style.display = '';
+    el.classList.toggle('active', i === S.mainTab);
+  }
+});
   }
 }
 
@@ -442,6 +450,11 @@ function goHome() {
 function setTab(i) {
   S.mainTab = i;
   setHdr('Dashboard', true);
+  if(S.role==='dispatch'){
+    if(i===0) renderProduction();
+    else if(i===1) renderDispatch();
+    return;
+  }
   if (i===0) renderOverview();
   else if (i===1) renderProduction();
   else if (i===2) renderMonthly();
@@ -481,8 +494,8 @@ function pressNum(n) {
       renderShift();
     } else if (S.pin==='9999') {
       S.role='admin'; S.mainTab=0; setTab(0);
-    } else if (S.pin==='3001'||S.pin==='2001') {
-      S.role='dispatch'; setHdr('Gautham — Dispatch', false); renderDispatch();
+   } else if (S.pin==='3001'||S.pin==='2001') {
+  S.role='dispatch'; S.mainTab=0; setTab(0);
     } else {
       S.pinError=true; S.pin=''; renderPin();
     }
