@@ -654,11 +654,18 @@ function filterPurchaseProducts(id, query) {
     ? PURCHASE_PRODUCTS 
     : PURCHASE_PRODUCTS.filter(p => p.name.toLowerCase().includes(query.toLowerCase()));
   dropdown.style.display = filtered.length ? 'block' : 'none';
-  dropdown.innerHTML = filtered.map(p => 
-    `<div onclick="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,&quot;\\\'&quot;)}');document.getElementById('pdr-${id}').style.display='none'" 
-     style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" 
-     onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`
-  ).join('');
+  dropdown.innerHTML = filtered.map(p =>
+  `<div onclick="selectPurchProd(${id},this.dataset.name)" data-name="${p.name}"
+   style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0"
+   onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`
+).join('');
+}
+
+function selectPurchProd(id, name) {
+  onPurchaseProductSelect(id, name);
+  const d = document.getElementById('pdr-'+id);
+  if(d) d.style.display='none';
+}
 }
 function renderPurchaseRows(){
   const tbody = document.getElementById('pur-rows');
