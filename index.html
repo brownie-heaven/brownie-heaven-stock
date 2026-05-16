@@ -653,7 +653,7 @@ function renderPurchaseRows(){
   if(!tbody) return;
   tbody.innerHTML = purchaseRows.map(r=>`
     <tr id="purrow-${r.id}" style="border-bottom:1px solid #eee">
-      <td style="padding:6px">
+    <td style="padding:6px;position:relative">
         <input type="text" id="psearch-${r.id}" value="${r.product}" placeholder="Type to search product..." oninput="filterPP(${r.id},this.value)" onfocus="filterPP(${r.id},this.value)" onblur="setTimeout(()=>{const d=document.getElementById('pdd-${r.id}');if(d)d.style.display='none'},200)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px" autocomplete="off">
 <div id="pdd-${r.id}" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:180px;overflow-y:auto;background:white;border:1px solid #ddd;border-radius:4px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div>
       </td>
