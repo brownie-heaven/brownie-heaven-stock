@@ -1346,18 +1346,21 @@ async function renderOverview() {
     const monthEnd = `${ym}-${lastDay}`;
 
    // ── Fetch ledger totals ──
-    const [slTodayRaw, accToday, slMonthRaw, accMonth] = await Promise.all([
-      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount,outlet`),
-      sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
-      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
-      sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`)
-    ]);
-
+  const [slTodayRaw, accToday, slMonthRaw, accMonth, purToday, purMonth] = await Promise.all([
+  sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount,outlet`),
+  sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
+  sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
+  sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+  sbGet('purchase_ledger', `?date=eq.${today}&select=amount`),
+  sbGet('purchase_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`)
+]);
     const sum = arr => arr.reduce((s, r) => s + Number(r.amount || 0), 0);
 
     const slTodayAmt  = sum(slTodayRaw.filter(r=>!HOTEL_LIST.includes(r.outlet)));
     const hlTodayAmt  = sum(slTodayRaw.filter(r=>HOTEL_LIST.includes(r.outlet)));
     const accTodayAmt = sum(accToday);
+    const purTodayAmt = sum(purToday);
+    const purMonthAmt = sum(purMonth);
     const todayGrand  = slTodayAmt + accTodayAmt + hlTodayAmt;
 
     const slMonthAmt  = sum(slMonthRaw.filter(r=>!HOTEL_LIST.includes(r.outlet)));
@@ -1432,6 +1435,10 @@ async function renderOverview() {
           <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
             <span style="color:var(--txt2)">Hotels</span>
             <span style="font-family:var(--mono);font-weight:500">${fmt(hlTodayAmt)}</span>
+            <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Purchase</span>
+             <span style="font-family:var(--mono);font-weight:500">${fmt(purTodayAmt)}</span>
+           </div>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:15px;padding:8px 0;font-weight:600">
             <span style="color:var(--brown)">Grand Total</span>
