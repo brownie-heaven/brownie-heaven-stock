@@ -675,7 +675,8 @@ function renderPurchase(){
 
     <h3 style="color:#6B2400;margin-bottom:12px">📋 Purchase History</h3>
     <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-      <input type="month" id="pur-filter-month" value="${today.slice(0,7)}" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
+     <input type="month" id="pur-filter-month" value="${today.slice(0,7)}" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
+     <input type="date" id="pur-filter-date" value="" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()" placeholder="Specific date">
       <select id="pur-filter-agency" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
         <option value="">All Agencies</option>
         ${[...new Set(PURCHASE_PRODUCTS.map(p=>p.agency))].sort().map(a=>`<option value="${a}">${a}</option>`).join('')}
@@ -798,7 +799,9 @@ async function loadPurchaseHistory(){
   if(!el) return;
 
   let url = `${SB_URL}/rest/v1/purchase_ledger?order=date.desc,agency.asc`;
-  if(month){ url += `&date=gte.${month}-01&date=lte.${month}-31`; }
+ const specificDate = document.getElementById('pur-filter-date')?.value;
+ if(specificDate){ url += `&date=eq.${specificDate}`; }
+ else if(month){ url += `&date=gte.${month}-01&date=lte.${month}-31`; }
   if(agency){ url += `&agency=eq.${encodeURIComponent(agency)}`; }
 
   const res = await fetch(url,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
