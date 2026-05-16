@@ -647,22 +647,20 @@ function renderPurchase(){
   renderPurchaseRows();
   loadPurchaseHistory();
 }
-
+function filterPP(id,q){const d=document.getElementById('pdd-'+id);if(!d)return;const f=!q?PURCHASE_PRODUCTS:PURCHASE_PRODUCTS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));d.style.display=f.length?'block':'none';d.innerHTML=f.map(p=>`<div onmousedown="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,'&#39;')}');document.getElementById('psearch-${id}').value='${p.name.replace(/'/g,'&#39;')}';document.getElementById('pdd-${id}').style.display='none'" style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`).join('');}
 function renderPurchaseRows(){
   const tbody = document.getElementById('pur-rows');
   if(!tbody) return;
   tbody.innerHTML = purchaseRows.map(r=>`
     <tr id="purrow-${r.id}" style="border-bottom:1px solid #eee">
       <td style="padding:6px">
-        <select onchange="onPurchaseProductSelect(${r.id},this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
-          <option value="">-- Select Product --</option>
-          ${PURCHASE_PRODUCTS.map(p=>`<option value="${p.name}" ${r.product===p.name?'selected':''}>${p.name}</option>`).join('')}
-        </select>
+        <input type="text" id="psearch-${r.id}" value="${r.product}" placeholder="Type to search product..." oninput="filterPP(${r.id},this.value)" onfocus="filterPP(${r.id},this.value)" onblur="setTimeout(()=>{const d=document.getElementById('pdd-${r.id}');if(d)d.style.display='none'},200)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px" autocomplete="off">
+<div id="pdd-${r.id}" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:180px;overflow-y:auto;background:white;border:1px solid #ddd;border-radius:4px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div>
       </td>
       <td style="padding:6px"><input value="${r.agency}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input value="${r.category}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input type="number" value="${r.qty}" min="0" onchange="onPurchaseFieldChange(${r.id},'qty',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
-      <td style="padding:6px"><input value="${r.unit}" onchange="onPurchaseFieldChange(${r.id},'unit',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
+      <td style="padding:6px"><select onchange="onPurchaseFieldChange(${r.id},'unit',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px"><option value="pcs" ${r.unit==='pcs'?'selected':''}>pcs</option><option value="kg" ${r.unit==='kg'?'selected':''}>kg</option></select></td>
       <td style="padding:6px"><input type="number" value="${r.rate}" onchange="onPurchaseFieldChange(${r.id},'rate',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
       <td style="padding:6px">
         <select onchange="onPurchaseFieldChange(${r.id},'gst',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
