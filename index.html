@@ -1006,7 +1006,7 @@ function renderStock() {
       ${rows}
       <div class="nav-row">
         ${S.activeTab>0?`<button class="btn btn-s" onclick="swTab(${S.activeTab-1})">← Back</button>`:`<button class="btn btn-s" onclick="renderShift()">← Shift</button>`}
-        <button class="btn btn-p" onclick="${isLast ? 'submitShift()' : `swTab(${S.activeTab+1})`}">${isLast ? '✓ Submit shift' : 'Next category →'}</button>
+       ${isLast ? `<button class="btn btn-s" style="margin-right:8px;background:#4a7c59;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600" onclick="saveDraft()">💾 Save Draft</button>` : ''}<button class="btn btn-p" onclick="${isLast ? 'submitShift()' : `swTab(${S.activeTab+1})`}">${isLast ? '✓ Submit shift' : 'Next category →'}</button>
       </div>
     </div>
   </div>`;
