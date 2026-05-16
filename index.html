@@ -647,16 +647,28 @@ function renderPurchase(){
   renderPurchaseRows();
   loadPurchaseHistory();
 }
-
+function filterPurchaseProducts(id, query) {
+  const dropdown = document.getElementById('pdr-'+id);
+  if(!dropdown) return;
+  const filtered = query.length === 0 
+    ? PURCHASE_PRODUCTS 
+    : PURCHASE_PRODUCTS.filter(p => p.name.toLowerCase().includes(query.toLowerCase()));
+  dropdown.style.display = filtered.length ? 'block' : 'none';
+  dropdown.innerHTML = filtered.map(p => 
+    `<div onclick="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,&quot;\\\'&quot;)}');document.getElementById('pdr-${id}').style.display='none'" 
+     style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" 
+     onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`
+  ).join('');
+}
 function renderPurchaseRows(){
   const tbody = document.getElementById('pur-rows');
   if(!tbody) return;
   tbody.innerHTML = purchaseRows.map(r=>`
     <tr id="purrow-${r.id}" style="border-bottom:1px solid #eee">
-      <td style="padding:6px">
-        <input list="prod-list-${r.id}" value="${r.product}" placeholder="Search product..." onchange="onPurchaseProductSelect(${r.id},this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
-<datalist id="prod-list-${r.id}">${PURCHASE_PRODUCTS.map(p=>`<option value="${p.name}">`).join('')}</datalist>
-      </td>
+     <td style="padding:6px;position:relative">
+<input type="text" value="${r.product}" placeholder="Search product..." oninput="filterPurchaseProducts(${r.id},this.value)" onfocus="filterPurchaseProducts(${r.id},this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px" autocomplete="off">
+<div id="pdr-${r.id}" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:white;border:1px solid #ddd;border-radius:4px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div>
+</td>
       <td style="padding:6px"><input value="${r.agency}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input value="${r.category}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input type="number" value="${r.qty}" min="0" onchange="onPurchaseFieldChange(${r.id},'qty',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
