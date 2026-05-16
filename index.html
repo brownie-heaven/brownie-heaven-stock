@@ -654,10 +654,8 @@ function renderPurchaseRows(){
   tbody.innerHTML = purchaseRows.map(r=>`
     <tr id="purrow-${r.id}" style="border-bottom:1px solid #eee">
       <td style="padding:6px">
-        <select onchange="onPurchaseProductSelect(${r.id},this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
-          <option value="">-- Select Product --</option>
-          ${PURCHASE_PRODUCTS.map(p=>`<option value="${p.name}" ${r.product===p.name?'selected':''}>${p.name}</option>`).join('')}
-        </select>
+        <input list="prod-list-${r.id}" value="${r.product}" placeholder="Search product..." onchange="onPurchaseProductSelect(${r.id},this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
+<datalist id="prod-list-${r.id}">${PURCHASE_PRODUCTS.map(p=>`<option value="${p.name}">`).join('')}</datalist>
       </td>
       <td style="padding:6px"><input value="${r.agency}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input value="${r.category}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
