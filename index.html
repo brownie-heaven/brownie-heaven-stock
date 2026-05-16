@@ -662,7 +662,7 @@ function renderPurchaseRows(){
       <td style="padding:6px"><input value="${r.agency}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input value="${r.category}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input type="number" value="${r.qty}" min="0" onchange="onPurchaseFieldChange(${r.id},'qty',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
-      <td style="padding:6px"><input value="${r.unit}" onchange="onPurchaseFieldChange(${r.id},'unit',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
+      <td style="padding:6px"><select onchange="onPurchaseFieldChange(${r.id},'unit',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px"><option value="pcs" ${r.unit==='pcs'?'selected':''}>pcs</option><option value="kg" ${r.unit==='kg'?'selected':''}>kg</option></select></td>
       <td style="padding:6px"><input type="number" value="${r.rate}" onchange="onPurchaseFieldChange(${r.id},'rate',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
       <td style="padding:6px">
         <select onchange="onPurchaseFieldChange(${r.id},'gst',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
