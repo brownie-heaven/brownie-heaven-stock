@@ -1073,11 +1073,39 @@ function renderDemand() {
       </div>
       <p style="font-size:13px;color:var(--txt2);margin-bottom:12px">Closing stock shown. ${isRoya?'Required qty auto-calculated from par stock. ':''}Edit if needed before submitting.</p>
       ${rows}
-      <button class="btn btn-p" style="margin-top:14px" onclick="submitShift()">✓ Submit night shift</button>
+     <button class="btn btn-s" style="margin-top:14px;background:#4a7c59;color:white;border:none" onclick="saveDraft()">💾 Save Draft</button>
+     <button class="btn btn-p" style="margin-top:14px" onclick="submitShift()">✓ Submit night shift</button>
     </div>
   </div>`;
 }
-
+async function saveDraft(){
+  const btn = document.querySelector('[onclick="saveDraft()"]');
+  const orig = btn.textContent;
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const existing = await sbGet('shift_entries',`?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.${S.shift}&is_demo=eq.false&select=id`);
+    if(existing.length > 0) await sbDelete('shift_entries',`?id=eq.${existing[0].id}`);
+    const entries = await sbPost('shift_entries',[{outlet_id:S.outlet,entry_date:today,shift:S.shift,staff_name:S.staffName,is_demo:false}]);
+    const entryId = entries[0].id;
+    const lines = [];
+    Object.entries(S.stockData).forEach(([catId,prods])=>{
+      Object.entries(prods).forEach(([prodId,d])=>{
+        if(Object.values(d).some(v=>v&&v!=='')) {
+          lines.push({entry_id:entryId,product_id:parseInt(prodId),opening:+d.opening||0,incoming:+d.incoming||0,dine_in:+d.dineIn||0,swiggy:+d.swiggy||0,zomato:+d.zomato||0,expiry_qty:+d.expiryQty||0,expiry_date:d.expiryDate||null});
+        }
+      });
+    });
+    if(lines.length) await sbPost('stock_lines',lines);
+    btn.textContent = '✅ Saved!';
+    setTimeout(()=>{ btn.textContent=orig; btn.disabled=false; },2000);
+  } catch(e) {
+    btn.textContent = orig;
+    btn.disabled = false;
+    alert('Error saving draft. Try again.');
+  }
+}
 // ── SUBMIT ────────────────────────────────────────────────────────────────────
 async function submitShift() {
   const btns = document.querySelectorAll('.btn-p');
