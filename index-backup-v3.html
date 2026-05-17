@@ -675,7 +675,8 @@ function renderPurchase(){
 
     <h3 style="color:#6B2400;margin-bottom:12px">📋 Purchase History</h3>
     <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-      <input type="month" id="pur-filter-month" value="${today.slice(0,7)}" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
+     <input type="month" id="pur-filter-month" value="${today.slice(0,7)}" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
+     <input type="date" id="pur-filter-date" value="" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()" placeholder="Specific date">
       <select id="pur-filter-agency" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
         <option value="">All Agencies</option>
         ${[...new Set(PURCHASE_PRODUCTS.map(p=>p.agency))].sort().map(a=>`<option value="${a}">${a}</option>`).join('')}
@@ -798,7 +799,9 @@ async function loadPurchaseHistory(){
   if(!el) return;
 
   let url = `${SB_URL}/rest/v1/purchase_ledger?order=date.desc,agency.asc`;
-  if(month){ url += `&date=gte.${month}-01&date=lte.${month}-31`; }
+ const specificDate = document.getElementById('pur-filter-date')?.value;
+ if(specificDate){ url += `&date=eq.${specificDate}`; }
+ else if(month){ url += `&date=gte.${month}-01&date=lte.${month}-31`; }
   if(agency){ url += `&agency=eq.${encodeURIComponent(agency)}`; }
 
   const res = await fetch(url,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
@@ -1006,7 +1009,7 @@ function renderStock() {
       ${rows}
       <div class="nav-row">
         ${S.activeTab>0?`<button class="btn btn-s" onclick="swTab(${S.activeTab-1})">← Back</button>`:`<button class="btn btn-s" onclick="renderShift()">← Shift</button>`}
-        <button class="btn btn-p" onclick="${isLast ? 'submitShift()' : `swTab(${S.activeTab+1})`}">${isLast ? '✓ Submit shift' : 'Next category →'}</button>
+       ${isLast ? `<button class="btn btn-s" style="margin-right:8px;background:#4a7c59;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600" onclick="saveDraft()">💾 Save Draft</button>` : ''}<button class="btn btn-p" onclick="${isLast ? 'submitShift()' : `swTab(${S.activeTab+1})`}">${isLast ? '✓ Submit shift' : 'Next category →'}</button>
       </div>
     </div>
   </div>`;
@@ -1073,11 +1076,39 @@ function renderDemand() {
       </div>
       <p style="font-size:13px;color:var(--txt2);margin-bottom:12px">Closing stock shown. ${isRoya?'Required qty auto-calculated from par stock. ':''}Edit if needed before submitting.</p>
       ${rows}
-      <button class="btn btn-p" style="margin-top:14px" onclick="submitShift()">✓ Submit night shift</button>
+     <button class="btn btn-s" style="margin-top:14px;background:#4a7c59;color:white;border:none" onclick="saveDraft()">💾 Save Draft</button>
+     <button class="btn btn-p" style="margin-top:14px" onclick="submitShift()">✓ Submit night shift</button>
     </div>
   </div>`;
 }
-
+async function saveDraft(){
+  const btn = document.querySelector('[onclick="saveDraft()"]');
+  const orig = btn.textContent;
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const existing = await sbGet('shift_entries',`?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.${S.shift}&is_demo=eq.false&select=id`);
+    if(existing.length > 0) await sbDelete('shift_entries',`?id=eq.${existing[0].id}`);
+    const entries = await sbPost('shift_entries',[{outlet_id:S.outlet,entry_date:today,shift:S.shift,staff_name:S.staffName,is_demo:false}]);
+    const entryId = entries[0].id;
+    const lines = [];
+    Object.entries(S.stockData).forEach(([catId,prods])=>{
+      Object.entries(prods).forEach(([prodId,d])=>{
+        if(Object.values(d).some(v=>v&&v!=='')) {
+          lines.push({entry_id:entryId,product_id:parseInt(prodId),opening:+d.opening||0,incoming:+d.incoming||0,dine_in:+d.dineIn||0,swiggy:+d.swiggy||0,zomato:+d.zomato||0,expiry_qty:+d.expiryQty||0,expiry_date:d.expiryDate||null});
+        }
+      });
+    });
+    if(lines.length) await sbPost('stock_lines',lines);
+    btn.textContent = '✅ Saved!';
+    setTimeout(()=>{ btn.textContent=orig; btn.disabled=false; },2000);
+  } catch(e) {
+    btn.textContent = orig;
+    btn.disabled = false;
+    alert('Error saving draft. Try again.');
+  }
+}
 // ── SUBMIT ────────────────────────────────────────────────────────────────────
 async function submitShift() {
   const btns = document.querySelectorAll('.btn-p');
@@ -1315,18 +1346,21 @@ async function renderOverview() {
     const monthEnd = `${ym}-${lastDay}`;
 
    // ── Fetch ledger totals ──
-    const [slTodayRaw, accToday, slMonthRaw, accMonth] = await Promise.all([
-      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount,outlet`),
-      sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
-      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
-      sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`)
-    ]);
-
+  const [slTodayRaw, accToday, slMonthRaw, accMonth, purToday, purMonth] = await Promise.all([
+  sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount,outlet`),
+  sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
+  sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
+  sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+  sbGet('purchase_ledger', `?date=eq.${today}&select=amount`),
+  sbGet('purchase_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`)
+]);
     const sum = arr => arr.reduce((s, r) => s + Number(r.amount || 0), 0);
 
     const slTodayAmt  = sum(slTodayRaw.filter(r=>!HOTEL_LIST.includes(r.outlet)));
     const hlTodayAmt  = sum(slTodayRaw.filter(r=>HOTEL_LIST.includes(r.outlet)));
     const accTodayAmt = sum(accToday);
+    const purTodayAmt = sum(purToday);
+    const purMonthAmt = sum(purMonth);
     const todayGrand  = slTodayAmt + accTodayAmt + hlTodayAmt;
 
     const slMonthAmt  = sum(slMonthRaw.filter(r=>!HOTEL_LIST.includes(r.outlet)));
@@ -1402,6 +1436,11 @@ async function renderOverview() {
             <span style="color:var(--txt2)">Hotels</span>
             <span style="font-family:var(--mono);font-weight:500">${fmt(hlTodayAmt)}</span>
           </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Purchase</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(purTodayAmt)}</span>
+          </div>
+          </div>
           <div style="display:flex;justify-content:space-between;font-size:15px;padding:8px 0;font-weight:600">
             <span style="color:var(--brown)">Grand Total</span>
             <span style="font-family:var(--mono);color:var(--green)">${fmt(todayGrand)}</span>
@@ -1427,10 +1466,10 @@ async function renderOverview() {
           <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
             <span style="color:var(--txt2)">Hotels</span>
             <span style="font-family:var(--mono);font-weight:500">${fmt(hlMonthAmt)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:15px;padding:8px 0;font-weight:600">
-            <span style="color:var(--brown)">Grand Total</span>
-            <span style="font-family:var(--mono);color:var(--green)">${fmt(monthGrand)}</span>
+         </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
+            <span style="color:var(--txt2)">Purchase</span>
+            <span style="font-family:var(--mono);font-weight:500">${fmt(purMonthAmt)}</span>
           </div>
         </div>
       </div>
@@ -1916,7 +1955,76 @@ async function renderMonthly() {
     </div>`;
   } catch(e){ document.getElementById('screen').innerHTML=`<div class="card" style="margin-top:14px"><p style="color:var(--red);font-size:13px">Error loading monthly data.</p></div>`; }
 }
+async function loadShiftStatus(){
+  const date = document.getElementById('se-date')?.value;
+  if(!date) return;
+  const el = document.getElementById('shift-status-grid');
+  if(!el) return;
+  el.innerHTML = 'Loading...';
+  const entries = await sbGet('shift_entries', `?entry_date=eq.${date}&is_demo=eq.false&select=outlet_id,shift,staff_name,id`);
+  const outlets = Object.entries(OUTLET_PINS);
+  const shifts = ['morning','night'];
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    ${shifts.map(shift=>`
+      <div>
+        <div style="font-weight:600;font-size:13px;color:var(--brown);margin-bottom:8px;text-transform:capitalize">${shift} Shift</div>
+        ${outlets.map(([name,pin])=>{
+          const entry = entries.find(e=>e.outlet_id==pin && e.shift===shift);
+          return `<div onclick="${entry?`showShiftDetail('${pin}','${shift}','${date}')`:'null'}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;margin-bottom:6px;background:${entry?'#f0faf4':'#fff5f5'};border:1px solid ${entry?'#c3e6cb':'#f5c6cb'};cursor:${entry?'pointer':'default'}">
+            <span style="font-size:13px">${name}</span>
+            <span style="font-size:12px;color:${entry?'#2d6a4f':'#c00'}">${entry?'✅ '+entry.staff_name:'❌ Pending'}</span>
+          </div>`;
+        }).join('')}
+      </div>`).join('')}
+  </div>`;
+}
 
+async function showShiftDetail(pin, shift, date){
+  const [entries, lines] = await Promise.all([
+    sbGet('shift_entries', `?outlet_id=eq.${pin}&shift=eq.${shift}&entry_date=eq.${date}&is_demo=eq.false`),
+    sbGet('stock_lines', `?entry_id=eq.${await sbGet('shift_entries',`?outlet_id=eq.${pin}&shift=eq.${shift}&entry_date=eq.${date}&is_demo=eq.false&select=id`).then(r=>r[0]?.id)}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`)
+  ]);
+  if(!entries.length){alert('No entry found');return;}
+  const e = entries[0];
+  const outletName = Object.entries(OUTLET_PINS).find(([n,p])=>p==pin)?.[0]||pin;
+  const html = `<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="this.remove()">
+    <div style="background:white;border-radius:12px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <div>
+          <div style="font-weight:700;font-size:15px">${outletName} — ${shift} shift</div>
+          <div style="font-size:12px;color:#888">${date} · Staff: ${e.staff_name}</div>
+        </div>
+        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer">✕</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f9f5f2">
+          <th style="padding:6px;text-align:left">Product</th>
+          <th style="padding:6px;text-align:center">Open</th>
+          <th style="padding:6px;text-align:center">In</th>
+          <th style="padding:6px;text-align:center">Sales</th>
+          <th style="padding:6px;text-align:center">Waste</th>
+          <th style="padding:6px;text-align:center">Closing</th>
+        </tr></thead>
+        <tbody>
+          ${lines.map(l=>{
+            const prod = DB.products.find(p=>p.id===l.product_id);
+            const sales = (l.dine_in||0)+(l.swiggy||0)+(l.zomato||0);
+            const closing = (l.opening||0)+(l.incoming||0)-sales-(l.expiry_qty||0);
+            return `<tr style="border-bottom:1px solid #f0f0f0">
+              <td style="padding:6px">${prod?.name||l.product_id}</td>
+              <td style="padding:6px;text-align:center">${l.opening||0}</td>
+              <td style="padding:6px;text-align:center">${l.incoming||0}</td>
+              <td style="padding:6px;text-align:center">${sales}</td>
+              <td style="padding:6px;text-align:center">${l.expiry_qty||0}</td>
+              <td style="padding:6px;text-align:center;font-weight:600">${closing}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
 function renderAdmin() {
   setHdr('Dashboard', true);
@@ -1960,9 +2068,16 @@ function renderAdmin() {
         <button onclick="addProd('${curCatId}')">+ Add</button>
       </div>
     </div>
+    <div class="card" style="margin-top:16px">
+  <div class="card-title">📋 Shift Entries</div>
+  <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+    <input type="date" id="se-date" value="${new Date().toISOString().split('T')[0]}" onchange="loadShiftStatus()" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+  </div>
+  <div id="shift-status-grid"></div>
+</div>
   </div>`;
 }
-
+  loadShiftStatus();
 function toggleCat(pin,catId,active){
   if(!DISABLED_BY_OUTLET[pin]) DISABLED_BY_OUTLET[pin]=[];
   const dc=DISABLED_BY_OUTLET[pin];
