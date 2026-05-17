@@ -960,10 +960,15 @@ function getOutletCats() {
 
 function calcCl(catId, prodId) {
   const d = (S.stockData[catId]||{})[prodId] || {};
-  // Expiry does NOT reduce closing — it is tracked as wastage only
-  return Math.max(0,(+d.opening||0)+(+d.incoming||0)-(+d.dineIn||0)-(+d.swiggy||0)-(+d.zomato||0));
-}
-
+  // Closing = Opening + Incoming − Sales − Expiry − Wastage − Complimentary
+  const opening = +d.opening||0;
+  const incoming = +d.incoming||0;
+  const sales = (+d.dineIn||0)+(+d.swiggy||0)+(+d.zomato||0);
+  const expiry = +d.expiryQty||0;
+  const wastage = +d.wastage_qty||0;
+  const compli = +d.complimentary_qty||0;
+  return Math.max(0, opening + incoming - sales - expiry - wastage - compli);
+} 
 function setStock(catId, prodId, field, val) {
   if (!S.stockData[catId]) S.stockData[catId]={};
   if (!S.stockData[catId][prodId]) S.stockData[catId][prodId]={};
@@ -990,7 +995,7 @@ function renderStock() {
         <div class="fg"><label>Incoming</label><input type="number" min="0" value="${d.incoming||''}" placeholder="0" oninput="setStock('${cat.id}',${p.id},'incoming',this.value)"></div>
        <div class="fg"><label>Exp qty</label><input type="number" min="0" value="${d.expiryQty||''}" placeholder="0" oninput="setStock('${cat.id}','${p.id}','expiryQty',this.value)"></div>
         <div class="fg"><label>Exp date</label><input type="date" value="${d.expiryDate||''}" oninput="setStock('${cat.id}','${p.id}','expiryDate',this.value)" style="font-size:11px"></div>
-         ${S.shift==='night'?`<div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"></div><div class="fg"><label style="color:var(--red)">Wastage</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"></div>`:''}
+      <div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div><div class="fg"><label style="color:var(--red)">Wastage</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div>
         <div class="fg"><label>Closing</label><input id="cl_${cat.id}_${p.id}" class="cl" type="number" value="${cl||''}" readonly></div>
       </div>
       <div class="sales-lbl">Dine-in + Online</div>
@@ -1156,8 +1161,9 @@ async function submitShift() {
         if(Object.values(d).some(v=>v&&v!=='')) {
           lines.push({entry_id:entryId,product_id:parseInt(prodId),
             opening:+d.opening||0,incoming:+d.incoming||0,
-            dine_in:+d.dineIn||0,swiggy:+d.swiggy||0,zomato:+d.zomato||0,
-            expiry_qty:+d.expiryQty||0,expiry_date:d.expiryDate||null});
+           dine_in:+d.dineIn||0,swiggy:+d.swiggy||0,zomato:+d.zomato||0,
+            expiry_qty:+d.expiryQty||0,expiry_date:d.expiryDate||null,
+           complimentary:+d.complimentary_qty||0,wastage:+d.wastage_qty||0});
         }
       });
     });
