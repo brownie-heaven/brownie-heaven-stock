@@ -1961,7 +1961,8 @@ async function loadShiftStatus(){
   const el = document.getElementById('shift-status-grid');
   if(!el) return;
   el.innerHTML = 'Loading...';
-  const entries = await sbGet('shift_entries', `?entry_date=eq.${date}&is_demo=eq.false&select=outlet_id,shift,staff_name,id`);
+ const entries = await sbGet('shift_entries', `?entry_date=eq.${date}&or=(is_demo.eq.false,is_demo.is.null)&select=outlet_id,shift,staff_name,id`);
+  console.log('[loadShiftStatus] date=', date, 'entries=', entries);
   const outlets = Object.entries(OUTLET_PINS);
   const shifts = ['morning','night'];
   el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -1981,8 +1982,8 @@ async function loadShiftStatus(){
 
 async function showShiftDetail(pin, shift, date){
   const [entries, lines] = await Promise.all([
-    sbGet('shift_entries', `?outlet_id=eq.${pin}&shift=eq.${shift}&entry_date=eq.${date}&is_demo=eq.false`),
-    sbGet('stock_lines', `?entry_id=eq.${await sbGet('shift_entries',`?outlet_id=eq.${pin}&shift=eq.${shift}&entry_date=eq.${date}&is_demo=eq.false&select=id`).then(r=>r[0]?.id)}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`)
+  sbGet('shift_entries', `?outlet_id=eq.${pin}&shift=eq.${shift}&entry_date=eq.${date}&or=(is_demo.eq.false,is_demo.is.null)`),
+    sbGet('stock_lines', `?entry_id=eq.${await sbGet('shift_entries',`?outlet_id=eq.${pin}&shift=eq.${shift}&entry_date=eq.${date}&or=(is_demo.eq.false,is_demo.is.null)&select=id`).then(r=>r[0]?.id)}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`)
   ]);
   if(!entries.length){alert('No entry found');return;}
   const e = entries[0];
