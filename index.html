@@ -940,7 +940,44 @@ function loadDemoData() {
   renderShift();
 }
 
-function goStock() { S.activeTab=0; renderStock(); }
+async function goStock() {
+  // If night shift, try to load morning's entry for auto-carry
+  if (S.shift === 'night') {
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const morningEntry = await sbGet('shift_entries', `?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.morning&or=(is_demo.eq.false,is_demo.is.null)&select=id,staff_name`);
+      if (morningEntry.length > 0) {
+        const morningLines = await sbGet('stock_lines', `?entry_id=eq.${morningEntry[0].id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,expiry_date`);
+        // Pre-fill S.stockData with morning's values
+        S.stockData = {};
+        morningLines.forEach(line => {
+          // Find which category this product belongs to
+          const prod = DB.products.find(p => p.id === line.product_id);
+          if (!prod) return;
+          const catId = prod.category_id;
+          if (!S.stockData[catId]) S.stockData[catId] = {};
+          S.stockData[catId][line.product_id] = {
+            opening: String(line.opening || 0),
+            incoming: String(line.incoming || 0),
+            dineIn: String(line.dine_in || 0),
+            swiggy: String(line.swiggy || 0),
+            zomato: String(line.zomato || 0),
+            expiryQty: String(line.expiry_qty || 0),
+            expiryDate: line.expiry_date || ''
+          };
+        });
+        toast(`✅ Morning data loaded (${morningEntry[0].staff_name})`);
+      } else {
+        alert("⚠️ Morning shift hasn't filled yet — please enter all fields fresh");
+      }
+    } catch(e) {
+      console.error('Auto-carry failed:', e);
+      alert("⚠️ Couldn't load morning data — please enter fields manually");
+    }
+  }
+  S.activeTab = 0;
+  renderStock();
+}
 
 // ── STOCK ENTRY ───────────────────────────────────────────────────────────────
 function getOutletCats() {
@@ -991,10 +1028,10 @@ function renderStock() {
     return `<div class="prod-row">
       <div class="prod-name"><span>${p.name}</span><span class="prod-price">₹${p.price||'—'}</span></div>
       <div class="g5">
-        <div class="fg"><label>Opening</label><input type="number" min="0" value="${d.opening||''}" placeholder="0" oninput="setStock('${cat.id}',${p.id},'opening',this.value)" ${!isMorn?'class="ro" readonly':''}></div>
-        <div class="fg"><label>Incoming</label><input type="number" min="0" value="${d.incoming||''}" placeholder="0" oninput="setStock('${cat.id}',${p.id},'incoming',this.value)"></div>
-       <div class="fg"><label>Exp qty</label><input type="number" min="0" value="${d.expiryQty||''}" placeholder="0" oninput="setStock('${cat.id}','${p.id}','expiryQty',this.value)"></div>
-        <div class="fg"><label>Exp date</label><input type="date" value="${d.expiryDate||''}" oninput="setStock('${cat.id}','${p.id}','expiryDate',this.value)" style="font-size:11px"></div>
+        <div class="fg"><label>Opening</label><input type="number" min="0" value="${d.opening||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','opening',this.value)"`}></div>
+            <div class="fg"><label>Incoming</label><input type="number" min="0" value="${d.incoming||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','incoming',this.value)"`}></div>
+            <div class="fg"><label>Exp qty</label><input type="number" min="0" value="${d.expiryQty||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','expiryQty',this.value)"`}></div>
+            <div class="fg"><label>Exp date</label><input type="date" value="${d.expiryDate||''}" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888;font-size:11px"':`oninput="setStock('${cat.id}','${p.id}','expiryDate',this.value)" style="font-size:11px"`}></div>
       <div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div><div class="fg"><label style="color:var(--red)">Wastage</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div>
         <div class="fg"><label>Closing</label><input id="cl_${cat.id}_${p.id}" class="cl" type="number" value="${cl||''}" readonly></div>
       </div>
