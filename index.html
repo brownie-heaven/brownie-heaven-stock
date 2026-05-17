@@ -1969,7 +1969,7 @@ async function loadShiftStatus(){
     ${shifts.map(shift=>`
       <div>
         <div style="font-weight:600;font-size:13px;color:var(--brown);margin-bottom:8px;text-transform:capitalize">${shift} Shift</div>
-        ${outlets.map(([name,pin])=>{
+        ${outlets.map(([pin,name])=>{
           const entry = entries.find(e=>e.outlet_id==pin && e.shift===shift);
           return `<div onclick="${entry?`showShiftDetail('${pin}','${shift}','${date}')`:'null'}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;margin-bottom:6px;background:${entry?'#f0faf4':'#fff5f5'};border:1px solid ${entry?'#c3e6cb':'#f5c6cb'};cursor:${entry?'pointer':'default'}">
             <span style="font-size:13px">${name}</span>
