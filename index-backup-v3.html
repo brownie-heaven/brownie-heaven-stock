@@ -1961,14 +1961,15 @@ async function loadShiftStatus(){
   const el = document.getElementById('shift-status-grid');
   if(!el) return;
   el.innerHTML = 'Loading...';
-  const entries = await sbGet('shift_entries', `?entry_date=eq.${date}&is_demo=eq.false&select=outlet_id,shift,staff_name,id`);
+ const entries = await sbGet('shift_entries', `?entry_date=eq.${date}&or=(is_demo.eq.false,is_demo.is.null)&select=outlet_id,shift,staff_name,id`);
+  console.log('[loadShiftStatus] date=', date, 'entries=', entries);
   const outlets = Object.entries(OUTLET_PINS);
   const shifts = ['morning','night'];
   el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
     ${shifts.map(shift=>`
       <div>
         <div style="font-weight:600;font-size:13px;color:var(--brown);margin-bottom:8px;text-transform:capitalize">${shift} Shift</div>
-        ${outlets.map(([name,pin])=>{
+        ${outlets.map(([pin,name])=>{
           const entry = entries.find(e=>e.outlet_id==pin && e.shift===shift);
           return `<div onclick="${entry?`showShiftDetail('${pin}','${shift}','${date}')`:'null'}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:6px;margin-bottom:6px;background:${entry?'#f0faf4':'#fff5f5'};border:1px solid ${entry?'#c3e6cb':'#f5c6cb'};cursor:${entry?'pointer':'default'}">
             <span style="font-size:13px">${name}</span>
@@ -1980,19 +1981,45 @@ async function loadShiftStatus(){
 }
 
 async function showShiftDetail(pin, shift, date){
-  const [entries, lines] = await Promise.all([
-    sbGet('shift_entries', `?outlet_id=eq.${pin}&shift=eq.${shift}&entry_date=eq.${date}&is_demo=eq.false`),
-    sbGet('stock_lines', `?entry_id=eq.${await sbGet('shift_entries',`?outlet_id=eq.${pin}&shift=eq.${shift}&entry_date=eq.${date}&is_demo=eq.false&select=id`).then(r=>r[0]?.id)}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`)
-  ]);
-  if(!entries.length){alert('No entry found');return;}
-  const e = entries[0];
-  const outletName = Object.entries(OUTLET_PINS).find(([n,p])=>p==pin)?.[0]||pin;
+  const outletName = OUTLET_PINS[pin] || pin;
+
+  // Fetch ALL shift entries for this outlet + date (both morning and night)
+  const allEntries = await sbGet('shift_entries', `?outlet_id=eq.${pin}&entry_date=eq.${date}&or=(is_demo.eq.false,is_demo.is.null)`);
+  if(!allEntries.length){ alert('No entry found'); return; }
+
+  const morningEntry = allEntries.find(e=>e.shift==='morning');
+  const nightEntry   = allEntries.find(e=>e.shift==='night');
+  const clickedEntry = allEntries.find(e=>e.shift===shift) || allEntries[0];
+
+  // Fetch stock_lines for both shifts (if they exist)
+  const morningLines = morningEntry ? await sbGet('stock_lines', `?entry_id=eq.${morningEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`) : [];
+  const nightLines   = nightEntry   ? await sbGet('stock_lines', `?entry_id=eq.${nightEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`)   : [];
+
+  // Merge by product_id — combined day view
+  const productIds = [...new Set([...morningLines.map(l=>l.product_id), ...nightLines.map(l=>l.product_id)])];
+  const merged = productIds.map(pid=>{
+    const m = morningLines.find(l=>l.product_id===pid) || {};
+    const n = nightLines.find(l=>l.product_id===pid)   || {};
+    const opening  = m.opening || 0;                          // morning's opening
+    const incoming = (m.incoming||0) + (n.incoming||0);       // both shifts' incoming
+    const sales    = (m.dine_in||0)+(m.swiggy||0)+(m.zomato||0)+(n.dine_in||0)+(n.swiggy||0)+(n.zomato||0);
+    const waste    = (m.expiry_qty||0) + (n.expiry_qty||0);
+    const closing  = opening + incoming - sales - waste;
+    return { product_id: pid, opening, incoming, sales, waste, closing };
+  });
+
+  // Header info
+  const isNight = shift === 'night';
+  const headerNote = isNight && morningEntry
+    ? `Combined day view · Morning: ${morningEntry.staff_name} · Night: ${clickedEntry.staff_name}`
+    : `Staff: ${clickedEntry.staff_name}`;
+
   const html = `<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="this.remove()">
     <div style="background:white;border-radius:12px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">
       <div style="display:flex;justify-content:space-between;margin-bottom:12px">
         <div>
           <div style="font-weight:700;font-size:15px">${outletName} — ${shift} shift</div>
-          <div style="font-size:12px;color:#888">${date} · Staff: ${e.staff_name}</div>
+          <div style="font-size:12px;color:#888">${date} · ${headerNote}</div>
         </div>
         <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer">✕</button>
       </div>
@@ -2006,17 +2033,16 @@ async function showShiftDetail(pin, shift, date){
           <th style="padding:6px;text-align:center">Closing</th>
         </tr></thead>
         <tbody>
-          ${lines.map(l=>{
+          ${merged.map(l=>{
             const prod = DB.products.find(p=>p.id===l.product_id);
-            const sales = (l.dine_in||0)+(l.swiggy||0)+(l.zomato||0);
-            const closing = (l.opening||0)+(l.incoming||0)-sales-(l.expiry_qty||0);
+            const closingColor = l.closing < 0 ? '#c00' : '#222';
             return `<tr style="border-bottom:1px solid #f0f0f0">
               <td style="padding:6px">${prod?.name||l.product_id}</td>
-              <td style="padding:6px;text-align:center">${l.opening||0}</td>
-              <td style="padding:6px;text-align:center">${l.incoming||0}</td>
-              <td style="padding:6px;text-align:center">${sales}</td>
-              <td style="padding:6px;text-align:center">${l.expiry_qty||0}</td>
-              <td style="padding:6px;text-align:center;font-weight:600">${closing}</td>
+              <td style="padding:6px;text-align:center">${l.opening}</td>
+              <td style="padding:6px;text-align:center">${l.incoming}</td>
+              <td style="padding:6px;text-align:center">${l.sales}</td>
+              <td style="padding:6px;text-align:center">${l.waste}</td>
+              <td style="padding:6px;text-align:center;font-weight:600;color:${closingColor}">${l.closing}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -2025,6 +2051,7 @@ async function showShiftDetail(pin, shift, date){
   </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
 }
+  
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
 function renderAdmin() {
   setHdr('Dashboard', true);
