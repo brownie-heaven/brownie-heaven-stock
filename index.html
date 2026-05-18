@@ -2575,11 +2575,11 @@ async function renderHotelsLedger(){
     :
       '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.5rem;align-items:flex-end">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel</label>'
-      +'<select onchange="HL.filterOutlet=this.value;hlLoadHistory().then(function(){})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
+      +'<select onchange="HL.filterOutlet=this.value;hlLoadHistory().then(renderHotelsLedger)" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
       +'<option value="">All hotels</option>'+filterOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
-      +'<input type="date" value="'+HL.filterDate+'" onchange="HL.filterDate=this.value;hlLoadHistory().then(function(){})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
-      +'<button onclick="HL.filterOutlet=\'\';HL.filterDate=\'\';hlLoadHistory().then(function(){})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
+      +'<input type="date" value="'+HL.filterDate+'" onchange="HL.filterDate=this.value;hlLoadHistory().then(renderHotelsLedger)" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'<button onclick="HL.filterOutlet=\'\';HL.filterDate=\'\';hlLoadHistory().then(renderHotelsLedger)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
       +'</div>'
       +histHTML
     )
