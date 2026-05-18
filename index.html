@@ -2508,7 +2508,7 @@ function hlGroupHistory(){
   HL.history.forEach(r=>{const k=r.outlet+'|'+r.date;if(!g[k])g[k]={outlet:r.outlet,date:r.date,rows:[],total:0};g[k].rows.push(r);g[k].total+=Number(r.amount||0);});
   return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date)||a.outlet.localeCompare(b.outlet));
 }
-async function (){
+async function renderHotelsLedger(){
   setHdr('Dashboard',true);
   if(!HL.history.length)await hlLoadHistory();
   const daily=hlCalcDaily();
