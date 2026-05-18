@@ -356,7 +356,7 @@ let S = {
   mainTab:0, adminOutlet:'1001', adminCatIdx:0,
   newProdName:{}, selMonth:new Date().getMonth(),
   selYear:new Date().getFullYear(),
-  productionTab:0, productionData:{}, role:null,
+ productionTab:0, productionData:{}, prodDate:null, role:null,
   demoMode:false
 };
 
@@ -393,12 +393,13 @@ async function init() {
   }
 }
 
-function startApp() {
+async function startApp() {
   const ws = document.getElementById('welcome-screen');
   const ma = document.getElementById('main-app');
   ws.style.display = 'none';
   ma.style.removeProperty('display');
   ma.classList.add('app-visible');
+  await loadCustomPurchaseProducts();
   init();
 }
 
@@ -467,7 +468,7 @@ setHdr('Dashboard', true);
   else if (i===3) renderAdmin();
   else if (i===4) renderSupplyLedger();
   else if (i===5) renderAccessoriesLedger();
-  else if (i===6) renderHotelsLedger();
+ else if (i===6) renderHotelsLedger();
   else if (i===7) renderPurchase();
   else if (i===8) renderShiftEntries();
 }
@@ -630,6 +631,23 @@ const PURCHASE_PRODUCTS = [
   {"name":"Hershey Choco Syrup 1.3kg","agency":"","category":"Ingredient","unit":"pcs","rate":330.51,"gst":5},
   {"name":"Continental Coffee Powder 200gms","agency":"","category":"Ingredient","unit":"pcs","rate":190,"gst":5}
 ];
+
+// Custom purchase products loaded from Supabase
+let CUSTOM_PURCHASE_PRODUCTS = [];
+
+async function loadCustomPurchaseProducts(){
+  try{
+    const data = await sbGet('purchase_products?order=name.asc');
+    CUSTOM_PURCHASE_PRODUCTS = data || [];
+  }catch(e){
+    console.error('Failed to load custom products:', e);
+    CUSTOM_PURCHASE_PRODUCTS = [];
+  }
+}
+
+function getAllPurchaseProducts(){
+  return [...PURCHASE_PRODUCTS, ...CUSTOM_PURCHASE_PRODUCTS];
+}
 let purchaseRows = [{id:1,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
 let purchaseRowId = 1;
 // — SHIFT ENTRIES (admin only)
@@ -939,7 +957,7 @@ function renderPurchase(){
      <input type="date" id="pur-filter-date" value="" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()" placeholder="Specific date">
       <select id="pur-filter-agency" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
         <option value="">All Agencies</option>
-        ${[...new Set(PURCHASE_PRODUCTS.map(p=>p.agency))].sort().map(a=>`<option value="${a}">${a}</option>`).join('')}
+        ${[...new Set(getAllPurchaseProducts().map(p=>p.agency))].sort().map(a=>`<option value="${a}">${a}</option>`).join('')}
       </select>
     </div>
     <div id="pur-history">Loading...</div>
@@ -948,7 +966,7 @@ function renderPurchase(){
   renderPurchaseRows();
   loadPurchaseHistory();
 }
-function filterPP(id,q){const d=document.getElementById('pdd-'+id);if(!d)return;const f=!q?PURCHASE_PRODUCTS:PURCHASE_PRODUCTS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));d.style.display=f.length?'block':'none';d.innerHTML=f.map(p=>`<div onmousedown="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,'&#39;')}');document.getElementById('psearch-${id}').value='${p.name.replace(/'/g,'&#39;')}';document.getElementById('pdd-${id}').style.display='none'" style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`).join('');}
+function filterPP(id,q){const d=document.getElementById('pdd-'+id);if(!d)return;const f=!q?PURCHASE_PRODUCTS:getAllPurchaseProducts().filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));d.style.display=f.length?'block':'none';d.innerHTML=f.map(p=>`<div onmousedown="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,'&#39;')}');document.getElementById('psearch-${id}').value='${p.name.replace(/'/g,'&#39;')}';document.getElementById('pdd-${id}').style.display='none'" style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`).join('');}
 function renderPurchaseRows(){
   const tbody = document.getElementById('pur-rows');
   if(!tbody) return;
@@ -977,7 +995,7 @@ function renderPurchaseRows(){
 }
 
 function onPurchaseProductSelect(id, productName){
-  const p = PURCHASE_PRODUCTS.find(x=>x.name===productName);
+  const p = getAllPurchaseProducts().find(x=>x.name===productName);
   const r = purchaseRows.find(x=>x.id===id);
   if(!r) return;
   r.product = productName;
@@ -985,6 +1003,7 @@ function onPurchaseProductSelect(id, productName){
   r.category = p ? p.category : '';
   r.unit = p ? p.unit : '';
   r.rate = p ? p.rate : 0;
+  r.gst = p ? (p.gst||0) : 0;
   calcPurchaseRowAmount(r);
   renderPurchaseRows();
 }
@@ -1881,13 +1900,12 @@ function getKitchenPar(productName) {
 }
 
 async function renderProduction() {
-  setHdr('Dashboard', true);
-  showLoading('Loading production data...');
-  try {
-    const yest = new Date(); yest.setDate(yest.getDate()-1);
-    const yStr = yest.toISOString().split('T')[0];
-    const today = new Date().toISOString().split('T')[0];
-
+    setHdr('Dashboard', true);
+    showLoading('Loading production data...');
+    try {
+      const today = S.prodDate || new Date().toISOString().split('T')[0];
+      const yest = new Date(today); yest.setDate(yest.getDate()-1);
+      const yStr = yest.toISOString().split('T')[0];
     // Morning stock = yesterday night kitchen closing (from production_lists)
     // Fall back to outlet closing if no production entry yet
     let morningStock = {};
@@ -1899,15 +1917,9 @@ async function renderProduction() {
       prodYest.forEach(r => {
         morningStock[r.product_id] = (morningStock[r.product_id]||0) + (+r.closing_stock||0);
       });
-    } else {
-      // Fallback: yesterday night shift outlet closing (sum across outlets)
-      const nightData = await sbGet('shift_entries',
-        `?entry_date=eq.${yStr}&shift=eq.night&is_demo=eq.false&select=*,stock_lines(product_id,closing)`);
-      nightData.forEach(e => (e.stock_lines||[]).forEach(l => {
-        morningStock[l.product_id] = (morningStock[l.product_id]||0) + (+l.closing||0);
-      }));
-    }
-
+   }
+      // No fallback — kitchen production is a separate department
+      // If no production_lists entry for yesterday, morning starts at 0
     // Dispatched today = demand requests for today
     const dispData = await sbGet('demand_requests',
       `?entry_date=eq.${today}&select=product_id,requested_qty`);
@@ -1936,7 +1948,8 @@ async function renderProduction() {
 function renderProductionUI() {
   const isDispatch = S.role === 'dispatch';
   const dayLabel = isWeekend() ? 'Weekend' : 'Weekday';
-
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isPastDate = S.prodDate && S.prodDate < todayStr;
   const lists = [
     {id:'cakes_pastry',  label:'Cakes & Pastries', cats:['half_cakes','one_cakes','pastry','cheesecake']},
     {id:'brownies_list', label:'Brownies',          cats:['brownies','eggless','boxes']},
@@ -1999,16 +2012,16 @@ function renderProductionUI() {
       ? `<span style="font-size:9px;color:var(--brown);margin-left:4px;font-family:var(--mono)">(par:${par})</span>`
       : '';
 
-    // Column editability
-    const msRo    = '';
-    const tomakeRo = isDispatch ? ' readonly style="background:var(--bg);color:var(--txt2)"' : '';
-
+// Column editability
+    const lockStyle = ' readonly style="background:var(--bg);color:var(--txt2)"';
+    const msRo    = isPastDate ? lockStyle : '';
+    const tomakeRo = (isDispatch || isPastDate) ? lockStyle : '';
     tableRows += `<tr>
       <td>${p.name}${parBadge}</td>
       <td><input type="number" min="0" value="${ms||''}" placeholder="0"
           ${msRo} oninput="setProdField('${cur.id}',${p.id},'morning',this.value)"></td>
-      <td><input type="number" min="0" value="${bal||''}" placeholder="0"
-          ${!isDispatch?' readonly style="background:var(--bg);color:var(--txt2)"':''}
+     <td><input type="number" min="0" value="${bal||''}" placeholder="0"
+          ${(!isDispatch || isPastDate)?' readonly style="background:var(--bg);color:var(--txt2)"':''}
           id="pb_${cur.id}_${p.id}"
           oninput="setProdField('${cur.id}',${p.id},'balance',this.value)"></td>
       <td><input class="tomake" type="number" min="0" value="${tm||''}" placeholder="0"
@@ -2044,7 +2057,8 @@ function renderProductionUI() {
         <div>
           <div class="card-title" style="margin:0">${cur.label}</div>
           <div style="font-size:11px;color:var(--txt3);margin-top:2px">
-            ${new Date().toLocaleDateString('en-GB')} · ${dayLabel} par stock active
+           ${new Date(S.prodDate||new Date()).toLocaleDateString('en-GB')} · ${dayLabel} par stock active
+            ${isDispatch?`<div style="margin-top:6px"><input type="date" value="${S.prodDate||new Date().toISOString().split('T')[0]}" onchange="changeProdDate(this.value)" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px"></div>`:''}
           </div>
         </div>
       </div>
@@ -2067,7 +2081,7 @@ function renderProductionUI() {
           <tbody>${tableRows}</tbody>
         </table>
       </div>
-      ${!isDispatch ? `
+     ${isPastDate ? '' : (!isDispatch ? `
       <div class="nav-row no-print" style="margin-top:14px">
         <button class="btn btn-p" onclick="finaliseProduction('${cur.id}','${cur.label}')">
           ✓ Save & Share
@@ -2079,11 +2093,15 @@ function renderProductionUI() {
         <button class="btn btn-p" onclick="saveBalanceStock('${cur.id}')">
           ✓ Save Balance Stock
         </button>
-      </div>`}
+      </div>`)}
     </div>
   </div>`;
 }
-
+function changeProdDate(date) {
+  S.prodDate = date;
+  S.productionData = {};  // clear unsaved changes
+  renderProduction();
+}
 function setProdField(listId, prodId, field, val) {
   if (!S.productionData[listId]) S.productionData[listId] = {};
   if (!S.productionData[listId][prodId]) S.productionData[listId][prodId] = {};
@@ -2120,10 +2138,10 @@ function setProdField(listId, prodId, field, val) {
 }
 
 async function saveBalanceStock(listId) {
-  // Dispatch role: save balance stock adjustments
-  const today = new Date().toISOString().split('T')[0];
+  // Dispatch role: save any field they updated (morning/balance/toMake/closing)
+  const today = S.prodDate || new Date().toISOString().split('T')[0];
   const entries = Object.entries(S.productionData[listId]||{})
-    .filter(([,d]) => d.balance !== undefined)
+    .filter(([,d]) => d.morning !== undefined || d.balance !== undefined || d.toMake !== undefined || d.closing !== undefined)
     .map(([prodId, d]) => {
       const saved = (window._prodSaved||{})[prodId] || {};
       const ms = d.morning !== undefined ? d.morning
@@ -2142,7 +2160,7 @@ async function saveBalanceStock(listId) {
         created_by: 'dispatch'
       };
     });
-  if (!entries.length) { toast('No changes to save'); return; }
+ if (!entries.length) { toast('⚠️ Type values in fields first, then click Save'); return; }
   try {
     // Upsert — delete existing for today+listId first
     await sbDelete('production_lists',
@@ -2192,7 +2210,7 @@ async function finaliseProduction(listId, label) {
       closing_stock: bal + tm,
       created_by: 'admin'
     };
-  }).filter(e => e.morning_stock > 0 || e.production_qty > 0 || e.balance_stock > 0);
+ }).filter(e => e.morning_stock > 0 || e.production_qty > 0 || e.balance_stock > 0 || e.closing_stock > 0);
 
   try {
     if (entries.length) {
@@ -2490,16 +2508,17 @@ async function hlSave(){
     await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(HL.outlet)}&date=eq.${HL.date}`);
     await sbPost('outlet_supply_ledger',active);
     HL.lines={};toast('Hotel entry saved!');
-    await hlLoadHistory();renderHotelsLedger();
+    await hlLoadHistory();
   }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
 }
 async function hlLoadHistory(){
   try{
-    let q='outlet_supply_ledger?order=date.desc,outlet,product';
-    const hotelFilter=HOTEL_LIST.map(h=>`outlet=eq.${encodeURIComponent(h)}`).join(',');
-    q+=`&or=(${hotelFilter})`;
-    if(HL.filterOutlet)q=`outlet_supply_ledger?order=date.desc&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
-    if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
+ let q='outlet_supply_ledger?order=date.desc';
+      if(HL.filterOutlet){
+        q+=`&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
+      }
+      // No filter = show ALL hotels (no outlet filter needed)
+      if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
     HL.history=await sbGet(q);
   }catch(e){HL.history=[];}
 }
@@ -2550,12 +2569,12 @@ async function renderHotelsLedger(){
     '<div style="padding:0 0 3rem">'
     +'<div style="display:flex;gap:2px;border-bottom:1px solid #e5e5e3;margin-bottom:1.5rem;margin-top:12px">'
     +'<button onclick="HL.view=\'entry\';renderHotelsLedger()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='entry'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='entry'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='entry'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">New entry</button>'
-    +'<button onclick="HL.view=\'history\';hlLoadHistory().then(function(){renderHotelsLedger();})" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='history'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='history'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='history'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">History '+(groups.length?'('+groups.length+')':'')+'</button>'
+    +'<button onclick="HL.view=\'history\';hlLoadHistory().then(renderHotelsLedger)" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='history'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='history'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='history'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">History '+(groups.length?'('+groups.length+')':'')+'</button>'
     +'</div>'
     +(HL.view==='entry'?
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel / Partner</label>'
-      +'<select onchange="HL.outlet=this.value;HL.lines={};renderHotelsLedger()" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
+      +'<select onchange="HL.outlet=this.value;HL.lines={};()" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
       +'<option value="">Select hotel...</option>'+hotelOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
       +'<input type="date" value="'+HL.date+'" onchange="HL.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
@@ -2575,11 +2594,11 @@ async function renderHotelsLedger(){
     :
       '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.5rem;align-items:flex-end">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel</label>'
-      +'<select onchange="HL.filterOutlet=this.value;hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
+      +'<select onchange="HL.filterOutlet=this.value;hlLoadHistory().then(renderHotelsLedger)" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
       +'<option value="">All hotels</option>'+filterOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
-      +'<input type="date" value="'+HL.filterDate+'" onchange="HL.filterDate=this.value;hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
-      +'<button onclick="HL.filterOutlet=\'\';HL.filterDate=\'\';hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
+      +'<input type="date" value="'+HL.filterDate+'" onchange="HL.filterDate=this.value;hlLoadHistory().then(renderHotelsLedger)" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'<button onclick="HL.filterOutlet=\'\';HL.filterDate=\'\';hlLoadHistory().then(renderHotelsLedger)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
       +'</div>'
       +histHTML
     )
@@ -2587,7 +2606,7 @@ async function renderHotelsLedger(){
 }
 async function hlDelete(outlet,date){
   if(!confirm('Delete entry for '+outlet+' on '+date+'?'))return;
-  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();renderHotelsLedger();}
+  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();}
   catch(e){toast('Error: '+e.message);}
 }
 // App starts via welcome screen Get Started button → startApp()
@@ -2918,7 +2937,7 @@ const ACC_CATALOG=[
     {name:'Brownie Milo 4ltr',rate:580},{name:'Vanilla Ice Cream Bar 750ml',rate:120},
     {name:'Roasted Sicilian 4ltr',rate:1333},{name:'Swiss Chocolate 4ltr',rate:1100},
     {name:'Chocolate Overload 4ltr',rate:1250},{name:'Coffee Mocha Swirl 4ltr',rate:990},
-    {name:'Madagascar Vanilla 4ltr',rate:990}]},
+    {name:'Banana Walnut Ice Cream 4ltr',rate:990},{name:'Madagascar Vanilla 4ltr',rate:990}]},
   {cat:'Packaging',items:[
     {name:'1 Pc Box',rate:4},{name:'2 Pc Box',rate:5.5},{name:'4 Pc Box',rate:7},
     {name:'Cake Box 1kg (Printed)',rate:15},{name:'Cake Bag 1kg',rate:18},
