@@ -2489,7 +2489,7 @@ async function hlSave(){
     await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(HL.outlet)}&date=eq.${HL.date}`);
     await sbPost('outlet_supply_ledger',active);
     HL.lines={};toast('Hotel entry saved!');
-    await hlLoadHistory();();
+    await hlLoadHistory();
   }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
 }
 async function hlLoadHistory(){
