@@ -957,7 +957,7 @@ function renderPurchase(){
      <input type="date" id="pur-filter-date" value="" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()" placeholder="Specific date">
       <select id="pur-filter-agency" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="loadPurchaseHistory()">
         <option value="">All Agencies</option>
-        ${[...new Set(PURCHASE_PRODUCTS.map(p=>p.agency))].sort().map(a=>`<option value="${a}">${a}</option>`).join('')}
+        ${[...new Set(getAllPurchaseProducts().map(p=>p.agency))].sort().map(a=>`<option value="${a}">${a}</option>`).join('')}
       </select>
     </div>
     <div id="pur-history">Loading...</div>
@@ -966,7 +966,7 @@ function renderPurchase(){
   renderPurchaseRows();
   loadPurchaseHistory();
 }
-function filterPP(id,q){const d=document.getElementById('pdd-'+id);if(!d)return;const f=!q?PURCHASE_PRODUCTS:PURCHASE_PRODUCTS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));d.style.display=f.length?'block':'none';d.innerHTML=f.map(p=>`<div onmousedown="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,'&#39;')}');document.getElementById('psearch-${id}').value='${p.name.replace(/'/g,'&#39;')}';document.getElementById('pdd-${id}').style.display='none'" style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`).join('');}
+function filterPP(id,q){const d=document.getElementById('pdd-'+id);if(!d)return;const f=!q?PURCHASE_PRODUCTS:getAllPurchaseProducts().filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));d.style.display=f.length?'block':'none';d.innerHTML=f.map(p=>`<div onmousedown="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,'&#39;')}');document.getElementById('psearch-${id}').value='${p.name.replace(/'/g,'&#39;')}';document.getElementById('pdd-${id}').style.display='none'" style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`).join('');}
 function renderPurchaseRows(){
   const tbody = document.getElementById('pur-rows');
   if(!tbody) return;
@@ -995,7 +995,7 @@ function renderPurchaseRows(){
 }
 
 function onPurchaseProductSelect(id, productName){
-  const p = PURCHASE_PRODUCTS.find(x=>x.name===productName);
+  const p = getAllPurchaseProducts().find(x=>x.name===productName);
   const r = purchaseRows.find(x=>x.id===id);
   if(!r) return;
   r.product = productName;
