@@ -644,9 +644,19 @@ function renderShiftEntries() {
         <input type="date" id="se-date-admin" value="${today}" onchange="loadShiftStatusAdmin()" style="margin-bottom:14px;padding:8px;border:1px solid var(--border);border-radius:6px">
         <div id="shift-status-admin-grid">Loading...</div>
       </div>
+      
+      <div class="card" style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="card-title" style="margin:0">🎯 Special Day Par Stock</div>
+          <button onclick="openAddSpecialPar()" style="background:var(--brown);color:white;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer">+ Add Special Par</button>
+        </div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Override ideal par stock for festivals or special days. Ideal par stays unchanged.</div>
+        <div id="special-par-list">Loading...</div>
+      </div>
     </div>
   `;
   loadShiftStatusAdmin();
+  loadSpecialParList();
 }
 
 async function loadShiftStatusAdmin() {
@@ -750,6 +760,133 @@ async function adminEditShift(pin, shift, date, existingId) {
   }
   
   renderStock();
+}
+  // — SPECIAL PAR STOCK MANAGEMENT (admin only)
+async function loadSpecialParList() {
+  const el = document.getElementById('special-par-list');
+  if (!el) return;
+  el.innerHTML = 'Loading...';
+  const today = new Date().toISOString().split('T')[0];
+  const rows = await sbGet('special_par_stock', `?end_date=gte.${today}&order=start_date.asc`);
+  
+  if (rows.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:#888;padding:8px">No upcoming special par stock set.</div>';
+    return;
+  }
+  
+  // Group by outlet + date range
+  const groups = {};
+  rows.forEach(r => {
+    const key = `${r.outlet_id}|${r.start_date}|${r.end_date}`;
+    if (!groups[key]) groups[key] = { outlet_id: r.outlet_id, start_date: r.start_date, end_date: r.end_date, reason: r.reason, items: [] };
+    groups[key].items.push(r);
+  });
+  
+  el.innerHTML = Object.values(groups).map(g => {
+    const outletName = OUTLET_PINS[g.outlet_id] || g.outlet_id;
+    const dateLabel = g.start_date === g.end_date ? g.start_date : `${g.start_date} → ${g.end_date}`;
+    return `<div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;background:#fffaf5">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${outletName} · ${dateLabel}</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">${g.items.length} product${g.items.length>1?'s':''} changed${g.reason?` · ${g.reason}`:''}</div>
+        </div>
+        <button onclick="deleteSpecialParGroup('${g.outlet_id}','${g.start_date}','${g.end_date}')" style="background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer">🗑️ Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteSpecialParGroup(outletId, startDate, endDate) {
+  if (!confirm(`Delete all special par stock for ${OUTLET_PINS[outletId]} from ${startDate} to ${endDate}?`)) return;
+  try {
+    await sbDelete('special_par_stock', `?outlet_id=eq.${outletId}&start_date=eq.${startDate}&end_date=eq.${endDate}`);
+    toast('🗑️ Deleted');
+    loadSpecialParList();
+  } catch(e) {
+    alert('Failed to delete. Try again.');
+  }
+}
+
+function openAddSpecialPar() {
+  const outlets = Object.entries(OUTLET_PINS);
+  const today = new Date().toISOString().split('T')[0];
+  const html = `<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">
+    <div style="background:white;border-radius:12px;padding:20px;max-width:600px;width:90%;max-height:85vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;margin-bottom:14px">
+        <div style="font-weight:700;font-size:15px">🎯 Add Special Par Stock</div>
+        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div>
+          <label style="font-size:11px;color:#888">Outlet</label>
+          <select id="sp-outlet" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px">
+            ${outlets.map(([pin,name])=>`<option value="${pin}">${name}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888">Reason (optional)</label>
+          <input id="sp-reason" type="text" placeholder="e.g. Christmas" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888">Start date</label>
+          <input id="sp-start" type="date" value="${today}" onchange="document.getElementById('sp-end').value=this.value" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888">End date</label>
+          <input id="sp-end" type="date" value="${today}" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px">
+        </div>
+      </div>
+      <div style="font-size:12px;color:#888;margin:10px 0 6px">Enter special par for products that need it. Leave blank to use ideal par.</div>
+      <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px">
+        ${DB.products.filter(p=>!DISCONTINUED.includes(p.name)).map(p=>`
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f5f5f5">
+            <span style="flex:1;font-size:12px">${p.name}</span>
+            <input type="number" min="0" data-pid="${p.id}" class="sp-input" placeholder="" style="width:80px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:12px;text-align:center">
+          </div>
+        `).join('')}
+      </div>
+      <button onclick="saveSpecialPar()" style="margin-top:14px;width:100%;background:var(--brown);color:white;border:none;padding:10px;border-radius:6px;font-weight:600;cursor:pointer">💾 Save Special Par Stock</button>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function saveSpecialPar() {
+  const outletId = document.getElementById('sp-outlet').value;
+  const reason = document.getElementById('sp-reason').value.trim();
+  const startDate = document.getElementById('sp-start').value;
+  const endDate = document.getElementById('sp-end').value;
+  if (!startDate || !endDate) { alert('Please select dates'); return; }
+  if (endDate < startDate) { alert('End date must be after start date'); return; }
+  
+  const inputs = document.querySelectorAll('.sp-input');
+  const rows = [];
+  inputs.forEach(inp => {
+    const val = inp.value.trim();
+    if (val !== '' && +val >= 0) {
+      rows.push({
+        outlet_id: outletId,
+        product_id: +inp.dataset.pid,
+        start_date: startDate,
+        end_date: endDate,
+        par_stock: +val,
+        reason: reason || null
+      });
+    }
+  });
+  
+  if (rows.length === 0) { alert('Please enter at least one product value'); return; }
+  
+  try {
+    await sbPost('special_par_stock', rows);
+    toast(`✅ Saved special par for ${rows.length} products`);
+    document.querySelector('[style*="position:fixed"][style*="rgba(0,0,0,0.5)"]')?.remove();
+    loadSpecialParList();
+  } catch(e) {
+    console.error(e);
+    alert('Failed to save. Check console.');
+  }
 }
 function renderPurchase(){
   const today = new Date().toISOString().split('T')[0];
