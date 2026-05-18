@@ -1929,7 +1929,8 @@ async function renderProduction() {
 function renderProductionUI() {
   const isDispatch = S.role === 'dispatch';
   const dayLabel = isWeekend() ? 'Weekend' : 'Weekday';
-
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isPastDate = S.prodDate && S.prodDate < todayStr;
   const lists = [
     {id:'cakes_pastry',  label:'Cakes & Pastries', cats:['half_cakes','one_cakes','pastry','cheesecake']},
     {id:'brownies_list', label:'Brownies',          cats:['brownies','eggless','boxes']},
@@ -1992,13 +1993,10 @@ function renderProductionUI() {
       ? `<span style="font-size:9px;color:var(--brown);margin-left:4px;font-family:var(--mono)">(par:${par})</span>`
       : '';
 
-  // Column editability
-    const todayStr = new Date().toISOString().split('T')[0];
-    const isPastDate = S.prodDate && S.prodDate < todayStr;
+// Column editability
     const lockStyle = ' readonly style="background:var(--bg);color:var(--txt2)"';
     const msRo    = isPastDate ? lockStyle : '';
     const tomakeRo = (isDispatch || isPastDate) ? lockStyle : '';
-
     tableRows += `<tr>
       <td>${p.name}${parBadge}</td>
       <td><input type="number" min="0" value="${ms||''}" placeholder="0"
