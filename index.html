@@ -1006,6 +1006,25 @@ function calcCl(catId, prodId) {
   const compli = +d.complimentary_qty||0;
   return Math.max(0, opening + incoming - sales - expiry - wastage - compli);
 } 
+  function adminCheckStock(catId, prodId, field, val) {
+  // Only ask for reason if admin is editing a normally-locked field in night shift
+  const isLockedField = ['opening','incoming','expiryQty','expiryDate'].includes(field);
+  if (S.role === 'admin' && S.shift === 'night' && isLockedField) {
+    const existingReason = (S.stockData[catId]?.[prodId]?.admin_override_reason) || '';
+    if (!existingReason) {
+      const reason = prompt('⚠️ You are editing a field that morning shift filled.\nReason for change? (e.g. "Festival incoming +50 boxes")');
+      if (!reason) {
+        // User cancelled — revert input
+        renderStock();
+        return;
+      }
+      if (!S.stockData[catId]) S.stockData[catId] = {};
+      if (!S.stockData[catId][prodId]) S.stockData[catId][prodId] = {};
+      S.stockData[catId][prodId].admin_override_reason = reason;
+    }
+  }
+  setStock(catId, prodId, field, val);
+}
 function setStock(catId, prodId, field, val) {
   if (!S.stockData[catId]) S.stockData[catId]={};
   if (!S.stockData[catId][prodId]) S.stockData[catId][prodId]={};
@@ -1028,10 +1047,10 @@ function renderStock() {
     return `<div class="prod-row">
       <div class="prod-name"><span>${p.name}</span><span class="prod-price">₹${p.price||'—'}</span></div>
       <div class="g5">
-        <div class="fg"><label>Opening</label><input type="number" min="0" value="${d.opening||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','opening',this.value)"`}></div>
-            <div class="fg"><label>Incoming</label><input type="number" min="0" value="${d.incoming||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','incoming',this.value)"`}></div>
-            <div class="fg"><label>Exp qty</label><input type="number" min="0" value="${d.expiryQty||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','expiryQty',this.value)"`}></div>
-            <div class="fg"><label>Exp date</label><input type="date" value="${d.expiryDate||''}" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888;font-size:11px"':`oninput="setStock('${cat.id}','${p.id}','expiryDate',this.value)" style="font-size:11px"`}></div>
+        <div class="fg"><label>Opening</label><input type="number" min="0" value="${d.opening||''}" placeholder="0" ${S.shift==='night'&&S.role!=='admin'?'readonly style="background:#f5f5f5;color:#888"':`oninput="adminCheckStock('${cat.id}','${p.id}','opening',this.value)"`}></div>
+            <div class="fg"><label>Incoming</label><input type="number" min="0" value="${d.incoming||''}" placeholder="0"${S.shift==='night'&&S.role!=='admin'?'readonly style="background:#f5f5f5;color:#888"':`oninput="adminCheckStock('${cat.id}','${p.id}','incoming',this.value)"`}></div>
+            <div class="fg"><label>Exp qty</label><input type="number" min="0" value="${d.expiryQty||''}" placeholder="0"${S.shift==='night'&&S.role!=='admin'?'readonly style="background:#f5f5f5;color:#888"':`oninput="adminCheckStock('${cat.id}','${p.id}','expiryQty',this.value)"`}></div>
+            <div class="fg"><label>Exp date</label><input type="date" value="${d.expiryDate||''}" ${S.shift==='night'&&S.role!=='admin'?'readonly style="background:#f5f5f5;color:#888;font-size:11px"':`oninput="adminCheckStock('${cat.id}','${p.id}','expiryDate',this.value)" style="font-size:11px"`}></div>
       <div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div><div class="fg"><label style="color:var(--red)">Expired</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div>
         <div class="fg"><label>Closing</label><input id="cl_${cat.id}_${p.id}" class="cl" type="number" value="${cl||''}" readonly></div>
       </div>
@@ -1200,7 +1219,8 @@ async function submitShift() {
             opening:+d.opening||0,incoming:+d.incoming||0,
            dine_in:+d.dineIn||0,swiggy:+d.swiggy||0,zomato:+d.zomato||0,
             expiry_qty:+d.expiryQty||0,expiry_date:d.expiryDate||null,
-           complimentary:+d.complimentary_qty||0,wastage:+d.wastage_qty||0});
+          complimentary:+d.complimentary_qty||0,wastage:+d.wastage_qty||0,
+              admin_override_reason:d.admin_override_reason||null});
         }
       });
     });
@@ -2040,8 +2060,8 @@ async function showShiftDetail(pin, shift, date){
   const clickedEntry = allEntries.find(e=>e.shift===shift) || allEntries[0];
 
   // Fetch stock_lines for both shifts (if they exist)
-  const morningLines = morningEntry ? await sbGet('stock_lines', `?entry_id=eq.${morningEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,wastage,complimentary`) : [];
-  const nightLines   = nightEntry   ? await sbGet('stock_lines', `?entry_id=eq.${nightEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,wastage,complimentary`)   : [];
+  const morningLines = morningEntry ? await sbGet('stock_lines', `?entry_id=eq.${morningEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,wastage,complimentary,admin_override_reason`) : [];
+  const nightLines   = nightEntry   ? await sbGet('stock_lines', `?entry_id=eq.${nightEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,wastage,complimentary,admin_override_reason`)   : [];
   // Merge by product_id — combined day view
   const productIds = [...new Set([...morningLines.map(l=>l.product_id), ...nightLines.map(l=>l.product_id)])];
   const merged = productIds.map(pid=>{
@@ -2053,7 +2073,8 @@ async function showShiftDetail(pin, shift, date){
    const waste    = (m.expiry_qty||0) + (n.expiry_qty||0) + (m.wastage||0) + (n.wastage||0);
     const compli   = (m.complimentary||0) + (n.complimentary||0);
     const closing  = opening + incoming - sales - waste - compli;
-    return { product_id: pid, opening, incoming, sales, waste, compli, closing };
+   const override = m.admin_override_reason || n.admin_override_reason || null;
+    return { product_id: pid, opening, incoming, sales, waste, compli, closing, override };
   });
 
   // Header info
@@ -2086,8 +2107,8 @@ async function showShiftDetail(pin, shift, date){
           ${merged.map(l=>{
             const prod = DB.products.find(p=>p.id===l.product_id);
             const closingColor = l.closing < 0 ? '#c00' : '#222';
-            return `<tr style="border-bottom:1px solid #f0f0f0">
-              <td style="padding:6px">${prod?.name||l.product_id}</td>
+          return `<tr style="border-bottom:1px solid #f0f0f0">
+              <td style="padding:6px">${prod?.name||l.product_id}${l.override?`<br><span style="font-size:10px;color:#c80;font-weight:600">⚠️ Admin edited: ${l.override}</span>`:''}</td>
               <td style="padding:6px;text-align:center">${l.opening}</td>
               <td style="padding:6px;text-align:center">${l.incoming}</td>
               <td style="padding:6px;text-align:center">${l.sales}</td>
