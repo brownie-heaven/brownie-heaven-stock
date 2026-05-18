@@ -256,7 +256,8 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
     <button class="mt" id="mt4" onclick="setTab(4)">Supply Ledger</button>
     <button class="mt" id="mt5" onclick="setTab(5)">Accessories</button>
     <button class="mt" id="mt6" onclick="setTab(6)">Hotels</button>
-    <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
+   <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
+    <button class="mt" id="mt8" onclick="setTab(8)" style="display:none">Shift Entries</button>
   </div>
   <div class="screen" id="screen"></div>
 </div>
@@ -418,15 +419,18 @@ function setHdr(sub, showTabs) {
 if(S.role==='dispatch' && document.getElementById('mt2')) document.getElementById('mt2').textContent='Dispatch';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
- ['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7'].forEach((id,i) => {
-  const el = document.getElementById(id);
-  if(S.role==='dispatch') {
-    el.style.display = (i===1||i===2) ? '' : 'none';
-   el.classList.toggle('active', i===1 ? S.mainTab===1 : S.mainTab===2);
-  } else {
-   el.style.display = (i===1) ? 'none' : '';
-    el.classList.toggle('active', i === S.mainTab);
-  }
+['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7','mt8'].forEach((id,i) => {
+const el = document.getElementById(id);
+      if(S.role==='dispatch') {
+        el.style.display = (i===1||i===2) ? '' : 'none';
+        el.classList.toggle('active', i===1 ? S.mainTab===1 : S.mainTab===2);
+      } else if(S.role==='admin') {
+        el.style.display = (i===1) ? 'none' : '';
+        el.classList.toggle('active', i === S.mainTab);
+      } else {
+        el.style.display = (i===1||i===8) ? 'none' : '';
+        el.classList.toggle('active', i === S.mainTab);
+      }
 });
   }
 }
@@ -465,6 +469,7 @@ setHdr('Dashboard', true);
   else if (i===5) renderAccessoriesLedger();
   else if (i===6) renderHotelsLedger();
   else if (i===7) renderPurchase();
+  else if (i===8) renderShiftEntries();
 }
 // ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
 const PURCHASE_PRODUCTS = [
@@ -627,7 +632,262 @@ const PURCHASE_PRODUCTS = [
 ];
 let purchaseRows = [{id:1,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
 let purchaseRowId = 1;
+// — SHIFT ENTRIES (admin only)
+function renderShiftEntries() {
+  setHdr('Shift Entries', true);
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('screen').innerHTML = `
+    <div style="margin-top:14px">
+      <div class="card">
+        <div class="card-title">📋 Shift Entries — Admin View</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Click ✏️ to edit any shift entry. Use for corrections or filling on behalf of staff.</div>
+        <input type="date" id="se-date-admin" value="${today}" onchange="loadShiftStatusAdmin()" style="margin-bottom:14px;padding:8px;border:1px solid var(--border);border-radius:6px">
+        <div id="shift-status-admin-grid">Loading...</div>
+      </div>
+      
+      <div class="card" style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="card-title" style="margin:0">🎯 Special Day Par Stock</div>
+          <button onclick="openAddSpecialPar()" style="background:var(--brown);color:white;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer">+ Add Special Par</button>
+        </div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Override ideal par stock for festivals or special days. Ideal par stays unchanged.</div>
+        <div id="special-par-list">Loading...</div>
+      </div>
+    </div>
+  `;
+  loadShiftStatusAdmin();
+  loadSpecialParList();
+}
 
+async function loadShiftStatusAdmin() {
+  const date = document.getElementById('se-date-admin')?.value;
+  if(!date) return;
+  const el = document.getElementById('shift-status-admin-grid');
+  if(!el) return;
+  el.innerHTML = 'Loading...';
+  const entries = await sbGet('shift_entries', `?entry_date=eq.${date}&or=(is_demo.eq.false,is_demo.is.null)&select=outlet_id,shift,staff_name,id`);
+  const outlets = Object.entries(OUTLET_PINS);
+  const shifts = ['morning','night'];
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    ${shifts.map(shift=>`
+      <div>
+        <div style="font-weight:600;font-size:13px;color:var(--brown);margin-bottom:8px;text-transform:capitalize">${shift} Shift</div>
+        ${outlets.map(([pin,name])=>{
+          const entry = entries.find(e=>e.outlet_id==pin && e.shift===shift);
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin-bottom:6px;border:1px solid ${entry?'#cde9d0':'#f0c4c4'};background:${entry?'#f0faf2':'#fdf4f4'};border-radius:6px;font-size:12px">
+            <span onclick="${entry?`showShiftDetail('${pin}','${shift}','${date}')`:''}" style="${entry?'cursor:pointer;':''}flex:1">${name} ${entry?`<span style="color:#0a7">✅ ${entry.staff_name}</span>`:`<span style="color:#c00">❌ Pending</span>`}</span>
+            <button onclick="adminEditShift('${pin}','${shift}','${date}',${entry?`'${entry.id}'`:'null'})" style="background:var(--brown);color:white;border:none;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;margin-left:8px">${entry?'✏️ Edit':'+ Fill'}</button>
+          </div>`;
+        }).join('')}
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+async function adminEditShift(pin, shift, date, existingId) {
+  // Set up state to enter the form as if admin is filling for that outlet
+  S.outlet = pin;
+  S.outletName = OUTLET_PINS[pin];
+  S.shift = shift;
+  S.staffName = existingId ? '' : 'Admin filled';  // will be loaded if existing
+  S.activeTab = 0;
+  S.adminEditing = true;
+  S.adminEditingId = existingId;
+  
+  // If editing existing, load that entry's stock data first
+  if (existingId) {
+    try {
+      const entry = await sbGet('shift_entries', `?id=eq.${existingId}&select=*`);
+      if (entry.length > 0) {
+        S.staffName = entry[0].staff_name;
+        const lines = await sbGet('stock_lines', `?entry_id=eq.${existingId}&select=*`);
+        S.stockData = {};
+        lines.forEach(line => {
+          const prod = DB.products.find(p => p.id === line.product_id);
+          if (!prod) return;
+          const catId = prod.category_id;
+          if (!S.stockData[catId]) S.stockData[catId] = {};
+          S.stockData[catId][line.product_id] = {
+            opening: String(line.opening || 0),
+            incoming: String(line.incoming || 0),
+            dineIn: String(line.dine_in || 0),
+            swiggy: String(line.swiggy || 0),
+            zomato: String(line.zomato || 0),
+            expiryQty: String(line.expiry_qty || 0),
+            expiryDate: line.expiry_date || '',
+            complimentary_qty: String(line.complimentary || 0),
+            wastage_qty: String(line.wastage || 0)
+          };
+        });
+      }
+    } catch(e) {
+      console.error('Failed to load entry:', e);
+      alert('Could not load entry for editing.');
+      return;
+    }
+  } else {
+    // Fresh fill — try to load morning data if filling night
+    if (shift === 'night') {
+      try {
+        const morningEntry = await sbGet('shift_entries', `?outlet_id=eq.${pin}&entry_date=eq.${date}&shift=eq.morning&or=(is_demo.eq.false,is_demo.is.null)&select=id`);
+        if (morningEntry.length > 0) {
+          const morningLines = await sbGet('stock_lines', `?entry_id=eq.${morningEntry[0].id}&select=*`);
+          S.stockData = {};
+          morningLines.forEach(line => {
+            const prod = DB.products.find(p => p.id === line.product_id);
+            if (!prod) return;
+            const catId = prod.category_id;
+            if (!S.stockData[catId]) S.stockData[catId] = {};
+            S.stockData[catId][line.product_id] = {
+              opening: String(line.opening || 0),
+              incoming: String(line.incoming || 0),
+              dineIn: String(line.dine_in || 0),
+              swiggy: String(line.swiggy || 0),
+              zomato: String(line.zomato || 0),
+              expiryQty: String(line.expiry_qty || 0),
+              expiryDate: line.expiry_date || ''
+            };
+          });
+        } else {
+          S.stockData = {};
+        }
+      } catch(e) {
+        S.stockData = {};
+      }
+    } else {
+      S.stockData = {};
+    }
+  }
+  
+  renderStock();
+}
+  // — SPECIAL PAR STOCK MANAGEMENT (admin only)
+async function loadSpecialParList() {
+  const el = document.getElementById('special-par-list');
+  if (!el) return;
+  el.innerHTML = 'Loading...';
+  const today = new Date().toISOString().split('T')[0];
+  const rows = await sbGet('special_par_stock', `?end_date=gte.${today}&order=start_date.asc`);
+  
+  if (rows.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:#888;padding:8px">No upcoming special par stock set.</div>';
+    return;
+  }
+  
+  // Group by outlet + date range
+  const groups = {};
+  rows.forEach(r => {
+    const key = `${r.outlet_id}|${r.start_date}|${r.end_date}`;
+    if (!groups[key]) groups[key] = { outlet_id: r.outlet_id, start_date: r.start_date, end_date: r.end_date, reason: r.reason, items: [] };
+    groups[key].items.push(r);
+  });
+  
+  el.innerHTML = Object.values(groups).map(g => {
+    const outletName = OUTLET_PINS[g.outlet_id] || g.outlet_id;
+    const dateLabel = g.start_date === g.end_date ? g.start_date : `${g.start_date} → ${g.end_date}`;
+    return `<div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;background:#fffaf5">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${outletName} · ${dateLabel}</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">${g.items.length} product${g.items.length>1?'s':''} changed${g.reason?` · ${g.reason}`:''}</div>
+        </div>
+        <button onclick="deleteSpecialParGroup('${g.outlet_id}','${g.start_date}','${g.end_date}')" style="background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer">🗑️ Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteSpecialParGroup(outletId, startDate, endDate) {
+  if (!confirm(`Delete all special par stock for ${OUTLET_PINS[outletId]} from ${startDate} to ${endDate}?`)) return;
+  try {
+    await sbDelete('special_par_stock', `?outlet_id=eq.${outletId}&start_date=eq.${startDate}&end_date=eq.${endDate}`);
+    toast('🗑️ Deleted');
+    loadSpecialParList();
+  } catch(e) {
+    alert('Failed to delete. Try again.');
+  }
+}
+
+function openAddSpecialPar() {
+  const outlets = Object.entries(OUTLET_PINS);
+  const today = new Date().toISOString().split('T')[0];
+  const html = `<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">
+    <div style="background:white;border-radius:12px;padding:20px;max-width:600px;width:90%;max-height:85vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;margin-bottom:14px">
+        <div style="font-weight:700;font-size:15px">🎯 Add Special Par Stock</div>
+        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div>
+          <label style="font-size:11px;color:#888">Outlet</label>
+          <select id="sp-outlet" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px">
+            ${outlets.map(([pin,name])=>`<option value="${pin}">${name}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888">Reason (optional)</label>
+          <input id="sp-reason" type="text" placeholder="e.g. Christmas" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888">Start date</label>
+          <input id="sp-start" type="date" value="${today}" onchange="document.getElementById('sp-end').value=this.value" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#888">End date</label>
+          <input id="sp-end" type="date" value="${today}" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px">
+        </div>
+      </div>
+      <div style="font-size:12px;color:#888;margin:10px 0 6px">Enter special par for products that need it. Leave blank to use ideal par.</div>
+      <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px">
+        ${DB.products.filter(p=>!DISCONTINUED.includes(p.name)).map(p=>`
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f5f5f5">
+            <span style="flex:1;font-size:12px">${p.name}</span>
+            <input type="number" min="0" data-pid="${p.id}" class="sp-input" placeholder="" style="width:80px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:12px;text-align:center">
+          </div>
+        `).join('')}
+      </div>
+      <button onclick="saveSpecialPar()" style="margin-top:14px;width:100%;background:var(--brown);color:white;border:none;padding:10px;border-radius:6px;font-weight:600;cursor:pointer">💾 Save Special Par Stock</button>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function saveSpecialPar() {
+  const outletId = document.getElementById('sp-outlet').value;
+  const reason = document.getElementById('sp-reason').value.trim();
+  const startDate = document.getElementById('sp-start').value;
+  const endDate = document.getElementById('sp-end').value;
+  if (!startDate || !endDate) { alert('Please select dates'); return; }
+  if (endDate < startDate) { alert('End date must be after start date'); return; }
+  
+  const inputs = document.querySelectorAll('.sp-input');
+  const rows = [];
+  inputs.forEach(inp => {
+    const val = inp.value.trim();
+    if (val !== '' && +val >= 0) {
+      rows.push({
+        outlet_id: outletId,
+        product_id: +inp.dataset.pid,
+        start_date: startDate,
+        end_date: endDate,
+        par_stock: +val,
+        reason: reason || null
+      });
+    }
+  });
+  
+  if (rows.length === 0) { alert('Please enter at least one product value'); return; }
+  
+  try {
+    await sbPost('special_par_stock', rows);
+    toast(`✅ Saved special par for ${rows.length} products`);
+    document.querySelector('[style*="position:fixed"][style*="rgba(0,0,0,0.5)"]')?.remove();
+    loadSpecialParList();
+  } catch(e) {
+    console.error(e);
+    alert('Failed to save. Check console.');
+  }
+}
 function renderPurchase(){
   const today = new Date().toISOString().split('T')[0];
   const ma = document.getElementById('screen');
@@ -1006,6 +1266,25 @@ function calcCl(catId, prodId) {
   const compli = +d.complimentary_qty||0;
   return Math.max(0, opening + incoming - sales - expiry - wastage - compli);
 } 
+  function adminCheckStock(catId, prodId, field, val) {
+  // Only ask for reason if admin is editing a normally-locked field in night shift
+  const isLockedField = ['opening','incoming','expiryQty','expiryDate'].includes(field);
+  if (S.role === 'admin' && S.shift === 'night' && isLockedField) {
+    const existingReason = (S.stockData[catId]?.[prodId]?.admin_override_reason) || '';
+    if (!existingReason) {
+      const reason = prompt('⚠️ You are editing a field that morning shift filled.\nReason for change? (e.g. "Festival incoming +50 boxes")');
+      if (!reason) {
+        // User cancelled — revert input
+        renderStock();
+        return;
+      }
+      if (!S.stockData[catId]) S.stockData[catId] = {};
+      if (!S.stockData[catId][prodId]) S.stockData[catId][prodId] = {};
+      S.stockData[catId][prodId].admin_override_reason = reason;
+    }
+  }
+  setStock(catId, prodId, field, val);
+}
 function setStock(catId, prodId, field, val) {
   if (!S.stockData[catId]) S.stockData[catId]={};
   if (!S.stockData[catId][prodId]) S.stockData[catId][prodId]={};
@@ -1028,11 +1307,11 @@ function renderStock() {
     return `<div class="prod-row">
       <div class="prod-name"><span>${p.name}</span><span class="prod-price">₹${p.price||'—'}</span></div>
       <div class="g5">
-        <div class="fg"><label>Opening</label><input type="number" min="0" value="${d.opening||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','opening',this.value)"`}></div>
-            <div class="fg"><label>Incoming</label><input type="number" min="0" value="${d.incoming||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','incoming',this.value)"`}></div>
-            <div class="fg"><label>Exp qty</label><input type="number" min="0" value="${d.expiryQty||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','expiryQty',this.value)"`}></div>
-            <div class="fg"><label>Exp date</label><input type="date" value="${d.expiryDate||''}" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888;font-size:11px"':`oninput="setStock('${cat.id}','${p.id}','expiryDate',this.value)" style="font-size:11px"`}></div>
-      <div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div><div class="fg"><label style="color:var(--red)">Wastage</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div>
+        <div class="fg"><label>Opening</label><input type="number" min="0" value="${d.opening||''}" placeholder="0" ${S.shift==='night'&&S.role!=='admin'?'readonly style="background:#f5f5f5;color:#888"':`oninput="adminCheckStock('${cat.id}','${p.id}','opening',this.value)"`}></div>
+            <div class="fg"><label>Incoming</label><input type="number" min="0" value="${d.incoming||''}" placeholder="0"${S.shift==='night'&&S.role!=='admin'?'readonly style="background:#f5f5f5;color:#888"':`oninput="adminCheckStock('${cat.id}','${p.id}','incoming',this.value)"`}></div>
+            <div class="fg"><label>Exp qty</label><input type="number" min="0" value="${d.expiryQty||''}" placeholder="0"${S.shift==='night'&&S.role!=='admin'?'readonly style="background:#f5f5f5;color:#888"':`oninput="adminCheckStock('${cat.id}','${p.id}','expiryQty',this.value)"`}></div>
+            <div class="fg"><label>Exp date</label><input type="date" value="${d.expiryDate||''}" ${S.shift==='night'&&S.role!=='admin'?'readonly style="background:#f5f5f5;color:#888;font-size:11px"':`oninput="adminCheckStock('${cat.id}','${p.id}','expiryDate',this.value)" style="font-size:11px"`}></div>
+      <div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div><div class="fg"><label style="color:var(--red)">Expired</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div>
         <div class="fg"><label>Closing</label><input id="cl_${cat.id}_${p.id}" class="cl" type="number" value="${cl||''}" readonly></div>
       </div>
       <div class="sales-lbl">Dine-in + Online</div>
@@ -1200,7 +1479,8 @@ async function submitShift() {
             opening:+d.opening||0,incoming:+d.incoming||0,
            dine_in:+d.dineIn||0,swiggy:+d.swiggy||0,zomato:+d.zomato||0,
             expiry_qty:+d.expiryQty||0,expiry_date:d.expiryDate||null,
-           complimentary:+d.complimentary_qty||0,wastage:+d.wastage_qty||0});
+          complimentary:+d.complimentary_qty||0,wastage:+d.wastage_qty||0,
+              admin_override_reason:d.admin_override_reason||null});
         }
       });
     });
@@ -2022,7 +2302,12 @@ async function loadShiftStatus(){
       </div>`).join('')}
   </div>`;
 }
-
+function formatSubmitTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `🕐 Submitted at ${time}`;
+}
 async function showShiftDetail(pin, shift, date){
   const outletName = OUTLET_PINS[pin] || pin;
 
@@ -2035,9 +2320,8 @@ async function showShiftDetail(pin, shift, date){
   const clickedEntry = allEntries.find(e=>e.shift===shift) || allEntries[0];
 
   // Fetch stock_lines for both shifts (if they exist)
-  const morningLines = morningEntry ? await sbGet('stock_lines', `?entry_id=eq.${morningEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`) : [];
-  const nightLines   = nightEntry   ? await sbGet('stock_lines', `?entry_id=eq.${nightEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`)   : [];
-
+  const morningLines = morningEntry ? await sbGet('stock_lines', `?entry_id=eq.${morningEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,wastage,complimentary,admin_override_reason`) : [];
+  const nightLines   = nightEntry   ? await sbGet('stock_lines', `?entry_id=eq.${nightEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,wastage,complimentary,admin_override_reason`)   : [];
   // Merge by product_id — combined day view
   const productIds = [...new Set([...morningLines.map(l=>l.product_id), ...nightLines.map(l=>l.product_id)])];
   const merged = productIds.map(pid=>{
@@ -2046,9 +2330,11 @@ async function showShiftDetail(pin, shift, date){
     const opening  = m.opening || 0;                          // morning's opening
     const incoming = (m.incoming||0) + (n.incoming||0);       // both shifts' incoming
     const sales    = (m.dine_in||0)+(m.swiggy||0)+(m.zomato||0)+(n.dine_in||0)+(n.swiggy||0)+(n.zomato||0);
-    const waste    = (m.expiry_qty||0) + (n.expiry_qty||0);
-    const closing  = opening + incoming - sales - waste;
-    return { product_id: pid, opening, incoming, sales, waste, closing };
+   const waste    = (m.expiry_qty||0) + (n.expiry_qty||0) + (m.wastage||0) + (n.wastage||0);
+    const compli   = (m.complimentary||0) + (n.complimentary||0);
+    const closing  = opening + incoming - sales - waste - compli;
+   const override = m.admin_override_reason || n.admin_override_reason || null;
+    return { product_id: pid, opening, incoming, sales, waste, compli, closing, override };
   });
 
   // Header info
@@ -2063,6 +2349,7 @@ async function showShiftDetail(pin, shift, date){
         <div>
           <div style="font-weight:700;font-size:15px">${outletName} — ${shift} shift</div>
           <div style="font-size:12px;color:#888">${date} · ${headerNote}</div>
+          <div style="font-size:11px;color:#aaa;margin-top:2px">${formatSubmitTime(clickedEntry.submitted_at)}</div>
         </div>
         <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer">✕</button>
       </div>
@@ -2072,19 +2359,21 @@ async function showShiftDetail(pin, shift, date){
           <th style="padding:6px;text-align:center">Open</th>
           <th style="padding:6px;text-align:center">In</th>
           <th style="padding:6px;text-align:center">Sales</th>
-          <th style="padding:6px;text-align:center">Waste</th>
+          <th style="padding:6px;text-align:center">Expired</th>
+          <th style="padding:6px;text-align:center">Compli</th>
           <th style="padding:6px;text-align:center">Closing</th>
         </tr></thead>
         <tbody>
           ${merged.map(l=>{
             const prod = DB.products.find(p=>p.id===l.product_id);
             const closingColor = l.closing < 0 ? '#c00' : '#222';
-            return `<tr style="border-bottom:1px solid #f0f0f0">
-              <td style="padding:6px">${prod?.name||l.product_id}</td>
+          return `<tr style="border-bottom:1px solid #f0f0f0">
+              <td style="padding:6px">${prod?.name||l.product_id}${l.override?`<br><span style="font-size:10px;color:#c80;font-weight:600">⚠️ Admin edited: ${l.override}</span>`:''}</td>
               <td style="padding:6px;text-align:center">${l.opening}</td>
               <td style="padding:6px;text-align:center">${l.incoming}</td>
               <td style="padding:6px;text-align:center">${l.sales}</td>
               <td style="padding:6px;text-align:center">${l.waste}</td>
+              <td style="padding:6px;text-align:center;color:#0a7">${l.compli}</td>
               <td style="padding:6px;text-align:center;font-weight:600;color:${closingColor}">${l.closing}</td>
             </tr>`;
           }).join('')}
