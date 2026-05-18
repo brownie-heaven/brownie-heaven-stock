@@ -2022,7 +2022,12 @@ async function loadShiftStatus(){
       </div>`).join('')}
   </div>`;
 }
-
+function formatSubmitTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `🕐 Submitted at ${time}`;
+}
 async function showShiftDetail(pin, shift, date){
   const outletName = OUTLET_PINS[pin] || pin;
 
@@ -2063,6 +2068,7 @@ async function showShiftDetail(pin, shift, date){
         <div>
           <div style="font-weight:700;font-size:15px">${outletName} — ${shift} shift</div>
           <div style="font-size:12px;color:#888">${date} · ${headerNote}</div>
+          <div style="font-size:11px;color:#aaa;margin-top:2px">${formatSubmitTime(clickedEntry.submitted_at)}</div>
         </div>
         <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer">✕</button>
       </div>
