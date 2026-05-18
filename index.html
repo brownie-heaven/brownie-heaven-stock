@@ -985,6 +985,7 @@ function onPurchaseProductSelect(id, productName){
   r.category = p ? p.category : '';
   r.unit = p ? p.unit : '';
   r.rate = p ? p.rate : 0;
+  r.gst = p ? (p.gst||0) : 0;
   calcPurchaseRowAmount(r);
   renderPurchaseRows();
 }
