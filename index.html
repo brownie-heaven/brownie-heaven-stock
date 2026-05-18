@@ -2035,9 +2035,8 @@ async function showShiftDetail(pin, shift, date){
   const clickedEntry = allEntries.find(e=>e.shift===shift) || allEntries[0];
 
   // Fetch stock_lines for both shifts (if they exist)
-  const morningLines = morningEntry ? await sbGet('stock_lines', `?entry_id=eq.${morningEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`) : [];
-  const nightLines   = nightEntry   ? await sbGet('stock_lines', `?entry_id=eq.${nightEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty`)   : [];
-
+  const morningLines = morningEntry ? await sbGet('stock_lines', `?entry_id=eq.${morningEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,wastage,complimentary`) : [];
+  const nightLines   = nightEntry   ? await sbGet('stock_lines', `?entry_id=eq.${nightEntry.id}&select=product_id,opening,incoming,dine_in,swiggy,zomato,expiry_qty,wastage,complimentary`)   : [];
   // Merge by product_id — combined day view
   const productIds = [...new Set([...morningLines.map(l=>l.product_id), ...nightLines.map(l=>l.product_id)])];
   const merged = productIds.map(pid=>{
@@ -2046,9 +2045,10 @@ async function showShiftDetail(pin, shift, date){
     const opening  = m.opening || 0;                          // morning's opening
     const incoming = (m.incoming||0) + (n.incoming||0);       // both shifts' incoming
     const sales    = (m.dine_in||0)+(m.swiggy||0)+(m.zomato||0)+(n.dine_in||0)+(n.swiggy||0)+(n.zomato||0);
-    const waste    = (m.expiry_qty||0) + (n.expiry_qty||0);
-    const closing  = opening + incoming - sales - waste;
-    return { product_id: pid, opening, incoming, sales, waste, closing };
+   const waste    = (m.expiry_qty||0) + (n.expiry_qty||0) + (m.wastage||0) + (n.wastage||0);
+    const compli   = (m.complimentary||0) + (n.complimentary||0);
+    const closing  = opening + incoming - sales - waste - compli;
+    return { product_id: pid, opening, incoming, sales, waste, compli, closing };
   });
 
   // Header info
@@ -2073,6 +2073,7 @@ async function showShiftDetail(pin, shift, date){
           <th style="padding:6px;text-align:center">In</th>
           <th style="padding:6px;text-align:center">Sales</th>
           <th style="padding:6px;text-align:center">Waste</th>
+          <th style="padding:6px;text-align:center">Compli</th>
           <th style="padding:6px;text-align:center">Closing</th>
         </tr></thead>
         <tbody>
@@ -2083,8 +2084,8 @@ async function showShiftDetail(pin, shift, date){
               <td style="padding:6px">${prod?.name||l.product_id}</td>
               <td style="padding:6px;text-align:center">${l.opening}</td>
               <td style="padding:6px;text-align:center">${l.incoming}</td>
-              <td style="padding:6px;text-align:center">${l.sales}</td>
               <td style="padding:6px;text-align:center">${l.waste}</td>
+              <td style="padding:6px;text-align:center;color:#0a7">${l.compli}</td>
               <td style="padding:6px;text-align:center;font-weight:600;color:${closingColor}">${l.closing}</td>
             </tr>`;
           }).join('')}
