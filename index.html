@@ -2497,10 +2497,8 @@ async function hlLoadHistory(){
  let q='outlet_supply_ledger?order=date.desc';
       if(HL.filterOutlet){
         q+=`&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
-      } else {
-        const hotelFilter=HOTEL_LIST.map(h=>`outlet.eq.${encodeURIComponent(h)}`).join(',');
-        q+=`&or=(${hotelFilter})`;
       }
+      // No filter = show ALL hotels (no outlet filter needed)
       if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
     HL.history=await sbGet(q);
   }catch(e){HL.history=[];}
