@@ -393,12 +393,13 @@ async function init() {
   }
 }
 
-function startApp() {
+async function startApp() {
   const ws = document.getElementById('welcome-screen');
   const ma = document.getElementById('main-app');
   ws.style.display = 'none';
   ma.style.removeProperty('display');
   ma.classList.add('app-visible');
+  await loadCustomPurchaseProducts();
   init();
 }
 
@@ -630,6 +631,23 @@ const PURCHASE_PRODUCTS = [
   {"name":"Hershey Choco Syrup 1.3kg","agency":"","category":"Ingredient","unit":"pcs","rate":330.51,"gst":5},
   {"name":"Continental Coffee Powder 200gms","agency":"","category":"Ingredient","unit":"pcs","rate":190,"gst":5}
 ];
+
+// Custom purchase products loaded from Supabase
+let CUSTOM_PURCHASE_PRODUCTS = [];
+
+async function loadCustomPurchaseProducts(){
+  try{
+    const data = await sbGet('purchase_products?order=name.asc');
+    CUSTOM_PURCHASE_PRODUCTS = data || [];
+  }catch(e){
+    console.error('Failed to load custom products:', e);
+    CUSTOM_PURCHASE_PRODUCTS = [];
+  }
+}
+
+function getAllPurchaseProducts(){
+  return [...PURCHASE_PRODUCTS, ...CUSTOM_PURCHASE_PRODUCTS];
+}
 let purchaseRows = [{id:1,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
 let purchaseRowId = 1;
 // — SHIFT ENTRIES (admin only)
