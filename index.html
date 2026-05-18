@@ -356,7 +356,7 @@ let S = {
   mainTab:0, adminOutlet:'1001', adminCatIdx:0,
   newProdName:{}, selMonth:new Date().getMonth(),
   selYear:new Date().getFullYear(),
-  productionTab:0, productionData:{}, role:null,
+ productionTab:0, productionData:{}, prodDate:null, role:null,
   demoMode:false
 };
 
@@ -1881,13 +1881,12 @@ function getKitchenPar(productName) {
 }
 
 async function renderProduction() {
-  setHdr('Dashboard', true);
-  showLoading('Loading production data...');
-  try {
-    const yest = new Date(); yest.setDate(yest.getDate()-1);
-    const yStr = yest.toISOString().split('T')[0];
-    const today = new Date().toISOString().split('T')[0];
-
+    setHdr('Dashboard', true);
+    showLoading('Loading production data...');
+    try {
+      const today = S.prodDate || new Date().toISOString().split('T')[0];
+      const yest = new Date(today); yest.setDate(yest.getDate()-1);
+      const yStr = yest.toISOString().split('T')[0];
     // Morning stock = yesterday night kitchen closing (from production_lists)
     // Fall back to outlet closing if no production entry yet
     let morningStock = {};
@@ -1993,16 +1992,19 @@ function renderProductionUI() {
       ? `<span style="font-size:9px;color:var(--brown);margin-left:4px;font-family:var(--mono)">(par:${par})</span>`
       : '';
 
-    // Column editability
-    const msRo    = '';
-    const tomakeRo = isDispatch ? ' readonly style="background:var(--bg);color:var(--txt2)"' : '';
+  // Column editability
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isPastDate = S.prodDate && S.prodDate < todayStr;
+    const lockStyle = ' readonly style="background:var(--bg);color:var(--txt2)"';
+    const msRo    = isPastDate ? lockStyle : '';
+    const tomakeRo = (isDispatch || isPastDate) ? lockStyle : '';
 
     tableRows += `<tr>
       <td>${p.name}${parBadge}</td>
       <td><input type="number" min="0" value="${ms||''}" placeholder="0"
           ${msRo} oninput="setProdField('${cur.id}',${p.id},'morning',this.value)"></td>
-      <td><input type="number" min="0" value="${bal||''}" placeholder="0"
-          ${!isDispatch?' readonly style="background:var(--bg);color:var(--txt2)"':''}
+     <td><input type="number" min="0" value="${bal||''}" placeholder="0"
+          ${(!isDispatch || isPastDate)?' readonly style="background:var(--bg);color:var(--txt2)"':''}
           id="pb_${cur.id}_${p.id}"
           oninput="setProdField('${cur.id}',${p.id},'balance',this.value)"></td>
       <td><input class="tomake" type="number" min="0" value="${tm||''}" placeholder="0"
@@ -2038,7 +2040,8 @@ function renderProductionUI() {
         <div>
           <div class="card-title" style="margin:0">${cur.label}</div>
           <div style="font-size:11px;color:var(--txt3);margin-top:2px">
-            ${new Date().toLocaleDateString('en-GB')} · ${dayLabel} par stock active
+           ${new Date(S.prodDate||new Date()).toLocaleDateString('en-GB')} · ${dayLabel} par stock active
+            ${isDispatch?`<div style="margin-top:6px"><input type="date" value="${S.prodDate||new Date().toISOString().split('T')[0]}" onchange="changeProdDate(this.value)" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px"></div>`:''}
           </div>
         </div>
       </div>
@@ -2061,7 +2064,7 @@ function renderProductionUI() {
           <tbody>${tableRows}</tbody>
         </table>
       </div>
-      ${!isDispatch ? `
+     ${isPastDate ? '' : (!isDispatch ? `
       <div class="nav-row no-print" style="margin-top:14px">
         <button class="btn btn-p" onclick="finaliseProduction('${cur.id}','${cur.label}')">
           ✓ Save & Share
@@ -2073,11 +2076,15 @@ function renderProductionUI() {
         <button class="btn btn-p" onclick="saveBalanceStock('${cur.id}')">
           ✓ Save Balance Stock
         </button>
-      </div>`}
+      </div>`)}
     </div>
   </div>`;
 }
-
+function changeProdDate(date) {
+  S.prodDate = date;
+  S.productionData = {};  // clear unsaved changes
+  renderProduction();
+}
 function setProdField(listId, prodId, field, val) {
   if (!S.productionData[listId]) S.productionData[listId] = {};
   if (!S.productionData[listId][prodId]) S.productionData[listId][prodId] = {};
@@ -2186,7 +2193,7 @@ async function finaliseProduction(listId, label) {
       closing_stock: bal + tm,
       created_by: 'admin'
     };
-  }).filter(e => e.morning_stock > 0 || e.production_qty > 0 || e.balance_stock > 0);
+ }).filter(e => e.morning_stock > 0 || e.production_qty > 0 || e.balance_stock > 0 || e.closing_stock > 0);
 
   try {
     if (entries.length) {
