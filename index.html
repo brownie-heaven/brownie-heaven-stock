@@ -1899,15 +1899,9 @@ async function renderProduction() {
       prodYest.forEach(r => {
         morningStock[r.product_id] = (morningStock[r.product_id]||0) + (+r.closing_stock||0);
       });
-    } else {
-      // Fallback: yesterday night shift outlet closing (sum across outlets)
-      const nightData = await sbGet('shift_entries',
-        `?entry_date=eq.${yStr}&shift=eq.night&is_demo=eq.false&select=*,stock_lines(product_id,closing)`);
-      nightData.forEach(e => (e.stock_lines||[]).forEach(l => {
-        morningStock[l.product_id] = (morningStock[l.product_id]||0) + (+l.closing||0);
-      }));
-    }
-
+   }
+      // No fallback — kitchen production is a separate department
+      // If no production_lists entry for yesterday, morning starts at 0
     // Dispatched today = demand requests for today
     const dispData = await sbGet('demand_requests',
       `?entry_date=eq.${today}&select=product_id,requested_qty`);
