@@ -2119,10 +2119,10 @@ function setProdField(listId, prodId, field, val) {
 }
 
 async function saveBalanceStock(listId) {
-  // Dispatch role: save balance stock adjustments
-  const today = new Date().toISOString().split('T')[0];
+  // Dispatch role: save any field they updated (morning/balance/toMake/closing)
+  const today = S.prodDate || new Date().toISOString().split('T')[0];
   const entries = Object.entries(S.productionData[listId]||{})
-    .filter(([,d]) => d.balance !== undefined)
+    .filter(([,d]) => d.morning !== undefined || d.balance !== undefined || d.toMake !== undefined || d.closing !== undefined)
     .map(([prodId, d]) => {
       const saved = (window._prodSaved||{})[prodId] || {};
       const ms = d.morning !== undefined ? d.morning
@@ -2141,7 +2141,7 @@ async function saveBalanceStock(listId) {
         created_by: 'dispatch'
       };
     });
-  if (!entries.length) { toast('No changes to save'); return; }
+ if (!entries.length) { toast('⚠️ Type values in fields first, then click Save'); return; }
   try {
     // Upsert — delete existing for today+listId first
     await sbDelete('production_lists',
