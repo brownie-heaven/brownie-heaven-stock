@@ -467,7 +467,7 @@ setHdr('Dashboard', true);
   else if (i===3) renderAdmin();
   else if (i===4) renderSupplyLedger();
   else if (i===5) renderAccessoriesLedger();
-  else if (i===6) renderHotelsLedger();
+  else if (i===6) ();
   else if (i===7) renderPurchase();
   else if (i===8) renderShiftEntries();
 }
@@ -2489,16 +2489,19 @@ async function hlSave(){
     await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(HL.outlet)}&date=eq.${HL.date}`);
     await sbPost('outlet_supply_ledger',active);
     HL.lines={};toast('Hotel entry saved!');
-    await hlLoadHistory();renderHotelsLedger();
+    await hlLoadHistory();();
   }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
 }
 async function hlLoadHistory(){
   try{
-    let q='outlet_supply_ledger?order=date.desc,outlet,product';
-    const hotelFilter=HOTEL_LIST.map(h=>`outlet=eq.${encodeURIComponent(h)}`).join(',');
-    q+=`&or=(${hotelFilter})`;
-    if(HL.filterOutlet)q=`outlet_supply_ledger?order=date.desc&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
-    if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
+ let q='outlet_supply_ledger?order=date.desc';
+      if(HL.filterOutlet){
+        q+=`&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
+      } else {
+        const hotelFilter=HOTEL_LIST.map(h=>`outlet.eq.${encodeURIComponent(h)}`).join(',');
+        q+=`&or=(${hotelFilter})`;
+      }
+      if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
     HL.history=await sbGet(q);
   }catch(e){HL.history=[];}
 }
@@ -2507,7 +2510,7 @@ function hlGroupHistory(){
   HL.history.forEach(r=>{const k=r.outlet+'|'+r.date;if(!g[k])g[k]={outlet:r.outlet,date:r.date,rows:[],total:0};g[k].rows.push(r);g[k].total+=Number(r.amount||0);});
   return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date)||a.outlet.localeCompare(b.outlet));
 }
-async function renderHotelsLedger(){
+async function (){
   setHdr('Dashboard',true);
   if(!HL.history.length)await hlLoadHistory();
   const daily=hlCalcDaily();
@@ -2548,13 +2551,13 @@ async function renderHotelsLedger(){
   document.getElementById('screen').innerHTML=
     '<div style="padding:0 0 3rem">'
     +'<div style="display:flex;gap:2px;border-bottom:1px solid #e5e5e3;margin-bottom:1.5rem;margin-top:12px">'
-    +'<button onclick="HL.view=\'entry\';renderHotelsLedger()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='entry'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='entry'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='entry'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">New entry</button>'
-    +'<button onclick="HL.view=\'history\';hlLoadHistory().then(function(){renderHotelsLedger();})" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='history'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='history'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='history'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">History '+(groups.length?'('+groups.length+')':'')+'</button>'
+    +'<button onclick="HL.view=\'entry\';()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='entry'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='entry'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='entry'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">New entry</button>'
+    +'<button onclick="HL.view=\'history\';hlLoadHistory().then(function(){();})" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(HL.view==='history'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(HL.view==='history'?'#0F6E56':'#888')+';font-weight:'+(HL.view==='history'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">History '+(groups.length?'('+groups.length+')':'')+'</button>'
     +'</div>'
     +(HL.view==='entry'?
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel / Partner</label>'
-      +'<select onchange="HL.outlet=this.value;HL.lines={};renderHotelsLedger()" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
+      +'<select onchange="HL.outlet=this.value;HL.lines={};()" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
       +'<option value="">Select hotel...</option>'+hotelOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
       +'<input type="date" value="'+HL.date+'" onchange="HL.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
@@ -2574,11 +2577,11 @@ async function renderHotelsLedger(){
     :
       '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.5rem;align-items:flex-end">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel</label>'
-      +'<select onchange="HL.filterOutlet=this.value;hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
+      +'<select onchange="HL.filterOutlet=this.value;hlLoadHistory().then(function(){();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
       +'<option value="">All hotels</option>'+filterOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
-      +'<input type="date" value="'+HL.filterDate+'" onchange="HL.filterDate=this.value;hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
-      +'<button onclick="HL.filterOutlet=\'\';HL.filterDate=\'\';hlLoadHistory().then(function(){renderHotelsLedger();})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
+      +'<input type="date" value="'+HL.filterDate+'" onchange="HL.filterDate=this.value;hlLoadHistory().then(function(){();})" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
+      +'<button onclick="HL.filterOutlet=\'\';HL.filterDate=\'\';hlLoadHistory().then(function(){();})" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
       +'</div>'
       +histHTML
     )
@@ -2586,7 +2589,7 @@ async function renderHotelsLedger(){
 }
 async function hlDelete(outlet,date){
   if(!confirm('Delete entry for '+outlet+' on '+date+'?'))return;
-  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();renderHotelsLedger();}
+  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();();}
   catch(e){toast('Error: '+e.message);}
 }
 // App starts via welcome screen Get Started button → startApp()
