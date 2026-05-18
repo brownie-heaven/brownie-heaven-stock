@@ -2587,7 +2587,7 @@ async function renderHotelsLedger(){
 }
 async function hlDelete(outlet,date){
   if(!confirm('Delete entry for '+outlet+' on '+date+'?'))return;
-  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();();}
+  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();}
   catch(e){toast('Error: '+e.message);}
 }
 // App starts via welcome screen Get Started button → startApp()
