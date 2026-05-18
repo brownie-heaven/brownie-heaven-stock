@@ -1032,7 +1032,7 @@ function renderStock() {
             <div class="fg"><label>Incoming</label><input type="number" min="0" value="${d.incoming||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','incoming',this.value)"`}></div>
             <div class="fg"><label>Exp qty</label><input type="number" min="0" value="${d.expiryQty||''}" placeholder="0" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888"':`oninput="setStock('${cat.id}','${p.id}','expiryQty',this.value)"`}></div>
             <div class="fg"><label>Exp date</label><input type="date" value="${d.expiryDate||''}" ${S.shift==='night'?'readonly style="background:#f5f5f5;color:#888;font-size:11px"':`oninput="setStock('${cat.id}','${p.id}','expiryDate',this.value)" style="font-size:11px"`}></div>
-      <div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div><div class="fg"><label style="color:var(--red)">Wastage</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div>
+      <div class="fg"><label style="color:var(--green)">Complimentary</label><input type="number" min="0" value="${d.complimentary_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','complimentary_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div><div class="fg"><label style="color:var(--red)">Expired</label><input type="number" min="0" value="${d.wastage_qty||''}" placeholder="0" ${S.shift==='night'?`oninput="setStock('${cat.id}','${p.id}','wastage_qty',this.value)"`:'readonly style="background:#f5f5f5;color:#888"'}></div>
         <div class="fg"><label>Closing</label><input id="cl_${cat.id}_${p.id}" class="cl" type="number" value="${cl||''}" readonly></div>
       </div>
       <div class="sales-lbl">Dine-in + Online</div>
@@ -2078,7 +2078,7 @@ async function showShiftDetail(pin, shift, date){
           <th style="padding:6px;text-align:center">Open</th>
           <th style="padding:6px;text-align:center">In</th>
           <th style="padding:6px;text-align:center">Sales</th>
-          <th style="padding:6px;text-align:center">Waste</th>
+          <th style="padding:6px;text-align:center">Expired</th>
           <th style="padding:6px;text-align:center">Compli</th>
           <th style="padding:6px;text-align:center">Closing</th>
         </tr></thead>
