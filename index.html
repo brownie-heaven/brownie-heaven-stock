@@ -256,7 +256,8 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
     <button class="mt" id="mt4" onclick="setTab(4)">Supply Ledger</button>
     <button class="mt" id="mt5" onclick="setTab(5)">Accessories</button>
     <button class="mt" id="mt6" onclick="setTab(6)">Hotels</button>
-    <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
+   <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
+    <button class="mt" id="mt8" onclick="setTab(8)" style="display:none">Shift Entries</button>
   </div>
   <div class="screen" id="screen"></div>
 </div>
@@ -418,15 +419,18 @@ function setHdr(sub, showTabs) {
 if(S.role==='dispatch' && document.getElementById('mt2')) document.getElementById('mt2').textContent='Dispatch';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
- ['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7'].forEach((id,i) => {
-  const el = document.getElementById(id);
-  if(S.role==='dispatch') {
-    el.style.display = (i===1||i===2) ? '' : 'none';
-   el.classList.toggle('active', i===1 ? S.mainTab===1 : S.mainTab===2);
-  } else {
-   el.style.display = (i===1) ? 'none' : '';
-    el.classList.toggle('active', i === S.mainTab);
-  }
+['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7','mt8'].forEach((id,i) => {
+const el = document.getElementById(id);
+      if(S.role==='dispatch') {
+        el.style.display = (i===1||i===2) ? '' : 'none';
+        el.classList.toggle('active', i===1 ? S.mainTab===1 : S.mainTab===2);
+      } else if(S.role==='admin') {
+        el.style.display = (i===1) ? 'none' : '';
+        el.classList.toggle('active', i === S.mainTab);
+      } else {
+        el.style.display = (i===1||i===8) ? 'none' : '';
+        el.classList.toggle('active', i === S.mainTab);
+      }
 });
   }
 }
@@ -465,6 +469,7 @@ setHdr('Dashboard', true);
   else if (i===5) renderAccessoriesLedger();
   else if (i===6) renderHotelsLedger();
   else if (i===7) renderPurchase();
+  else if (i===8) renderShiftEntries();
 }
 // ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
 const PURCHASE_PRODUCTS = [
@@ -627,7 +632,125 @@ const PURCHASE_PRODUCTS = [
 ];
 let purchaseRows = [{id:1,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
 let purchaseRowId = 1;
+// — SHIFT ENTRIES (admin only)
+function renderShiftEntries() {
+  setHdr('Shift Entries', true);
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('screen').innerHTML = `
+    <div style="margin-top:14px">
+      <div class="card">
+        <div class="card-title">📋 Shift Entries — Admin View</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Click ✏️ to edit any shift entry. Use for corrections or filling on behalf of staff.</div>
+        <input type="date" id="se-date-admin" value="${today}" onchange="loadShiftStatusAdmin()" style="margin-bottom:14px;padding:8px;border:1px solid var(--border);border-radius:6px">
+        <div id="shift-status-admin-grid">Loading...</div>
+      </div>
+    </div>
+  `;
+  loadShiftStatusAdmin();
+}
 
+async function loadShiftStatusAdmin() {
+  const date = document.getElementById('se-date-admin')?.value;
+  if(!date) return;
+  const el = document.getElementById('shift-status-admin-grid');
+  if(!el) return;
+  el.innerHTML = 'Loading...';
+  const entries = await sbGet('shift_entries', `?entry_date=eq.${date}&or=(is_demo.eq.false,is_demo.is.null)&select=outlet_id,shift,staff_name,id`);
+  const outlets = Object.entries(OUTLET_PINS);
+  const shifts = ['morning','night'];
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    ${shifts.map(shift=>`
+      <div>
+        <div style="font-weight:600;font-size:13px;color:var(--brown);margin-bottom:8px;text-transform:capitalize">${shift} Shift</div>
+        ${outlets.map(([pin,name])=>{
+          const entry = entries.find(e=>e.outlet_id==pin && e.shift===shift);
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin-bottom:6px;border:1px solid ${entry?'#cde9d0':'#f0c4c4'};background:${entry?'#f0faf2':'#fdf4f4'};border-radius:6px;font-size:12px">
+            <span onclick="${entry?`showShiftDetail('${pin}','${shift}','${date}')`:''}" style="${entry?'cursor:pointer;':''}flex:1">${name} ${entry?`<span style="color:#0a7">✅ ${entry.staff_name}</span>`:`<span style="color:#c00">❌ Pending</span>`}</span>
+            <button onclick="adminEditShift('${pin}','${shift}','${date}',${entry?`'${entry.id}'`:'null'})" style="background:var(--brown);color:white;border:none;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;margin-left:8px">${entry?'✏️ Edit':'+ Fill'}</button>
+          </div>`;
+        }).join('')}
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+async function adminEditShift(pin, shift, date, existingId) {
+  // Set up state to enter the form as if admin is filling for that outlet
+  S.outlet = pin;
+  S.outletName = OUTLET_PINS[pin];
+  S.shift = shift;
+  S.staffName = existingId ? '' : 'Admin filled';  // will be loaded if existing
+  S.activeTab = 0;
+  S.adminEditing = true;
+  S.adminEditingId = existingId;
+  
+  // If editing existing, load that entry's stock data first
+  if (existingId) {
+    try {
+      const entry = await sbGet('shift_entries', `?id=eq.${existingId}&select=*`);
+      if (entry.length > 0) {
+        S.staffName = entry[0].staff_name;
+        const lines = await sbGet('stock_lines', `?entry_id=eq.${existingId}&select=*`);
+        S.stockData = {};
+        lines.forEach(line => {
+          const prod = DB.products.find(p => p.id === line.product_id);
+          if (!prod) return;
+          const catId = prod.category_id;
+          if (!S.stockData[catId]) S.stockData[catId] = {};
+          S.stockData[catId][line.product_id] = {
+            opening: String(line.opening || 0),
+            incoming: String(line.incoming || 0),
+            dineIn: String(line.dine_in || 0),
+            swiggy: String(line.swiggy || 0),
+            zomato: String(line.zomato || 0),
+            expiryQty: String(line.expiry_qty || 0),
+            expiryDate: line.expiry_date || '',
+            complimentary_qty: String(line.complimentary || 0),
+            wastage_qty: String(line.wastage || 0)
+          };
+        });
+      }
+    } catch(e) {
+      console.error('Failed to load entry:', e);
+      alert('Could not load entry for editing.');
+      return;
+    }
+  } else {
+    // Fresh fill — try to load morning data if filling night
+    if (shift === 'night') {
+      try {
+        const morningEntry = await sbGet('shift_entries', `?outlet_id=eq.${pin}&entry_date=eq.${date}&shift=eq.morning&or=(is_demo.eq.false,is_demo.is.null)&select=id`);
+        if (morningEntry.length > 0) {
+          const morningLines = await sbGet('stock_lines', `?entry_id=eq.${morningEntry[0].id}&select=*`);
+          S.stockData = {};
+          morningLines.forEach(line => {
+            const prod = DB.products.find(p => p.id === line.product_id);
+            if (!prod) return;
+            const catId = prod.category_id;
+            if (!S.stockData[catId]) S.stockData[catId] = {};
+            S.stockData[catId][line.product_id] = {
+              opening: String(line.opening || 0),
+              incoming: String(line.incoming || 0),
+              dineIn: String(line.dine_in || 0),
+              swiggy: String(line.swiggy || 0),
+              zomato: String(line.zomato || 0),
+              expiryQty: String(line.expiry_qty || 0),
+              expiryDate: line.expiry_date || ''
+            };
+          });
+        } else {
+          S.stockData = {};
+        }
+      } catch(e) {
+        S.stockData = {};
+      }
+    } else {
+      S.stockData = {};
+    }
+  }
+  
+  renderStock();
+}
 function renderPurchase(){
   const today = new Date().toISOString().split('T')[0];
   const ma = document.getElementById('screen');
