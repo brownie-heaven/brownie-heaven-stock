@@ -1448,10 +1448,11 @@ async function saveDraft(){
     if(lines.length) await sbPost('stock_lines',lines);
     btn.textContent = '✅ Saved!';
     setTimeout(()=>{ btn.textContent=orig; btn.disabled=false; },2000);
-  } catch(e) {
-    btn.textContent = orig;
-    btn.disabled = false;
-    alert('Error saving draft. Try again.');
+ } catch(e) {
+        btn.textContent = orig;
+        btn.disabled = false;
+        console.error('Save draft error:', e);
+        alert('Error saving draft. Try again.\n\nDetails: ' + (e?.message || JSON.stringify(e)));
   }
 }
 // ── SUBMIT ────────────────────────────────────────────────────────────────────
