@@ -2519,7 +2519,7 @@ async function hlLoadHistory(){
       }
       // No filter = show ALL hotels (no outlet filter needed)
       if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
-    HL.history=await sbGet(q);
+   const rows=await sbGet(q);HL.history=HL.filterOutlet?rows:rows.filter(r=>HOTEL_LIST.includes(r.outlet));
   }catch(e){HL.history=[];}
 }
 function hlGroupHistory(){
