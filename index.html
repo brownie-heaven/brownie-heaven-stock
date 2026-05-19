@@ -363,7 +363,8 @@ let S = {
 async function init() {
   showLoading('Loading Brownie Heaven...');
   try {
-   DB.products = (await sbGet('products','?order=category_id,sort_order')).filter(p => !['Biscoff Slice','Caramelised White Chocolate Slice','7 Layer Devil Chocolate Slice'].includes(p.name));
+   DB.products = await sbGet('products','?order=category_id,sort_order');
+   DB.products.forEach(p => { if ([41,42,43].includes(p.id)) p.category_id = 'pastry slices'; });
     // Fix product names client-side
     DB.products.forEach(p => {
       if (p.name === 'Blue & White Chocolate Medovik') p.name = 'Blueberry Medovik';
