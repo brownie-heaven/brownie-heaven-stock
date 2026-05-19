@@ -1438,6 +1438,7 @@ async function saveDraft(){
           const entries = await sbPost('shift_entries',[{outlet_id:S.outlet,entry_date:today,shift:S.shift,staff_name:S.staffName,is_demo:false}]);
           entryId = entries[0].id;
         }
+        const lines = [];
     Object.entries(S.stockData).forEach(([catId,prods])=>{
       Object.entries(prods).forEach(([prodId,d])=>{
         if(Object.values(d).some(v=>v&&v!=='')) {
