@@ -1429,11 +1429,15 @@ async function saveDraft(){
   btn.disabled = true;
   try {
     const today = new Date().toISOString().split('T')[0];
-    const existing = await sbGet('shift_entries',`?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.${S.shift}&is_demo=eq.false&select=id`);
-    if(existing.length > 0) await sbDelete('shift_entries',`?id=eq.${existing[0].id}`);
-    const entries = await sbPost('shift_entries',[{outlet_id:S.outlet,entry_date:today,shift:S.shift,staff_name:S.staffName,is_demo:false}]);
-    const entryId = entries[0].id;
-    const lines = [];
+ const existing = await sbGet('shift_entries',`?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.${S.shift}&is_demo=eq.false&select=id`);
+        let entryId;
+        if(existing.length > 0) {
+          entryId = existing[0].id;
+          await sbDelete('stock_lines',`?entry_id=eq.${entryId}`);
+        } else {
+          const entries = await sbPost('shift_entries',[{outlet_id:S.outlet,entry_date:today,shift:S.shift,staff_name:S.staffName,is_demo:false}]);
+          entryId = entries[0].id;
+        }
     Object.entries(S.stockData).forEach(([catId,prods])=>{
       Object.entries(prods).forEach(([prodId,d])=>{
         if(Object.values(d).some(v=>v&&v!=='')) {
