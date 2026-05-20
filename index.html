@@ -1162,9 +1162,10 @@ async function loadPurchaseHistory(){
           <th style="padding:6px;text-align:center">Rate</th>
           <th style="padding:6px;text-align:center">GST%</th>
           <th style="padding:6px;text-align:center">GST Amt</th>
-          <th style="padding:6px;text-align:center">Amount</th>
-        </tr></thead>
-        <tbody>
+         <th style="padding:6px;text-align:center">Amount</th>
+            <th style="padding:6px;text-align:center;min-width:80px">Actions</th>
+          </tr></thead>
+          <tbody>
           ${g.items.map(i=>`<tr style="border-top:1px solid #f0f0f0">
             <td style="padding:6px 10px">${i.product} <span style="color:#bbb;font-size:11px">(${i.category})</span></td>
             <td style="padding:6px;text-align:center">${i.qty}</td>
@@ -1173,12 +1174,57 @@ async function loadPurchaseHistory(){
             <td style="padding:6px;text-align:center">${i.gst_percent}%</td>
             <td style="padding:6px;text-align:center">₹${Number(i.gst_amount).toFixed(2)}</td>
             <td style="padding:6px;text-align:center;font-weight:600">₹${Number(i.amount).toFixed(2)}</td>
+            <td style="padding:6px;text-align:center;white-space:nowrap">
+              <button onclick="editPurchaseItem('${i.id}')" title="Edit" style="background:none;border:1px solid #ddd;border-radius:4px;padding:3px 7px;cursor:pointer;margin-right:4px">✏️</button>
+              <button onclick="deletePurchaseItem('${i.id}','${(i.product||'').replace(/'/g,"\\'")}')" title="Delete" style="background:none;border:1px solid #f5c0c0;border-radius:4px;padding:3px 7px;cursor:pointer;color:#c00">🗑️</button>
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>`).join('');
 }
-// ── END PURCHASE ──────────────────────────────────────────────────────────────
+
+  async function deletePurchaseItem(id, name){
+    if(!confirm(`Delete "${name}" from this bill?\n\nThis cannot be undone.`)) return;
+    try {
+      await sbDelete('purchase_ledger', `?id=eq.${id}`);
+      toast(`🗑️ Deleted ${name}`);
+      await loadPurchaseHistory();
+    } catch(e){
+      console.error('Delete failed:', e);
+      alert('Could not delete. Details: ' + (e?.message || JSON.stringify(e)));
+    }
+  }
+
+  async function editPurchaseItem(id){
+    try {
+      const rows = await sbGet('purchase_ledger', `?id=eq.${id}&select=*`);
+      if(!rows.length){ alert('Item not found.'); return; }
+      const r = rows[0];
+      const newQty = prompt(`Qty for "${r.product}":`, r.qty);
+      if(newQty === null) return;
+      const newRate = prompt(`Rate (₹) for "${r.product}":`, r.rate);
+      if(newRate === null) return;
+      const newGst = prompt(`GST % for "${r.product}":`, r.gst_percent || 0);
+      if(newGst === null) return;
+      const qty = parseFloat(newQty) || 0;
+      const rate = parseFloat(newRate) || 0;
+      const gstPct = parseFloat(newGst) || 0;
+      const subtotal = qty * rate;
+      const gstAmount = subtotal * (gstPct / 100);
+      const amount = subtotal + gstAmount;
+      await sbPatch('purchase_ledger', `?id=eq.${id}`, {
+        qty, rate, gst_percent: gstPct, gst_amount: gstAmount, amount
+      });
+      toast(`✅ Updated ${r.product}`);
+      await loadPurchaseHistory();
+    } catch(e){
+      console.error('Edit failed:', e);
+      alert('Could not update. Details: ' + (e?.message || JSON.stringify(e)));
+    }
+  }
+
+    // —— END PURCHASE ——————————————————————
 // ── PIN ──────────────────────────────────────────────────────────────────────
 function renderPin() {
   setHdr('Stock Management', false);
