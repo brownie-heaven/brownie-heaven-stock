@@ -2194,13 +2194,9 @@ const lists = [
     const autobal = Math.max(0, ms - (dispatched[p.id]||0));
     const bal = pd.balance !== undefined ? +pd.balance : autobal;
 
-    // To Make: user override > par - balance > saved
-    const par = getKitchenPar(p.name);
-    const autoMake = par !== null ? Math.max(0, par - bal) : 0;
-    const tm = pd.toMake !== undefined
-      ? +pd.toMake
-      : (saved.production_qty !== undefined ? +saved.production_qty : autoMake);
-
+  // To Make: ALWAYS calculated from par - balance (no override on this field)
+        const par = getKitchenPar(p.name);
+        const tm = par !== null ? Math.max(0, par - bal) : 0;
     // Closing = balance + to make
     const cl = bal + tm;
 
