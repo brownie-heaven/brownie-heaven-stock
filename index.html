@@ -1006,13 +1006,14 @@ function renderPurchase(){
     try {
       const created = await sbPost('purchase_products',[{name,agency,category,rate,unit,gst}]);
       if(typeof PURCHASE_PRODUCTS !== 'undefined' && Array.isArray(PURCHASE_PRODUCTS)) PURCHASE_PRODUCTS.push(created[0]);
-      await loadCustomPurchaseProducts?.();
+     if(typeof loadCustomPurchaseProducts === 'function') await loadCustomPurchaseProducts();
       document.getElementById('np-modal').remove();
       toast(`✅ ${name} added`);
     } catch(e){
       console.error('New product save failed:', e);
       alert('Could not save product. Details: ' + (e?.message || JSON.stringify(e)));
     }
+  }
 function filterPP(id,q){const d=document.getElementById('pdd-'+id);if(!d)return;const f=!q?PURCHASE_PRODUCTS:getAllPurchaseProducts().filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));d.style.display=f.length?'block':'none';d.innerHTML=f.map(p=>`<div onmousedown="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,'&#39;')}');document.getElementById('psearch-${id}').value='${p.name.replace(/'/g,'&#39;')}';document.getElementById('pdd-${id}').style.display='none'" style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`).join('');}
 function renderPurchaseRows(){
   const tbody = document.getElementById('pur-rows');
