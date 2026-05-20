@@ -2402,9 +2402,7 @@ async function finaliseProduction(listId, label) {
     const disp = dispatched[p.id]||0;
     const bal  = pd.balance !== undefined ? pd.balance : Math.max(0, ms - disp);
     const par  = getKitchenPar(p.name);
-    const tm   = pd.toMake !== undefined ? pd.toMake
-                 : (saved.production_qty !== undefined ? +saved.production_qty
-                 : (par !== null ? Math.max(0, par - bal) : 0));
+    const tm   = par !== null ? Math.max(0, par - bal) : 0;
     return {
       list_date: today, list_type: listId,
       product_id: p.id,
