@@ -2085,13 +2085,56 @@ async function renderProduction() {
    }
       // No fallback — kitchen production is a separate department
       // If no production_lists entry for yesterday, morning starts at 0
-    // Dispatched today = demand requests for today
-    const dispData = await sbGet('demand_requests',
-      `?entry_date=eq.${today}&select=product_id,requested_qty`);
-    const dispatched = {};
-    dispData.forEach(d => {
-      dispatched[d.product_id] = (dispatched[d.product_id]||0) + (+d.requested_qty||0);
-    });
+  // Dispatched today = sum across all outlets of (overrides OR calculated par−closing)
+      // Step 1: get yesterday's night closing per outlet+product
+      const dispYestEntries = await sbGet('shift_entries', `?entry_date=eq.${yStr}&shift=eq.night&is_demo=eq.false&select=id,outlet_id`);
+      const dispEntryIds = dispYestEntries.map(e => e.id);
+      let dispClosingLines = [];
+      if(dispEntryIds.length) {
+        dispClosingLines = await sbGet('stock_lines', `?entry_id=in.(${dispEntryIds.join(',')})&select=entry_id,product_id,closing`);
+      }
+      const dispOutletByEntry = {};
+      dispYestEntries.forEach(e => { dispOutletByEntry[e.id] = e.outlet_id; });
+      const dispClosing = {}; // dispClosing[outlet_id][product_id] = qty
+      dispClosingLines.forEach(l => {
+        const oid = dispOutletByEntry[l.entry_id];
+        if(!dispClosing[oid]) dispClosing[oid] = {};
+        dispClosing[oid][l.product_id] = +l.closing || 0;
+      });
+
+      // Step 2: get par stock for today's day-type
+      const dispDayType = isWeekend() ? 'weekend' : 'weekday';
+      const dispParData = await sbGet('outlet_product_config', `?day_type=eq.${dispDayType}&is_active=eq.true&select=outlet_id,product_id,par_stock`);
+      const dispPar = {};
+      dispParData.forEach(p => {
+        if(!dispPar[p.outlet_id]) dispPar[p.outlet_id] = {};
+        dispPar[p.outlet_id][p.product_id] = +p.par_stock || 0;
+      });
+
+      // Step 3: get today's overrides
+      const dispOverridesData = await sbGet('dispatch_overrides', `?dispatch_date=eq.${today}&select=outlet_id,product_id,qty`);
+      const dispOverrides = {};
+      dispOverridesData.forEach(o => {
+        if(!dispOverrides[o.outlet_id]) dispOverrides[o.outlet_id] = {};
+        dispOverrides[o.outlet_id][o.product_id] = +o.qty;
+      });
+
+      // Step 4: sum up dispatch per product across all outlets
+      const dispatched = {};
+      Object.keys(dispPar).forEach(oid => {
+        Object.keys(dispPar[oid]).forEach(pid => {
+          const isOverridden = dispOverrides[oid] && dispOverrides[oid][pid] !== undefined;
+          let qty;
+          if(isOverridden) {
+            qty = dispOverrides[oid][pid];
+          } else {
+            const cl = dispClosing[oid] && dispClosing[oid][pid] !== undefined ? dispClosing[oid][pid] : null;
+            const parVal = dispPar[oid][pid];
+            qty = cl !== null ? Math.max(0, parVal - cl) : 0;
+          }
+          dispatched[pid] = (dispatched[pid] || 0) + qty;
+        });
+      });
 
     // Load any saved production data for today
     const todayProd = await sbGet('production_lists',
