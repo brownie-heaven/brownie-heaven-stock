@@ -1704,6 +1704,27 @@ function downloadDispatch() {
   a.download = `dispatch_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
 }
+  async function editDispatchCell(outletId, productId, productName, calculated) {
+      const today = window._dispatchToday || new Date().toISOString().split('T')[0];
+      const existing = await sbGet('dispatch_overrides', `?dispatch_date=eq.${today}&outlet_id=eq.${outletId}&product_id=eq.${productId}&select=qty`);
+      const currentVal = existing.length ? existing[0].qty : calculated;
+      const newVal = prompt(`Dispatch qty for "${productName}":\n(Calculated: ${calculated})`, currentVal);
+      if(newVal === null) return;
+      const qty = parseFloat(newVal);
+      if(isNaN(qty) || qty < 0) { alert('Please enter a valid number ≥ 0'); return; }
+      try {
+        await fetch(`${SB_URL}/rest/v1/dispatch_overrides?on_conflict=dispatch_date,outlet_id,product_id`, {
+          method: 'POST',
+          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify([{ dispatch_date: today, outlet_id: outletId, product_id: productId, qty }])
+        });
+        toast(`✅ Updated ${productName}`);
+        await renderDispatch();
+      } catch(e) {
+        console.error('Override save failed:', e);
+        alert('Could not save. Details: ' + (e?.message || JSON.stringify(e)));
+      }
+    }
 // ── DISPATCH ──────────────────────────────────────────────────────────────────
 async function renderDispatch() {
   showLoading('Loading dispatch data...');
@@ -1714,12 +1735,21 @@ async function renderDispatch() {
     const outletList = Object.keys(OUTLET_PINS);
 
     // Fetch yesterday's night shift closing stock for all outlets
-    const entries = await sbGet('shift_entries', `?entry_date=eq.${yesterday}&shift=eq.night&is_demo=eq.false&select=id,outlet_id`);
-    const entryIds = entries.map(e => e.id);
-    let stockLines = [];
-    if(entryIds.length) {
-      stockLines = await sbGet('stock_lines', `?entry_id=in.(${entryIds.join(',')})&select=entry_id,product_id,closing`);
-    }
+      const entries = await sbGet('shift_entries', `?entry_date=eq.${yesterday}&shift=eq.night&is_demo=eq.false&select=id,outlet_id`);
+      const entryIds = entries.map(e => e.id);
+      let stockLines = [];
+      if(entryIds.length) {
+        stockLines = await sbGet('stock_lines', `?entry_id=in.(${entryIds.join(',')})&select=entry_id,product_id,closing`);
+      }
+
+      // Fetch dispatch overrides for today
+      const overridesData = await sbGet('dispatch_overrides', `?dispatch_date=eq.${today}&select=outlet_id,product_id,qty`);
+      const overrides = {}; // overrides[outlet_id][product_id] = qty
+      overridesData.forEach(o => {
+        if(!overrides[o.outlet_id]) overrides[o.outlet_id] = {};
+        overrides[o.outlet_id][o.product_id] = +o.qty;
+      });
+      window._dispatchToday = today; // expose for edit handler
 
     // Map closing stock by outlet
     const closingByOutlet = {};
@@ -1755,14 +1785,17 @@ async function renderDispatch() {
       tableRows += `<tr style="background:var(--brown);color:white"><td colspan="${outletList.length+2}" style="padding:6px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">${cat.label}</td></tr>`;
       cat.products.forEach(p => {
         let hasDispatch = false;
-        const cells = outletList.map(outletId => {
+       const cells = outletList.map(outletId => {
           const cl = (closing[outletId] && closing[outletId][p.id] !== undefined) ? closing[outletId][p.id] : null;
           const parVal = (par[outletId] && par[outletId][p.id] !== undefined) ? par[outletId][p.id] : 0;
-          const toSend = cl !== null ? Math.max(0, parVal - cl) : 0;
+          const calculated = cl !== null ? Math.max(0, parVal - cl) : 0;
+          const isOverridden = overrides[outletId] && overrides[outletId][p.id] !== undefined;
+          const toSend = isOverridden ? overrides[outletId][p.id] : calculated;
           if(toSend > 0) hasDispatch = true;
-          const bg = toSend > 0 ? '#fff3cd' : 'transparent';
+          const bg = isOverridden ? '#d4edda' : (toSend > 0 ? '#fff3cd' : 'transparent');
           const color = toSend > 0 ? 'var(--brown)' : 'var(--txt3)';
-          return `<td style="text-align:center;padding:4px 6px;font-size:12px;background:${bg};color:${color};font-weight:${toSend>0?'600':'400'}">${toSend}</td>`;
+          const star = isOverridden ? '<span style="color:#28a745;font-size:9px" title="Manually adjusted">●</span>' : '';
+          return `<td onclick="editDispatchCell(${outletId},${p.id},'${(p.name||'').replace(/'/g,"\\'")}',${calculated})" style="text-align:center;padding:4px 6px;font-size:12px;background:${bg};color:${color};font-weight:${toSend>0?'600':'400'};cursor:pointer" title="Click to edit. Calculated: ${calculated}">${toSend}${star}</td>`;
         }).join('');
         const rowBg = hasDispatch ? '#fffdf5' : 'transparent';
         tableRows += `<tr style="border-bottom:.5px solid var(--border2);background:${rowBg}">
