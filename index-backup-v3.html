@@ -363,7 +363,8 @@ let S = {
 async function init() {
   showLoading('Loading Brownie Heaven...');
   try {
-    DB.products = await sbGet('products','?order=category_id,sort_order');
+   DB.products = await sbGet('products','?order=category_id,sort_order');
+   DB.products.forEach(p => { if ([41,42,43].includes(p.id)) p.category_id = 'pastry slices'; });
     // Fix product names client-side
     DB.products.forEach(p => {
       if (p.name === 'Blue & White Chocolate Medovik') p.name = 'Blueberry Medovik';
@@ -944,11 +945,11 @@ function renderPurchase(){
       </tfoot>
     </table></div>
 
-    <div style="margin-top:12px;display:flex;gap:10px">
+  <div style="margin-top:12px;display:flex;gap:10px">
       <button onclick="addPurchaseRow()" style="padding:8px 18px;background:#f0f0f0;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:13px">+ Add Item</button>
+      <button onclick="openNewProductModal()" style="padding:8px 18px;background:#fff3e0;border:1px solid #6B2400;color:#6B2400;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">+ New Product</button>
       <button onclick="savePurchase()" style="padding:8px 24px;background:#6B2400;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">💾 Save Bill</button>
     </div>
-
     <hr style="margin:28px 0;border-color:#eee">
 
     <h3 style="color:#6B2400;margin-bottom:12px">📋 Purchase History</h3>
@@ -964,8 +965,55 @@ function renderPurchase(){
   </div>`;
 
   renderPurchaseRows();
-  loadPurchaseHistory();
-}
+    loadPurchaseHistory();
+  }
+
+  function openNewProductModal(){
+    const agencies = [...new Set(getAllPurchaseProducts().map(p=>p.agency))].sort();
+    const categories = [...new Set(getAllPurchaseProducts().map(p=>p.category))].sort();
+    const overlay = document.createElement('div');
+    overlay.id = 'np-modal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+    overlay.innerHTML = `
+      <div style="background:white;border-radius:8px;padding:24px;max-width:480px;width:90%;max-height:90vh;overflow-y:auto">
+        <h3 style="color:#6B2400;margin:0 0 16px">+ Add New Purchase Product</h3>
+        <div style="display:grid;gap:12px">
+          <div><label style="font-size:12px;color:#888">Name *</label><input id="np-name" placeholder="Product name" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px"></div>
+          <div><label style="font-size:12px;color:#888">Agency *</label><input id="np-agency" list="np-agency-list" placeholder="Type or select agency" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px"><datalist id="np-agency-list">${agencies.map(a=>`<option value="${a}">`).join('')}</datalist></div>
+          <div><label style="font-size:12px;color:#888">Category *</label><input id="np-category" list="np-cat-list" placeholder="Type or select category" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px"><datalist id="np-cat-list">${categories.map(c=>`<option value="${c}">`).join('')}</datalist></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div><label style="font-size:12px;color:#888">Default Rate (₹)</label><input id="np-rate" type="number" step="0.01" placeholder="0.00" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px"></div>
+            <div><label style="font-size:12px;color:#888">Unit</label><select id="np-unit" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px"><option>pcs</option><option>kg</option><option>g</option><option>l</option><option>ml</option><option>box</option><option>packet</option></select></div>
+          </div>
+          <div><label style="font-size:12px;color:#888">GST %</label><input id="np-gst" type="number" step="0.01" placeholder="0" value="0" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px"></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
+          <button onclick="document.getElementById('np-modal').remove()" style="padding:8px 18px;background:#f0f0f0;border:1px solid #ddd;border-radius:6px;cursor:pointer">Cancel</button>
+          <button onclick="saveNewProduct()" style="padding:8px 24px;background:#6B2400;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Save Product</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+  }
+
+  async function saveNewProduct(){
+    const name = document.getElementById('np-name').value.trim();
+    const agency = document.getElementById('np-agency').value.trim();
+    const category = document.getElementById('np-category').value.trim();
+    const rate = parseFloat(document.getElementById('np-rate').value) || 0;
+    const unit = document.getElementById('np-unit').value;
+    const gst = parseFloat(document.getElementById('np-gst').value) || 0;
+    if(!name || !agency || !category){ alert('Name, Agency, and Category are required.'); return; }
+    try {
+      const created = await sbPost('purchase_products',[{name,agency,category,rate,unit,gst}]);
+      if(typeof PURCHASE_PRODUCTS !== 'undefined' && Array.isArray(PURCHASE_PRODUCTS)) PURCHASE_PRODUCTS.push(created[0]);
+     if(typeof loadCustomPurchaseProducts === 'function') await loadCustomPurchaseProducts();
+      document.getElementById('np-modal').remove();
+      toast(`✅ ${name} added`);
+    } catch(e){
+      console.error('New product save failed:', e);
+      alert('Could not save product. Details: ' + (e?.message || JSON.stringify(e)));
+    }
+  }
 function filterPP(id,q){const d=document.getElementById('pdd-'+id);if(!d)return;const f=!q?PURCHASE_PRODUCTS:getAllPurchaseProducts().filter(p=>p.name.toLowerCase().includes(q.toLowerCase()));d.style.display=f.length?'block':'none';d.innerHTML=f.map(p=>`<div onmousedown="onPurchaseProductSelect(${id},'${p.name.replace(/'/g,'&#39;')}');document.getElementById('psearch-${id}').value='${p.name.replace(/'/g,'&#39;')}';document.getElementById('pdd-${id}').style.display='none'" style="padding:8px 10px;cursor:pointer;font-size:12px;border-bottom:0.5px solid #f0f0f0" onmouseover="this.style.background='#f9f5f2'" onmouseout="this.style.background='white'">${p.name}</div>`).join('');}
 function renderPurchaseRows(){
   const tbody = document.getElementById('pur-rows');
@@ -1220,8 +1268,40 @@ function loadDemoData() {
 }
 
 async function goStock() {
-  // If night shift, try to load morning's entry for auto-carry
-  if (S.shift === 'night') {
+      // First: try to load existing draft for this same outlet+shift+date
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const existing = await sbGet('shift_entries', `?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.${S.shift}&is_demo=eq.false&select=id,staff_name`);
+        if (existing.length > 0) {
+          const draftLines = await sbGet('stock_lines', `?entry_id=eq.${existing[0].id}&select=*`);
+          S.staffName = existing[0].staff_name || S.staffName;
+          S.stockData = {};
+          draftLines.forEach(line => {
+            const prod = DB.products.find(p => p.id === line.product_id);
+            if (!prod) return;
+            const catId = prod.category_id;
+            if (!S.stockData[catId]) S.stockData[catId] = {};
+            S.stockData[catId][line.product_id] = {
+              opening: String(line.opening || 0),
+              incoming: String(line.incoming || 0),
+              dineIn: String(line.dine_in || 0),
+              swiggy: String(line.swiggy || 0),
+              zomato: String(line.zomato || 0),
+              expiryQty: String(line.expiry_qty || 0),
+              expiryDate: line.expiry_date || '',
+              complimentary_qty: String(line.complimentary || 0),
+              wastage_qty: String(line.wastage || 0)
+            };
+          });
+          toast(`📝 Draft loaded — continue editing`);
+          S.activeTab = 0;
+          renderStock();
+          return;
+        }
+      } catch(e) { console.error('Draft load failed:', e); }
+
+      // If night shift, try to load morning's entry for auto-carry
+      if (S.shift === 'night') {
     const today = new Date().toISOString().split('T')[0];
     try {
       const morningEntry = await sbGet('shift_entries', `?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.morning&or=(is_demo.eq.false,is_demo.is.null)&select=id,staff_name`);
@@ -1428,11 +1508,16 @@ async function saveDraft(){
   btn.disabled = true;
   try {
     const today = new Date().toISOString().split('T')[0];
-    const existing = await sbGet('shift_entries',`?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.${S.shift}&is_demo=eq.false&select=id`);
-    if(existing.length > 0) await sbDelete('shift_entries',`?id=eq.${existing[0].id}`);
-    const entries = await sbPost('shift_entries',[{outlet_id:S.outlet,entry_date:today,shift:S.shift,staff_name:S.staffName,is_demo:false}]);
-    const entryId = entries[0].id;
-    const lines = [];
+ const existing = await sbGet('shift_entries',`?outlet_id=eq.${S.outlet}&entry_date=eq.${today}&shift=eq.${S.shift}&is_demo=eq.false&select=id`);
+        let entryId;
+        if(existing.length > 0) {
+          entryId = existing[0].id;
+          await sbDelete('stock_lines',`?entry_id=eq.${entryId}`);
+        } else {
+          const entries = await sbPost('shift_entries',[{outlet_id:S.outlet,entry_date:today,shift:S.shift,staff_name:S.staffName,is_demo:false}]);
+          entryId = entries[0].id;
+        }
+        const lines = [];
     Object.entries(S.stockData).forEach(([catId,prods])=>{
       Object.entries(prods).forEach(([prodId,d])=>{
         if(Object.values(d).some(v=>v&&v!=='')) {
@@ -1443,10 +1528,11 @@ async function saveDraft(){
     if(lines.length) await sbPost('stock_lines',lines);
     btn.textContent = '✅ Saved!';
     setTimeout(()=>{ btn.textContent=orig; btn.disabled=false; },2000);
-  } catch(e) {
-    btn.textContent = orig;
-    btn.disabled = false;
-    alert('Error saving draft. Try again.');
+ } catch(e) {
+        btn.textContent = orig;
+        btn.disabled = false;
+        console.error('Save draft error:', e);
+        alert('Error saving draft. Try again.\n\nDetails: ' + (e?.message || JSON.stringify(e)));
   }
 }
 // ── SUBMIT ────────────────────────────────────────────────────────────────────
@@ -2519,7 +2605,7 @@ async function hlLoadHistory(){
       }
       // No filter = show ALL hotels (no outlet filter needed)
       if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
-    HL.history=await sbGet(q);
+   const rows=await sbGet(q);HL.history=HL.filterOutlet?rows:rows.filter(r=>HOTEL_LIST.includes(r.outlet));
   }catch(e){HL.history=[];}
 }
 function hlGroupHistory(){
@@ -2574,7 +2660,7 @@ async function renderHotelsLedger(){
     +(HL.view==='entry'?
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel / Partner</label>'
-      +'<select onchange="HL.outlet=this.value;HL.lines={};()" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
+      +'<select onchange="HL.outlet=this.value;HL.lines={};renderHotelsLedger()" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;background:white;font-family:var(--font)">'
       +'<option value="">Select hotel...</option>'+hotelOptions+'</select></div>'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Date</label>'
       +'<input type="date" value="'+HL.date+'" onchange="HL.date=this.value" style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
