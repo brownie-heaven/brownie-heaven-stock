@@ -2334,7 +2334,7 @@ function setProdField(listId, prodId, field, val) {
     S.productionData[listId][prodId]._autobal = autobal;
   }
   // Update to-make display only when balance changes & toMake not manually set
-  if (field === 'balance' && tmEl && pd.toMake === undefined) {
+ if ((field === 'balance' || field === 'morning') && tmEl && pd.toMake === undefined) {
     const newPar = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
     if (newPar !== null) tmEl.value = Math.max(0, newPar - (+val||0));
   }
