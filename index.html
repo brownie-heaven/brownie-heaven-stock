@@ -2333,12 +2333,12 @@ function setProdField(listId, prodId, field, val) {
     bEl.value = autobal;
     S.productionData[listId][prodId]._autobal = autobal;
   }
-  // Update to-make display only when balance changes & toMake not manually set
- if ((field === 'balance' || field === 'morning') && tmEl && pd.toMake === undefined) {
-    const newPar = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
-    if (newPar !== null) tmEl.value = Math.max(0, newPar - (+val||0));
-  }
-  if (cEl) cEl.textContent = cl || 0;
+// Recalculate To Make and Closing whenever any field changes
+      const newPar = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
+      const newTm = newPar !== null ? Math.max(0, newPar - bal) : 0;
+      const newCl = bal + newTm;
+      if (tmEl && pd.toMake === undefined) tmEl.value = newTm;
+      if (cEl) cEl.textContent = newCl || 0;
 }
 
 async function saveBalanceStock(listId) {
@@ -2353,7 +2353,7 @@ async function saveBalanceStock(listId) {
                  : ((window._prodMorning||{})[prodId]||0));
       const bal = d.balance;
       const par = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
-      const tm = d.toMake !== undefined ? d.toMake : (par !== null ? Math.max(0, par-bal) : 0);
+     const tm = par !== null ? Math.max(0, par-bal) : 0;
       return {
         list_date: today, list_type: listId,
         product_id: parseInt(prodId),
