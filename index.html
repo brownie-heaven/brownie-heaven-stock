@@ -2321,7 +2321,7 @@ function setProdField(listId, prodId, field, val) {
   const bal     = pd.balance !== undefined ? pd.balance : autobal;
   const par     = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
   const autoMake= par !== null ? Math.max(0, par - bal) : 0;
-  const tm      = pd.toMake !== undefined ? pd.toMake : autoMake;
+  const tm     = autoMake;
   const cl      = bal + tm;
 
   const bEl = document.getElementById(`pb_${listId}_${prodId}`);
