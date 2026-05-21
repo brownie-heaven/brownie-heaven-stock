@@ -2318,11 +2318,11 @@ function setProdField(listId, prodId, field, val) {
   const numVal = val === '' ? undefined : (+val || 0);
   pd[field] = numVal;
 
-  // Recompute and update display
-  recalcProdRow(listId, prodId);
+  // Recompute and update display — but skip the field user is typing in
+  recalcProdRow(listId, prodId, field);
 }
 
-function recalcProdRow(listId, prodId) {
+function recalcProdRow(listId, prodId, skipField) {
   const pd = S.productionData[listId][prodId] || {};
   const saved = (window._prodSaved||{})[prodId] || {};
   const prod = DB.products.find(p => p.id == prodId);
@@ -2344,10 +2344,10 @@ function recalcProdRow(listId, prodId) {
   const tmEl = document.getElementById(`ptm_${listId}_${prodId}`);
   const cEl  = document.getElementById(`pc_${listId}_${prodId}`);
 
-  if (msEl && pd.morning === undefined) msEl.value = ms || '';
-  if (bEl  && pd.balance === undefined) bEl.value  = bal || '';
-  if (tmEl && pd.toMake  === undefined) tmEl.value = tm || '';
-  if (cEl  && pd.closing === undefined) cEl.value  = cl || '';
+  if (msEl && pd.morning === undefined && skipField !== 'morning') msEl.value = ms || '';
+  if (bEl  && pd.balance === undefined && skipField !== 'balance') bEl.value  = bal || '';
+  if (tmEl && pd.toMake  === undefined && skipField !== 'toMake')  tmEl.value = tm || '';
+  if (cEl  && pd.closing === undefined && skipField !== 'closing') cEl.value  = cl || '';
 
   // Recalc subtotals
   recalcProdSubtotals(listId);
