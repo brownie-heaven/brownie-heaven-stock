@@ -2222,7 +2222,8 @@ const lists = [
     const tomakeRo = (isDispatch || isPastDate) ? lockStyle : '';
     tableRows += `<tr>
       <td>${p.name}${parBadge}</td>
-      <td><input type="number" min="0" value="${ms||''}" placeholder="0"
+    <td><input type="number" min="0" value="${ms||''}" placeholder="0"
+          id="pm_${cur.id}_${p.id}"
           ${msRo} oninput="setProdField('${cur.id}',${p.id},'morning',this.value)"></td>
      <td><input type="number" min="0" value="${bal||''}" placeholder="0"
           ${(!isDispatch || isPastDate)?' readonly style="background:var(--bg);color:var(--txt2)"':''}
@@ -2231,8 +2232,10 @@ const lists = [
       <td><input class="tomake" type="number" min="0" value="${tm||''}" placeholder="0"
           ${tomakeRo} id="ptm_${cur.id}_${p.id}"
           oninput="setProdField('${cur.id}',${p.id},'toMake',this.value)"></td>
-      <td id="pc_${cur.id}_${p.id}"
-          style="font-family:var(--mono);color:var(--green);font-weight:600">${cl||0}</td>
+    <td><input type="number" min="0" value="${cl||''}" placeholder="0"
+          id="pc_${cur.id}_${p.id}"
+          ${(!isDispatch||isPastDate)?' readonly style="background:var(--bg);color:var(--txt2);font-family:var(--mono);color:var(--green);font-weight:600"':'style="font-family:var(--mono);color:var(--green);font-weight:600"'}
+          oninput="setProdField('${cur.id}',${p.id},'closing',this.value)"></td>
     </tr>`;
   });
 
@@ -2309,64 +2312,82 @@ function changeProdDate(date) {
 function setProdField(listId, prodId, field, val) {
   if (!S.productionData[listId]) S.productionData[listId] = {};
   if (!S.productionData[listId][prodId]) S.productionData[listId][prodId] = {};
-  S.productionData[listId][prodId][field] = +val || 0;
+  const pd = S.productionData[listId][prodId];
 
-  const pd      = S.productionData[listId][prodId];
-  const saved   = (window._prodSaved||{})[prodId] || {};
-  const ms      = pd.morning !== undefined ? pd.morning
-                  : (saved.morning_stock !== undefined ? +saved.morning_stock
-                  : ((window._prodMorning||{})[prodId]||0));
-  const disp    = (window._prodDisp||{})[prodId] || 0;
-  const autobal = Math.max(0, ms - disp);
-  const bal     = pd.balance !== undefined ? pd.balance : autobal;
-  const par     = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
-  const autoMake= par !== null ? Math.max(0, par - bal) : 0;
-  const tm     = autoMake;
-  const cl      = bal + tm;
+  // If user cleared the input, unlock that field
+  const numVal = val === '' ? undefined : (+val || 0);
+  pd[field] = numVal;
 
-  const bEl = document.getElementById(`pb_${listId}_${prodId}`);
-  const tmEl= document.getElementById(`ptm_${listId}_${prodId}`);
-  const cEl = document.getElementById(`pc_${listId}_${prodId}`);
-
-  // Update balance display only when morning changes (auto-recalc)
-  if (field === 'morning' && bEl && !S.productionData[listId][prodId].balance) {
-    bEl.value = autobal;
-    S.productionData[listId][prodId]._autobal = autobal;
-  }
-// Recalculate To Make and Closing whenever any field changes
-      const newPar = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
-      const newTm = newPar !== null ? Math.max(0, newPar - bal) : 0;
-      const newCl = bal + newTm;
-      if (tmEl && pd.toMake === undefined) tmEl.value = newTm;
-      if (cEl) cEl.textContent = newCl || 0;
+  // Recompute and update display
+  recalcProdRow(listId, prodId);
 }
 
+function recalcProdRow(listId, prodId) {
+  const pd = S.productionData[listId][prodId] || {};
+  const saved = (window._prodSaved||{})[prodId] || {};
+  const prod = DB.products.find(p => p.id == prodId);
+  if (!prod) return;
+  const par = getKitchenPar(prod.name);
+
+  // Resolve each value: manual override > saved > calculated
+  const dispatched = (window._prodDisp||{})[prodId] || 0;
+  const morningAuto = saved.morning_stock !== undefined ? +saved.morning_stock
+                    : ((window._prodMorning||{})[prodId] || 0);
+  const ms  = pd.morning !== undefined ? pd.morning : morningAuto;
+  const bal = pd.balance !== undefined ? pd.balance : Math.max(0, ms - dispatched);
+  const tm  = pd.toMake  !== undefined ? pd.toMake  : (par !== null ? Math.max(0, par - bal) : 0);
+  const cl  = pd.closing !== undefined ? pd.closing : (bal + tm);
+
+  // Update only fields NOT manually overridden (preserve user edits in inputs)
+  const msEl = document.getElementById(`pm_${listId}_${prodId}`);
+  const bEl  = document.getElementById(`pb_${listId}_${prodId}`);
+  const tmEl = document.getElementById(`ptm_${listId}_${prodId}`);
+  const cEl  = document.getElementById(`pc_${listId}_${prodId}`);
+
+  if (msEl && pd.morning === undefined) msEl.value = ms || '';
+  if (bEl  && pd.balance === undefined) bEl.value  = bal || '';
+  if (tmEl && pd.toMake  === undefined) tmEl.value = tm || '';
+  if (cEl  && pd.closing === undefined) cEl.value  = cl || '';
+
+  // Recalc subtotals
+  recalcProdSubtotals(listId);
+}
+
+function recalcProdSubtotals(listId) {
+  // Optional: trigger a soft refresh of subtotals
+  // (subtotals are rendered server-side via renderProductionUI; skip for now)
+}
 async function saveBalanceStock(listId) {
   // Dispatch role: save any field they updated (morning/balance/toMake/closing)
   const today = S.prodDate || new Date().toISOString().split('T')[0];
- const entries = Object.entries(S.productionData[listId]||{})
-        .filter(([prodId,d]) => {
-          // Only keep rows for products that exist AND have at least one field touched
-          if (!DB.products.find(p=>p.id==prodId)) return false;
-          return d.morning !== undefined || d.balance !== undefined || d.toMake !== undefined || d.closing !== undefined;
-        })
+const entries = Object.entries(S.productionData[listId]||{})
         .map(([prodId, d]) => {
-      const saved = (window._prodSaved||{})[prodId] || {};
-      const ms = d.morning !== undefined ? d.morning
-                 : (saved.morning_stock !== undefined ? +saved.morning_stock
-                 : ((window._prodMorning||{})[prodId]||0));
-      const bal = d.balance;
-      const par = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
-     const tm = par !== null ? Math.max(0, par-bal) : 0;
-      return {
-        list_date: today, list_type: listId,
-        product_id: parseInt(prodId),
-        morning_stock: ms,
-        balance_stock: bal,
-        production_qty: tm,
-        closing_stock: bal + tm,
-        created_by: 'dispatch'
-      };
+          const pid = parseInt(prodId);
+          if (isNaN(pid)) return null;
+          const prod = DB.products.find(p=>p.id===pid);
+          if (!prod) return null;
+          const saved = (window._prodSaved||{})[prodId] || {};
+          const dispatched = (window._prodDisp||{})[prodId] || 0;
+          const morningAuto = saved.morning_stock !== undefined ? +saved.morning_stock
+                            : ((window._prodMorning||{})[prodId] || 0);
+          const par = getKitchenPar(prod.name);
+          const ms  = d.morning !== undefined ? +d.morning : morningAuto;
+          const bal = d.balance !== undefined ? +d.balance : Math.max(0, ms - dispatched);
+          const tm  = d.toMake  !== undefined ? +d.toMake  : (par !== null ? Math.max(0, par - bal) : 0);
+          const cl  = d.closing !== undefined ? +d.closing : (bal + tm);
+          if (!ms && !bal && !tm && !cl) return null;
+          return {
+            list_date: today,
+            list_type: listId,
+            product_id: pid,
+            morning_stock: +ms || 0,
+            balance_stock: +bal || 0,
+            production_qty: +tm || 0,
+            closing_stock: +cl || 0,
+            created_by: 'dispatch'
+          };
+        })
+        .filter(e => e !== null);
     });
  if (!entries.length) { toast('⚠️ Type values in fields first, then click Save'); return; }
   try {
