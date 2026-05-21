@@ -2219,7 +2219,7 @@ const lists = [
 // Column editability
     const lockStyle = ' readonly style="background:var(--bg);color:var(--txt2)"';
     const msRo    = isPastDate ? lockStyle : '';
-    const tomakeRo = (isDispatch || isPastDate) ? lockStyle : '';
+   const tomakeRo = isPastDate ? lockStyle : '';
     tableRows += `<tr>
       <td>${p.name}${parBadge}</td>
     <td><input type="number" min="0" value="${ms||''}" placeholder="0"
