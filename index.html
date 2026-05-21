@@ -2388,7 +2388,7 @@ const entries = Object.entries(S.productionData[listId]||{})
           };
         })
         .filter(e => e !== null);
-    });
+  
  if (!entries.length) { toast('⚠️ Type values in fields first, then click Save'); return; }
   try {
     // Upsert — delete existing for today+listId first
