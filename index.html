@@ -2344,9 +2344,13 @@ function setProdField(listId, prodId, field, val) {
 async function saveBalanceStock(listId) {
   // Dispatch role: save any field they updated (morning/balance/toMake/closing)
   const today = S.prodDate || new Date().toISOString().split('T')[0];
-  const entries = Object.entries(S.productionData[listId]||{})
-    .filter(([,d]) => d.morning !== undefined || d.balance !== undefined || d.toMake !== undefined || d.closing !== undefined)
-    .map(([prodId, d]) => {
+ const entries = Object.entries(S.productionData[listId]||{})
+        .filter(([prodId,d]) => {
+          // Only keep rows for products that exist AND have at least one field touched
+          if (!DB.products.find(p=>p.id==prodId)) return false;
+          return d.morning !== undefined || d.balance !== undefined || d.toMake !== undefined || d.closing !== undefined;
+        })
+        .map(([prodId, d]) => {
       const saved = (window._prodSaved||{})[prodId] || {};
       const ms = d.morning !== undefined ? d.morning
                  : (saved.morning_stock !== undefined ? +saved.morning_stock
