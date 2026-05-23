@@ -438,12 +438,16 @@ const el = document.getElementById(id);
 }
 
 function confirmHome() {
-  if (confirm('Go to Home screen? Unsaved entries will be lost.')) goHome();
-}
+      // Home goes to Overview/Production without logging out
+      if(S.role==='dispatch'){ setTab(1); }
+      else { setTab(0); }
+    }
 
 function confirmLogout() {
-  if (confirm('Logout? You will need to enter PIN again.')) goHome();
-}
+      if (confirm('Logout? You will need to enter PIN again.')) {
+        goHome();
+      }
+    }
 
 function goHome() {
   S = {...S, screen:'pin', pin:'', outlet:null, shift:null, staffName:'',
