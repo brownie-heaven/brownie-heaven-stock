@@ -1162,9 +1162,10 @@ async function loadPurchaseHistory(){
           <th style="padding:6px;text-align:center">Rate</th>
           <th style="padding:6px;text-align:center">GST%</th>
           <th style="padding:6px;text-align:center">GST Amt</th>
-          <th style="padding:6px;text-align:center">Amount</th>
-        </tr></thead>
-        <tbody>
+         <th style="padding:6px;text-align:center">Amount</th>
+            <th style="padding:6px;text-align:center;min-width:80px">Actions</th>
+          </tr></thead>
+          <tbody>
           ${g.items.map(i=>`<tr style="border-top:1px solid #f0f0f0">
             <td style="padding:6px 10px">${i.product} <span style="color:#bbb;font-size:11px">(${i.category})</span></td>
             <td style="padding:6px;text-align:center">${i.qty}</td>
@@ -1173,12 +1174,57 @@ async function loadPurchaseHistory(){
             <td style="padding:6px;text-align:center">${i.gst_percent}%</td>
             <td style="padding:6px;text-align:center">₹${Number(i.gst_amount).toFixed(2)}</td>
             <td style="padding:6px;text-align:center;font-weight:600">₹${Number(i.amount).toFixed(2)}</td>
+            <td style="padding:6px;text-align:center;white-space:nowrap">
+              <button onclick="editPurchaseItem('${i.id}')" title="Edit" style="background:none;border:1px solid #ddd;border-radius:4px;padding:3px 7px;cursor:pointer;margin-right:4px">✏️</button>
+              <button onclick="deletePurchaseItem('${i.id}','${(i.product||'').replace(/'/g,"\\'")}')" title="Delete" style="background:none;border:1px solid #f5c0c0;border-radius:4px;padding:3px 7px;cursor:pointer;color:#c00">🗑️</button>
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>`).join('');
 }
-// ── END PURCHASE ──────────────────────────────────────────────────────────────
+
+  async function deletePurchaseItem(id, name){
+    if(!confirm(`Delete "${name}" from this bill?\n\nThis cannot be undone.`)) return;
+    try {
+      await sbDelete('purchase_ledger', `?id=eq.${id}`);
+      toast(`🗑️ Deleted ${name}`);
+      await loadPurchaseHistory();
+    } catch(e){
+      console.error('Delete failed:', e);
+      alert('Could not delete. Details: ' + (e?.message || JSON.stringify(e)));
+    }
+  }
+
+  async function editPurchaseItem(id){
+    try {
+      const rows = await sbGet('purchase_ledger', `?id=eq.${id}&select=*`);
+      if(!rows.length){ alert('Item not found.'); return; }
+      const r = rows[0];
+      const newQty = prompt(`Qty for "${r.product}":`, r.qty);
+      if(newQty === null) return;
+      const newRate = prompt(`Rate (₹) for "${r.product}":`, r.rate);
+      if(newRate === null) return;
+      const newGst = prompt(`GST % for "${r.product}":`, r.gst_percent || 0);
+      if(newGst === null) return;
+      const qty = parseFloat(newQty) || 0;
+      const rate = parseFloat(newRate) || 0;
+      const gstPct = parseFloat(newGst) || 0;
+      const subtotal = qty * rate;
+      const gstAmount = subtotal * (gstPct / 100);
+      const amount = subtotal + gstAmount;
+      await sbPatch('purchase_ledger', `?id=eq.${id}`, {
+        qty, rate, gst_percent: gstPct, gst_amount: gstAmount, amount
+      });
+      toast(`✅ Updated ${r.product}`);
+      await loadPurchaseHistory();
+    } catch(e){
+      console.error('Edit failed:', e);
+      alert('Could not update. Details: ' + (e?.message || JSON.stringify(e)));
+    }
+  }
+
+    // —— END PURCHASE ——————————————————————
 // ── PIN ──────────────────────────────────────────────────────────────────────
 function renderPin() {
   setHdr('Stock Management', false);
@@ -1658,6 +1704,27 @@ function downloadDispatch() {
   a.download = `dispatch_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
 }
+  async function editDispatchCell(outletId, productId, productName, calculated) {
+      const today = window._dispatchToday || new Date().toISOString().split('T')[0];
+      const existing = await sbGet('dispatch_overrides', `?dispatch_date=eq.${today}&outlet_id=eq.${outletId}&product_id=eq.${productId}&select=qty`);
+      const currentVal = existing.length ? existing[0].qty : calculated;
+      const newVal = prompt(`Dispatch qty for "${productName}":\n(Calculated: ${calculated})`, currentVal);
+      if(newVal === null) return;
+      const qty = parseFloat(newVal);
+      if(isNaN(qty) || qty < 0) { alert('Please enter a valid number ≥ 0'); return; }
+      try {
+        await fetch(`${SB_URL}/rest/v1/dispatch_overrides?on_conflict=dispatch_date,outlet_id,product_id`, {
+          method: 'POST',
+          headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify([{ dispatch_date: today, outlet_id: outletId, product_id: productId, qty }])
+        });
+        toast(`✅ Updated ${productName}`);
+        await renderDispatch();
+      } catch(e) {
+        console.error('Override save failed:', e);
+        alert('Could not save. Details: ' + (e?.message || JSON.stringify(e)));
+      }
+    }
 // ── DISPATCH ──────────────────────────────────────────────────────────────────
 async function renderDispatch() {
   showLoading('Loading dispatch data...');
@@ -1668,12 +1735,21 @@ async function renderDispatch() {
     const outletList = Object.keys(OUTLET_PINS);
 
     // Fetch yesterday's night shift closing stock for all outlets
-    const entries = await sbGet('shift_entries', `?entry_date=eq.${yesterday}&shift=eq.night&is_demo=eq.false&select=id,outlet_id`);
-    const entryIds = entries.map(e => e.id);
-    let stockLines = [];
-    if(entryIds.length) {
-      stockLines = await sbGet('stock_lines', `?entry_id=in.(${entryIds.join(',')})&select=entry_id,product_id,closing`);
-    }
+      const entries = await sbGet('shift_entries', `?entry_date=eq.${yesterday}&shift=eq.night&is_demo=eq.false&select=id,outlet_id`);
+      const entryIds = entries.map(e => e.id);
+      let stockLines = [];
+      if(entryIds.length) {
+        stockLines = await sbGet('stock_lines', `?entry_id=in.(${entryIds.join(',')})&select=entry_id,product_id,closing`);
+      }
+
+      // Fetch dispatch overrides for today
+      const overridesData = await sbGet('dispatch_overrides', `?dispatch_date=eq.${today}&select=outlet_id,product_id,qty`);
+      const overrides = {}; // overrides[outlet_id][product_id] = qty
+      overridesData.forEach(o => {
+        if(!overrides[o.outlet_id]) overrides[o.outlet_id] = {};
+        overrides[o.outlet_id][o.product_id] = +o.qty;
+      });
+      window._dispatchToday = today; // expose for edit handler
 
     // Map closing stock by outlet
     const closingByOutlet = {};
@@ -1709,14 +1785,17 @@ async function renderDispatch() {
       tableRows += `<tr style="background:var(--brown);color:white"><td colspan="${outletList.length+2}" style="padding:6px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">${cat.label}</td></tr>`;
       cat.products.forEach(p => {
         let hasDispatch = false;
-        const cells = outletList.map(outletId => {
+       const cells = outletList.map(outletId => {
           const cl = (closing[outletId] && closing[outletId][p.id] !== undefined) ? closing[outletId][p.id] : null;
           const parVal = (par[outletId] && par[outletId][p.id] !== undefined) ? par[outletId][p.id] : 0;
-          const toSend = cl !== null ? Math.max(0, parVal - cl) : 0;
+          const calculated = cl !== null ? Math.max(0, parVal - cl) : 0;
+          const isOverridden = overrides[outletId] && overrides[outletId][p.id] !== undefined;
+          const toSend = isOverridden ? overrides[outletId][p.id] : calculated;
           if(toSend > 0) hasDispatch = true;
-          const bg = toSend > 0 ? '#fff3cd' : 'transparent';
+          const bg = isOverridden ? '#d4edda' : (toSend > 0 ? '#fff3cd' : 'transparent');
           const color = toSend > 0 ? 'var(--brown)' : 'var(--txt3)';
-          return `<td style="text-align:center;padding:4px 6px;font-size:12px;background:${bg};color:${color};font-weight:${toSend>0?'600':'400'}">${toSend}</td>`;
+          const star = isOverridden ? '<span style="color:#28a745;font-size:9px" title="Manually adjusted">●</span>' : '';
+          return `<td onclick="editDispatchCell(${outletId},${p.id},'${(p.name||'').replace(/'/g,"\\'")}',${calculated})" style="text-align:center;padding:4px 6px;font-size:12px;background:${bg};color:${color};font-weight:${toSend>0?'600':'400'};cursor:pointer" title="Click to edit. Calculated: ${calculated}">${toSend}${star}</td>`;
         }).join('');
         const rowBg = hasDispatch ? '#fffdf5' : 'transparent';
         tableRows += `<tr style="border-bottom:.5px solid var(--border2);background:${rowBg}">
@@ -1960,14 +2039,14 @@ const KITCHEN_PAR = {
   'Pink Rose Strawberry 850g':        {wd:8,   we:10},
   'Fresh Cream Pineapple 1/2kg':      {wd:3,   we:5},
   // ── CAKES 1kg ──
-  'Chocolate Truffle Cake 1kg':       {wd:8,   we:8},
-  'Tiramisu Cake 1kg':                {wd:6,   we:8},
-  'Butterscotch Cake 1kg':            {wd:3,   we:4},
-  'BH Signature Chocolate Cake 1kg':  {wd:6,   we:8},
+ 'Chocolate Truffle 1kg':            {wd:8,   we:8},
+ 'Tiramisu 1kg':                     {wd:6,   we:8},
+ 'Butterscotch 1kg':                 {wd:3,   we:4},
+ 'BH Signature Chocolate 1kg':       {wd:6,   we:8},
   // ── PASTRY SLICES ──
   'Chocolate Truffle Pastry Slice':         {wd:45, we:45},
   'Tiramisu Pastry Slice':                  {wd:30, we:30},
-  'Triple Choc Truffle Pastry Slice':       {wd:30, we:30},
+  'Triple Chocolate Truffle Pastry Slice':       {wd:30, we:30},
   'Butterscotch Pastry Slice':              {wd:15, we:15},
   'Biscoff Pastry Slice':                   {wd:15, we:15},
   'Caramelised White Chocolate Pastry Slice':{wd:15, we:15},
@@ -2006,13 +2085,56 @@ async function renderProduction() {
    }
       // No fallback — kitchen production is a separate department
       // If no production_lists entry for yesterday, morning starts at 0
-    // Dispatched today = demand requests for today
-    const dispData = await sbGet('demand_requests',
-      `?entry_date=eq.${today}&select=product_id,requested_qty`);
-    const dispatched = {};
-    dispData.forEach(d => {
-      dispatched[d.product_id] = (dispatched[d.product_id]||0) + (+d.requested_qty||0);
-    });
+  // Dispatched today = sum across all outlets of (overrides OR calculated par−closing)
+      // Step 1: get yesterday's night closing per outlet+product
+      const dispYestEntries = await sbGet('shift_entries', `?entry_date=eq.${yStr}&shift=eq.night&is_demo=eq.false&select=id,outlet_id`);
+      const dispEntryIds = dispYestEntries.map(e => e.id);
+      let dispClosingLines = [];
+      if(dispEntryIds.length) {
+        dispClosingLines = await sbGet('stock_lines', `?entry_id=in.(${dispEntryIds.join(',')})&select=entry_id,product_id,closing`);
+      }
+      const dispOutletByEntry = {};
+      dispYestEntries.forEach(e => { dispOutletByEntry[e.id] = e.outlet_id; });
+      const dispClosing = {}; // dispClosing[outlet_id][product_id] = qty
+      dispClosingLines.forEach(l => {
+        const oid = dispOutletByEntry[l.entry_id];
+        if(!dispClosing[oid]) dispClosing[oid] = {};
+        dispClosing[oid][l.product_id] = +l.closing || 0;
+      });
+
+      // Step 2: get par stock for today's day-type
+      const dispDayType = isWeekend() ? 'weekend' : 'weekday';
+      const dispParData = await sbGet('outlet_product_config', `?day_type=eq.${dispDayType}&is_active=eq.true&select=outlet_id,product_id,par_stock`);
+      const dispPar = {};
+      dispParData.forEach(p => {
+        if(!dispPar[p.outlet_id]) dispPar[p.outlet_id] = {};
+        dispPar[p.outlet_id][p.product_id] = +p.par_stock || 0;
+      });
+
+      // Step 3: get today's overrides
+      const dispOverridesData = await sbGet('dispatch_overrides', `?dispatch_date=eq.${today}&select=outlet_id,product_id,qty`);
+      const dispOverrides = {};
+      dispOverridesData.forEach(o => {
+        if(!dispOverrides[o.outlet_id]) dispOverrides[o.outlet_id] = {};
+        dispOverrides[o.outlet_id][o.product_id] = +o.qty;
+      });
+
+      // Step 4: sum up dispatch per product across all outlets
+      const dispatched = {};
+      Object.keys(dispPar).forEach(oid => {
+        Object.keys(dispPar[oid]).forEach(pid => {
+          const isOverridden = dispOverrides[oid] && dispOverrides[oid][pid] !== undefined;
+          let qty;
+          if(isOverridden) {
+            qty = dispOverrides[oid][pid];
+          } else {
+            const cl = dispClosing[oid] && dispClosing[oid][pid] !== undefined ? dispClosing[oid][pid] : null;
+            const parVal = dispPar[oid][pid];
+            qty = cl !== null ? Math.max(0, parVal - cl) : 0;
+          }
+          dispatched[pid] = (dispatched[pid] || 0) + qty;
+        });
+      });
 
     // Load any saved production data for today
     const todayProd = await sbGet('production_lists',
@@ -2036,11 +2158,11 @@ function renderProductionUI() {
   const dayLabel = isWeekend() ? 'Weekend' : 'Weekday';
   const todayStr = new Date().toISOString().split('T')[0];
   const isPastDate = S.prodDate && S.prodDate < todayStr;
-  const lists = [
-    {id:'cakes_pastry',  label:'Cakes & Pastries', cats:['half_cakes','one_cakes','pastry','cheesecake']},
-    {id:'brownies_list', label:'Brownies',          cats:['brownies','eggless','boxes']},
-    {id:'evening_list',  label:'Evening Kitchen',   cats:['medovik','eclair','tubs','special']}
-  ];
+const lists = [
+        {id:'cakes_pastry',  label:'Cakes & Pastries',  cats:['half_cakes','one_cakes','pastry','cheesecake']},
+        {id:'brownies',      label:'Brownies',          cats:['brownies','eggless','boxes']},
+        {id:'evening',       label:'Evening Kitchen',   cats:['medovik','eclair','tubs','special']}
+      ];
 
   const tabs = lists.map((l,i) =>
     `<button class="tab ${S.productionTab===i?'active':''}" onclick="S.productionTab=${i};renderProductionUI()">${l.label}</button>`
@@ -2072,13 +2194,9 @@ function renderProductionUI() {
     const autobal = Math.max(0, ms - (dispatched[p.id]||0));
     const bal = pd.balance !== undefined ? +pd.balance : autobal;
 
-    // To Make: user override > par - balance > saved
-    const par = getKitchenPar(p.name);
-    const autoMake = par !== null ? Math.max(0, par - bal) : 0;
-    const tm = pd.toMake !== undefined
-      ? +pd.toMake
-      : (saved.production_qty !== undefined ? +saved.production_qty : autoMake);
-
+  // To Make: ALWAYS calculated from par - balance (no override on this field)
+        const par = getKitchenPar(p.name);
+        const tm = par !== null ? Math.max(0, par - bal) : 0;
     // Closing = balance + to make
     const cl = bal + tm;
 
@@ -2101,10 +2219,11 @@ function renderProductionUI() {
 // Column editability
     const lockStyle = ' readonly style="background:var(--bg);color:var(--txt2)"';
     const msRo    = isPastDate ? lockStyle : '';
-    const tomakeRo = (isDispatch || isPastDate) ? lockStyle : '';
+   const tomakeRo = isPastDate ? lockStyle : '';
     tableRows += `<tr>
       <td>${p.name}${parBadge}</td>
-      <td><input type="number" min="0" value="${ms||''}" placeholder="0"
+    <td><input type="number" min="0" value="${ms||''}" placeholder="0"
+          id="pm_${cur.id}_${p.id}"
           ${msRo} oninput="setProdField('${cur.id}',${p.id},'morning',this.value)"></td>
      <td><input type="number" min="0" value="${bal||''}" placeholder="0"
           ${(!isDispatch || isPastDate)?' readonly style="background:var(--bg);color:var(--txt2)"':''}
@@ -2113,8 +2232,10 @@ function renderProductionUI() {
       <td><input class="tomake" type="number" min="0" value="${tm||''}" placeholder="0"
           ${tomakeRo} id="ptm_${cur.id}_${p.id}"
           oninput="setProdField('${cur.id}',${p.id},'toMake',this.value)"></td>
-      <td id="pc_${cur.id}_${p.id}"
-          style="font-family:var(--mono);color:var(--green);font-weight:600">${cl||0}</td>
+    <td><input type="number" min="0" value="${cl||''}" placeholder="0"
+          id="pc_${cur.id}_${p.id}"
+          ${(!isDispatch||isPastDate)?' readonly style="background:var(--bg);color:var(--txt2);font-family:var(--mono);color:var(--green);font-weight:600"':'style="font-family:var(--mono);color:var(--green);font-weight:600"'}
+          oninput="setProdField('${cur.id}',${p.id},'closing',this.value)"></td>
     </tr>`;
   });
 
@@ -2191,61 +2312,83 @@ function changeProdDate(date) {
 function setProdField(listId, prodId, field, val) {
   if (!S.productionData[listId]) S.productionData[listId] = {};
   if (!S.productionData[listId][prodId]) S.productionData[listId][prodId] = {};
-  S.productionData[listId][prodId][field] = +val || 0;
+  const pd = S.productionData[listId][prodId];
 
-  const pd      = S.productionData[listId][prodId];
-  const saved   = (window._prodSaved||{})[prodId] || {};
-  const ms      = pd.morning !== undefined ? pd.morning
-                  : (saved.morning_stock !== undefined ? +saved.morning_stock
-                  : ((window._prodMorning||{})[prodId]||0));
-  const disp    = (window._prodDisp||{})[prodId] || 0;
-  const autobal = Math.max(0, ms - disp);
-  const bal     = pd.balance !== undefined ? pd.balance : autobal;
-  const par     = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
-  const autoMake= par !== null ? Math.max(0, par - bal) : 0;
-  const tm      = pd.toMake !== undefined ? pd.toMake : autoMake;
-  const cl      = bal + tm;
+  // If user cleared the input, unlock that field
+  const numVal = val === '' ? undefined : (+val || 0);
+  pd[field] = numVal;
 
-  const bEl = document.getElementById(`pb_${listId}_${prodId}`);
-  const tmEl= document.getElementById(`ptm_${listId}_${prodId}`);
-  const cEl = document.getElementById(`pc_${listId}_${prodId}`);
-
-  // Update balance display only when morning changes (auto-recalc)
-  if (field === 'morning' && bEl && !S.productionData[listId][prodId].balance) {
-    bEl.value = autobal;
-    S.productionData[listId][prodId]._autobal = autobal;
-  }
-  // Update to-make display only when balance changes & toMake not manually set
-  if (field === 'balance' && tmEl && pd.toMake === undefined) {
-    const newPar = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
-    if (newPar !== null) tmEl.value = Math.max(0, newPar - (+val||0));
-  }
-  if (cEl) cEl.textContent = cl || 0;
+  // Recompute and update display — but skip the field user is typing in
+  recalcProdRow(listId, prodId, field);
 }
 
+function recalcProdRow(listId, prodId, skipField) {
+  const pd = S.productionData[listId][prodId] || {};
+  const saved = (window._prodSaved||{})[prodId] || {};
+  const prod = DB.products.find(p => p.id == prodId);
+  if (!prod) return;
+  const par = getKitchenPar(prod.name);
+
+  // Resolve each value: manual override > saved > calculated
+  const dispatched = (window._prodDisp||{})[prodId] || 0;
+  const morningAuto = saved.morning_stock !== undefined ? +saved.morning_stock
+                    : ((window._prodMorning||{})[prodId] || 0);
+  const ms  = pd.morning !== undefined ? pd.morning : morningAuto;
+  const bal = pd.balance !== undefined ? pd.balance : Math.max(0, ms - dispatched);
+  const tm  = pd.toMake  !== undefined ? pd.toMake  : (par !== null ? Math.max(0, par - bal) : 0);
+  const cl  = pd.closing !== undefined ? pd.closing : (bal + tm);
+
+  // Update only fields NOT manually overridden (preserve user edits in inputs)
+  const msEl = document.getElementById(`pm_${listId}_${prodId}`);
+  const bEl  = document.getElementById(`pb_${listId}_${prodId}`);
+  const tmEl = document.getElementById(`ptm_${listId}_${prodId}`);
+  const cEl  = document.getElementById(`pc_${listId}_${prodId}`);
+
+  if (msEl && pd.morning === undefined && skipField !== 'morning') msEl.value = ms || '';
+  if (bEl  && pd.balance === undefined && skipField !== 'balance') bEl.value  = bal || '';
+  if (tmEl && pd.toMake  === undefined && skipField !== 'toMake')  tmEl.value = tm || '';
+  if (cEl  && pd.closing === undefined && skipField !== 'closing') cEl.value  = cl || '';
+
+  // Recalc subtotals
+  recalcProdSubtotals(listId);
+}
+
+function recalcProdSubtotals(listId) {
+  // Optional: trigger a soft refresh of subtotals
+  // (subtotals are rendered server-side via renderProductionUI; skip for now)
+}
 async function saveBalanceStock(listId) {
   // Dispatch role: save any field they updated (morning/balance/toMake/closing)
   const today = S.prodDate || new Date().toISOString().split('T')[0];
-  const entries = Object.entries(S.productionData[listId]||{})
-    .filter(([,d]) => d.morning !== undefined || d.balance !== undefined || d.toMake !== undefined || d.closing !== undefined)
-    .map(([prodId, d]) => {
-      const saved = (window._prodSaved||{})[prodId] || {};
-      const ms = d.morning !== undefined ? d.morning
-                 : (saved.morning_stock !== undefined ? +saved.morning_stock
-                 : ((window._prodMorning||{})[prodId]||0));
-      const bal = d.balance;
-      const par = getKitchenPar(DB.products.find(p=>p.id==prodId)?.name);
-      const tm = d.toMake !== undefined ? d.toMake : (par !== null ? Math.max(0, par-bal) : 0);
-      return {
-        list_date: today, list_type: listId,
-        product_id: parseInt(prodId),
-        morning_stock: ms,
-        balance_stock: bal,
-        production_qty: tm,
-        closing_stock: bal + tm,
-        created_by: 'dispatch'
-      };
-    });
+const entries = Object.entries(S.productionData[listId]||{})
+        .map(([prodId, d]) => {
+          const pid = parseInt(prodId);
+          if (isNaN(pid)) return null;
+          const prod = DB.products.find(p=>p.id===pid);
+          if (!prod) return null;
+          const saved = (window._prodSaved||{})[prodId] || {};
+          const dispatched = (window._prodDisp||{})[prodId] || 0;
+          const morningAuto = saved.morning_stock !== undefined ? +saved.morning_stock
+                            : ((window._prodMorning||{})[prodId] || 0);
+          const par = getKitchenPar(prod.name);
+          const ms  = d.morning !== undefined ? +d.morning : morningAuto;
+          const bal = d.balance !== undefined ? +d.balance : Math.max(0, ms - dispatched);
+          const tm  = d.toMake  !== undefined ? +d.toMake  : (par !== null ? Math.max(0, par - bal) : 0);
+          const cl  = d.closing !== undefined ? +d.closing : (bal + tm);
+          if (!ms && !bal && !tm && !cl) return null;
+          return {
+            list_date: today,
+            list_type: listId,
+            product_id: pid,
+            morning_stock: +ms || 0,
+            balance_stock: +bal || 0,
+            production_qty: +tm || 0,
+            closing_stock: +cl || 0,
+            created_by: 'dispatch'
+          };
+        })
+        .filter(e => e !== null);
+  
  if (!entries.length) { toast('⚠️ Type values in fields first, then click Save'); return; }
   try {
     // Upsert — delete existing for today+listId first
@@ -2284,9 +2427,7 @@ async function finaliseProduction(listId, label) {
     const disp = dispatched[p.id]||0;
     const bal  = pd.balance !== undefined ? pd.balance : Math.max(0, ms - disp);
     const par  = getKitchenPar(p.name);
-    const tm   = pd.toMake !== undefined ? pd.toMake
-                 : (saved.production_qty !== undefined ? +saved.production_qty
-                 : (par !== null ? Math.max(0, par - bal) : 0));
+    const tm   = par !== null ? Math.max(0, par - bal) : 0;
     return {
       list_date: today, list_type: listId,
       product_id: p.id,
