@@ -243,10 +243,11 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
         <div id="hdr-sub" class="hdr-sub">Stock Management</div>
       </div>
     </div>
-    <div class="hdr-right" id="hdr-right" style="display:none">
-      <button class="hdr-btn" onclick="confirmHome()">🏠 Home</button>
-      <button class="logout-btn" onclick="confirmLogout()">Logout</button>
-    </div>
+   <div class="hdr-right" id="hdr-right" style="display:none">
+          <button class="hdr-btn" id="back-btn" onclick="goBack()" style="display:none">← Back</button>
+          <button class="hdr-btn" onclick="confirmHome()">🏠 Home</button>
+          <button class="logout-btn" onclick="confirmLogout()">Logout</button>
+        </div>
   </div>
   <div id="main-tabs" style="display:none" class="main-tabs">
     <button class="mt" id="mt0" onclick="setTab(0)">Overview</button>
@@ -356,7 +357,7 @@ let S = {
   mainTab:0, adminOutlet:'1001', adminCatIdx:0,
   newProdName:{}, selMonth:new Date().getMonth(),
   selYear:new Date().getFullYear(),
- productionTab:0, productionData:{}, prodDate:null, role:null,
+productionTab:0, productionData:{}, prodDate:null, role:null, navHistory:[],
   demoMode:false
 };
 
@@ -450,33 +451,59 @@ function confirmLogout() {
     }
 
 function goHome() {
-  S = {...S, screen:'pin', pin:'', outlet:null, shift:null, staffName:'',
-    activeTab:0, stockData:{}, demandData:{}, pinError:false, role:null, demoMode:false};
+      S = {...S, screen:'pin', pin:'', outlet:null, shift:null, staffName:'',
+        activeTab:0, stockData:{}, demandData:{}, pinError:false, role:null, demoMode:false, navHistory:[]};
+      if(typeof updateBackBtn==='function') updateBackBtn();
   const ma = document.getElementById('main-app');
   ma.classList.remove('app-visible');
   ma.style.display = 'none';
   document.getElementById('welcome-screen').style.display = 'flex';
 }
 
-function setTab(i) {
-  if(S.role==='admin' && i===1) return;
-  S.mainTab = i;
-setHdr('Dashboard', true);
-  if(S.role==='dispatch'){
-  if(i===1) renderProduction();
-  else if(i===2) renderDispatch();
-  return;
-}
-  if (i===0) renderOverview();
-  else if (i===1) renderProduction();
-  else if (i===2) renderMonthly();
-  else if (i===3) renderAdmin();
-  else if (i===4) renderSupplyLedger();
-  else if (i===5) renderAccessoriesLedger();
- else if (i===6) renderHotelsLedger();
-  else if (i===7) renderPurchase();
-  else if (i===8) renderShiftEntries();
-}
+function setTab(i, fromBack) {
+      if(S.role==='admin' && i===1) return;
+      // Push current tab onto history (unless this call IS a back navigation)
+      if(!fromBack && typeof S.mainTab === 'number' && S.mainTab !== i){
+        S.navHistory.push({type:'tab', mainTab:S.mainTab});
+        try{ history.pushState({nav:true}, '', ''); }catch(e){}
+      }
+      S.mainTab = i;
+      setHdr('Dashboard', true);
+      updateBackBtn();
+      if(S.role==='dispatch'){
+        if(i===1) renderProduction();
+        else if(i===2) renderDispatch();
+        return;
+      }
+      if (i===0) renderOverview();
+      else if (i===1) renderProduction();
+      else if (i===2) renderMonthly();
+      else if (i===3) renderAdmin();
+      else if (i===4) renderSupplyLedger();
+      else if (i===5) renderAccessoriesLedger();
+      else if (i===6) renderHotelsLedger();
+      else if (i===7) renderPurchase();
+      else if (i===8) renderShiftEntries();
+    }
+
+    function goBack(){
+      if(!S.navHistory || !S.navHistory.length){ updateBackBtn(); return; }
+      const prev = S.navHistory.pop();
+      if(prev.type==='tab'){
+        setTab(prev.mainTab, true);
+      }
+      updateBackBtn();
+    }
+
+    function updateBackBtn(){
+      const b = document.getElementById('back-btn');
+      if(!b) return;
+      b.style.display = (S.navHistory && S.navHistory.length>0) ? 'inline-block' : 'none';
+    }
+
+    window.addEventListener('popstate', function(){
+      if(S.navHistory && S.navHistory.length>0){ goBack(); }
+    });
 // ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
 const PURCHASE_PRODUCTS = [
   {"name":"Egg pc","agency":"Aashirvad Egg Centre","category":"Brownie","unit":"pcs","rate":6.4,"gst":0},
