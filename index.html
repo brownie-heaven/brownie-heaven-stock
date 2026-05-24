@@ -257,9 +257,10 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
     <button class="mt" id="mt4" onclick="setTab(4)">Supply Ledger</button>
     <button class="mt" id="mt5" onclick="setTab(5)">Accessories</button>
     <button class="mt" id="mt6" onclick="setTab(6)">Hotels</button>
-   <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
+    <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
     <button class="mt" id="mt8" onclick="setTab(8)" style="display:none">Shift Entries</button>
-  </div>
+    <button class="mt" id="mt9" onclick="setTab(9)" style="display:none">Kitchen Indent</button>
+        </div>
   <div class="screen" id="screen"></div>
 </div>
 
@@ -422,16 +423,16 @@ function setHdr(sub, showTabs) {
 if(S.role==='dispatch' && document.getElementById('mt2')) document.getElementById('mt2').textContent='Dispatch';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
-['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7','mt8'].forEach((id,i) => {
+['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7','mt8','mt9'].forEach((id,i) => {
 const el = document.getElementById(id);
       if(S.role==='dispatch') {
         el.style.display = (i===1||i===2) ? '' : 'none';
         el.classList.toggle('active', i===1 ? S.mainTab===1 : S.mainTab===2);
-      } else if(S.role==='admin') {
+    } else if(S.role==='admin') {
         el.style.display = (i===1) ? 'none' : '';
         el.classList.toggle('active', i === S.mainTab);
       } else {
-        el.style.display = (i===1||i===8) ? 'none' : '';
+        el.style.display = (i===1||i===8||i===9) ? 'none' : '';
         el.classList.toggle('active', i === S.mainTab);
       }
 });
@@ -484,8 +485,8 @@ function setTab(i, fromBack) {
       else if (i===6) renderHotelsLedger();
       else if (i===7) renderPurchase();
       else if (i===8) renderShiftEntries();
+      else if (i===9) renderKitchenIndent();
     }
-
     function goBack(){
       if(!S.navHistory || !S.navHistory.length){ updateBackBtn(); return; }
       const prev = S.navHistory.pop();
@@ -504,6 +505,16 @@ function setTab(i, fromBack) {
     window.addEventListener('popstate', function(){
       if(S.navHistory && S.navHistory.length>0){ goBack(); }
     });
+  // — KITCHEN INDENT —————————————————
+    async function renderKitchenIndent() {
+      setHdr('Kitchen Indent', true);
+      const el = document.getElementById('screen');
+      el.innerHTML = `
+        <div style="padding:20px;text-align:center;color:#666">
+          <h2 style="color:var(--brown)">🍰 Kitchen Indent</h2>
+          <p>Tab loaded successfully. Phase 3 (entry form) coming next.</p>
+        </div>`;
+    }
 // ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
 const PURCHASE_PRODUCTS = [
   {"name":"Egg pc","agency":"Aashirvad Egg Centre","category":"Brownie","unit":"pcs","rate":6.4,"gst":0},
