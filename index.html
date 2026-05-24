@@ -636,9 +636,123 @@ function setTab(i, fromBack) {
       if(btn){ btn.disabled=false; btn.textContent='Save indent'; }
     }
 
+ async function kiLoadHistory(){
+      try {
+        let q = 'kitchen_indents?order=date.desc,created_at.desc';
+        if(KI.filterCategory) q += `&category=eq.${KI.filterCategory}`;
+        if(KI.filterDate) q += `&date=eq.${KI.filterDate}`;
+        if(KI.filterProduct) q += `&product=ilike.*${encodeURIComponent(KI.filterProduct)}*`;
+        const rows = await sbGet(q.replace('kitchen_indents','kitchen_indents'), q.includes('?')?q.slice(q.indexOf('?')):'');
+        KI.historyRows = rows;
+      } catch(e) {
+        KI.historyRows = [];
+        toast('Error loading history: '+e.message);
+      }
+    }
+
     async function kiRenderHistory(){
       const body = document.getElementById('ki-body');
-      body.innerHTML = '<div style="text-align:center;color:#888;padding:40px">History view — coming in Phase 4</div>';
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;margin-bottom:20px;align-items:end">
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Category</label>
+            <select onchange="KI.filterCategory=this.value;kiRenderHistory()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+              <option value="" ${!KI.filterCategory?'selected':''}>All</option>
+              <option value="pastry" ${KI.filterCategory==='pastry'?'selected':''}>Pastry</option>
+              <option value="brownie" ${KI.filterCategory==='brownie'?'selected':''}>Brownie</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Date</label>
+            <input type="date" value="${KI.filterDate}" onchange="KI.filterDate=this.value;kiRenderHistory()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Product name</label>
+            <input type="text" value="${KI.filterProduct}" placeholder="Search…" onkeyup="if(event.key==='Enter'){KI.filterProduct=this.value;kiRenderHistory()}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+          </div>
+          <button onclick="KI.filterCategory='';KI.filterDate='';KI.filterProduct='';kiRenderHistory()" style="padding:8px 16px;background:#f5f5f5;border:1px solid var(--border);border-radius:6px;cursor:pointer">Clear</button>
+        </div>
+        <div id="ki-history-list"><div style="text-align:center;color:#888;padding:40px">Loading…</div></div>`;
+      
+      await kiLoadHistory();
+      kiRenderHistoryList();
+    }
+
+    function kiGroupHistory(){
+      const g = {};
+      KI.historyRows.forEach(r => {
+        const k = r.date + '|' + r.category;
+        if(!g[k]) g[k] = {date:r.date, category:r.category, rows:[], total:0, totalQty:0};
+        g[k].rows.push(r);
+        g[k].totalQty += Number(r.qty||0);
+      });
+      return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date) || a.category.localeCompare(b.category));
+    }
+
+    function kiRenderHistoryList(){
+      const el = document.getElementById('ki-history-list');
+      if(!el) return;
+      const groups = kiGroupHistory();
+      if(!groups.length){
+        el.innerHTML = '<div style="color:#888;padding:40px;text-align:center">No entries match the filters.</div>';
+        return;
+      }
+      el.innerHTML = `<div style="margin-bottom:12px;color:#666;font-size:13px">Showing ${groups.length} indent${groups.length>1?'s':''} (${KI.historyRows.length} line item${KI.historyRows.length>1?'s':''})</div>` +
+        groups.map((g, gi) => {
+          const label = g.category==='pastry'?'Pastry Indent':'Brownie Indent';
+          return `
+            <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:10px;background:#fff">
+              <div onclick="kiToggleGroup(${gi})" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer">
+                <div>
+                  <span style="font-weight:600;color:var(--brown)">${label}</span>
+                  <span style="color:#888;margin-left:8px;font-size:13px">${g.date}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <span style="font-size:13px;color:#666">${g.rows.length} item${g.rows.length>1?'s':''} · qty ${g.totalQty}</span>
+                  <span id="ki-arrow-${gi}" style="color:#888">▼</span>
+                </div>
+              </div>
+              <div id="ki-group-${gi}" style="display:none;border-top:1px solid var(--border);padding:8px 16px">
+                ${g.rows.map(r => `
+                  <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">
+                    <div style="flex:1;font-size:14px">${r.product}</div>
+                    <input type="number" min="0" step="0.01" value="${r.qty}" onchange="kiUpdateQty('${r.id}', this.value)" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:13px">
+                    <button onclick="kiDeleteRow('${r.id}')" style="padding:4px 10px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Delete</button>
+                  </div>`).join('')}
+              </div>
+            </div>`;
+        }).join('');
+    }
+
+    function kiToggleGroup(gi){
+      const div = document.getElementById('ki-group-'+gi);
+      const arr = document.getElementById('ki-arrow-'+gi);
+      if(!div) return;
+      const open = div.style.display !== 'none';
+      div.style.display = open ? 'none' : 'block';
+      if(arr) arr.textContent = open ? '▼' : '▲';
+    }
+
+    async function kiUpdateQty(id, val){
+      const n = Number(val);
+      if(!(n>0)){ alert('Quantity must be greater than 0. Use Delete to remove the line.'); kiRenderHistory(); return; }
+      try {
+        await sbPatch('kitchen_indents', `?id=eq.${id}`, {qty:n});
+        toast('Updated ✓');
+        const row = KI.historyRows.find(r=>r.id===id);
+        if(row) row.qty = n;
+        kiRenderHistoryList();
+      } catch(e) { toast('Update failed: '+e.message); }
+    }
+
+    async function kiDeleteRow(id){
+      if(!confirm('Delete this line item?')) return;
+      try {
+        await sbDelete('kitchen_indents', `?id=eq.${id}`);
+        toast('Deleted ✓');
+        KI.historyRows = KI.historyRows.filter(r=>r.id!==id);
+        kiRenderHistoryList();
+      } catch(e) { toast('Delete failed: '+e.message); }
     }
 // ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
 const PURCHASE_PRODUCTS = [
