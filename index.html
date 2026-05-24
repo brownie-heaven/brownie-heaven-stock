@@ -523,14 +523,16 @@ function setTab(i, fromBack) {
       const el = document.getElementById('screen');
       el.innerHTML = `
         <div style="max-width:900px;margin:0 auto;padding:16px">
-          <div style="display:flex;gap:24px;border-bottom:1px solid var(--border);margin-bottom:20px">
+         <div style="display:flex;gap:24px;border-bottom:1px solid var(--border);margin-bottom:20px">
             <button onclick="kiSetView('entry')" id="ki-tab-entry" style="padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;${KI.view==='entry'?'color:var(--brown);font-weight:600;border-bottom:2px solid var(--brown)':'color:#888'}">New entry</button>
             <button onclick="kiSetView('history')" id="ki-tab-history" style="padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;${KI.view==='history'?'color:var(--brown);font-weight:600;border-bottom:2px solid var(--brown)':'color:#888'}">History</button>
+            <button onclick="kiSetView('manage')" id="ki-tab-manage" style="padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;${KI.view==='manage'?'color:var(--brown);font-weight:600;border-bottom:2px solid var(--brown)':'color:#888'}">Manage products</button>
           </div>
           <div id="ki-body"></div>
         </div>`;
-      if(KI.view==='entry') await kiRenderEntry();
-      else await kiRenderHistory();
+    if(KI.view==='entry') await kiRenderEntry();
+      else if(KI.view==='history') await kiRenderHistory();
+      else await kiRenderManage();
     }
 
     function kiSetView(v){ KI.view=v; renderKitchenIndent(); }
@@ -753,6 +755,106 @@ async function kiLoadHistory(){
         KI.historyRows = KI.historyRows.filter(r=>r.id!==id);
         kiRenderHistoryList();
       } catch(e) { toast('Delete failed: '+e.message); }
+    }
+  let KIM = { category:'pastry', products:[], showInactive:false };
+
+    async function kiRenderManage(){
+      const body = document.getElementById('ki-body');
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;margin-bottom:16px;align-items:end">
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Category</label>
+            <select onchange="KIM.category=this.value;kiRenderManage()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+              <option value="pastry" ${KIM.category==='pastry'?'selected':''}>Pastry Indent</option>
+              <option value="brownie" ${KIM.category==='brownie'?'selected':''}>Brownie Indent</option>
+            </select>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;padding:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" ${KIM.showInactive?'checked':''} onchange="KIM.showInactive=this.checked;kiRenderManage()">
+            Show deactivated
+          </label>
+          <button onclick="kiAddProduct()" style="padding:10px 16px;background:var(--brown);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">+ Add product</button>
+        </div>
+        <div id="kim-list"><div style="text-align:center;color:#888;padding:40px">Loading…</div></div>`;
+      
+      await kiLoadManageList();
+      kiRenderManageList();
+    }
+
+    async function kiLoadManageList(){
+      try {
+        let params = `?category=eq.${KIM.category}&order=is_active.desc,name.asc&select=id,name,is_active`;
+        if(!KIM.showInactive) params += `&is_active=eq.true`;
+        KIM.products = await sbGet('kitchen_products', params) || [];
+      } catch(e){
+        KIM.products = [];
+        toast('Error loading: '+e.message);
+      }
+    }
+
+    function kiRenderManageList(){
+      const el = document.getElementById('kim-list');
+      if(!el) return;
+      if(!KIM.products.length){
+        el.innerHTML = '<div style="color:#888;padding:40px;text-align:center">No products in this category.</div>';
+        return;
+      }
+      el.innerHTML = `<div style="margin-bottom:8px;color:#666;font-size:13px">${KIM.products.length} product${KIM.products.length>1?'s':''}</div>` +
+        KIM.products.map(p => {
+          const safeId = p.id;
+          const dim = p.is_active ? '' : 'opacity:0.5;';
+          return `
+            <div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:#fff;${dim}">
+              <div style="flex:1;font-size:14px">${p.name}${p.is_active?'':' <span style="color:#c00;font-size:11px;margin-left:6px">(deactivated)</span>'}</div>
+              <button onclick="kiRenameProduct('${safeId}')" style="padding:5px 12px;background:#f5f5f5;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px">Rename</button>
+              ${p.is_active 
+                ? `<button onclick="kiToggleActive('${safeId}', false)" style="padding:5px 12px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Deactivate</button>`
+                : `<button onclick="kiToggleActive('${safeId}', true)" style="padding:5px 12px;background:#f0fdf4;color:#080;border:1px solid #c4f0c4;border-radius:4px;cursor:pointer;font-size:12px">Reactivate</button>`}
+            </div>`;
+        }).join('');
+    }
+
+    async function kiAddProduct(){
+      const name = prompt(`Add new product to ${KIM.category==='pastry'?'Pastry':'Brownie'} Indent:\n\n(Include unit/size in name, e.g. "Amul Butter 500gms")`);
+      if(!name || !name.trim()) return;
+      const clean = name.trim();
+      try {
+        await sbPost('kitchen_products', {category:KIM.category, name:clean});
+        toast('Added ✓');
+        await kiLoadManageList();
+        kiRenderManageList();
+      } catch(e){
+        if(String(e.message).includes('duplicate')) toast('That name already exists.');
+        else toast('Add failed: '+e.message);
+      }
+    }
+
+    async function kiRenameProduct(id){
+      const p = KIM.products.find(x=>x.id===id);
+      if(!p) return;
+      const newName = prompt('Rename product:', p.name);
+      if(!newName || !newName.trim() || newName.trim()===p.name) return;
+      const clean = newName.trim();
+      try {
+        await sbPatch('kitchen_products', `?id=eq.${id}`, {name:clean});
+        toast('Renamed ✓');
+        await kiLoadManageList();
+        kiRenderManageList();
+      } catch(e){
+        if(String(e.message).includes('duplicate')) toast('That name already exists.');
+        else toast('Rename failed: '+e.message);
+      }
+    }
+
+    async function kiToggleActive(id, makeActive){
+      const action = makeActive ? 'reactivate' : 'deactivate';
+      if(!confirm(`${action.charAt(0).toUpperCase()+action.slice(1)} this product?\n\n(Past indent history is not affected. ${makeActive?'It will reappear':'It will no longer appear'} in the entry form.)`)) return;
+      try {
+        await sbPatch('kitchen_products', `?id=eq.${id}`, {is_active:makeActive});
+        toast(makeActive?'Reactivated ✓':'Deactivated ✓');
+        await kiLoadManageList();
+        kiRenderManageList();
+      } catch(e){ toast('Update failed: '+e.message); }
     }
 // ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
 const PURCHASE_PRODUCTS = [
