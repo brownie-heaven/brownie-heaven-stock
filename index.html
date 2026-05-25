@@ -621,7 +621,7 @@ function kiRenderProductList(){
             <div style="flex:1;font-size:14px">${name}</div>
            <input type="number" min="0" step="0.01" value="${qty}" placeholder="—" oninput="kiUpdateLine('${safe}','qty',this.value)" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:14px">
            <input type="number" min="0" step="0.01" value="${price}" placeholder="—" oninput="kiUpdateLine('${safe}','price',this.value)" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:14px">
-            <div style="width:90px;text-align:right;font-size:13px;color:#666">₹${amt}</div>
+          <div id="ki-amt-${name.replace(/[^a-zA-Z0-9]/g,'_')}" style="width:90px;text-align:right;font-size:13px;color:#666">₹${amt}</div>
           </div>`;
       }).join('');
       kiUpdateGrandTotal();
@@ -638,13 +638,20 @@ function kiRenderProductList(){
       el.textContent = 'Total: ₹' + total.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
     }
 
-  function kiUpdateLine(name, field, val){
+ function kiUpdateLine(name, field, val){
       if(!KI.lines[name]) KI.lines[name] = {qty:0, price:0};
       const n = Number(val) || 0;
       KI.lines[name][field] = n;
       if(field==='qty' && n<=0){
-        // keep the price but mark qty as 0; will be filtered on save
         KI.lines[name].qty = 0;
+      }
+      // Update just the amount cell for this row, live
+      const safeId = name.replace(/[^a-zA-Z0-9]/g,'_');
+      const amtEl = document.getElementById('ki-amt-'+safeId);
+      if(amtEl){
+        const q = Number(KI.lines[name].qty||0);
+        const p = Number(KI.lines[name].price||0);
+        amtEl.textContent = '₹' + ((q>0 && p>0) ? (q*p).toFixed(2) : '0.00');
       }
       kiUpdateGrandTotal();
     }
