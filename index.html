@@ -607,9 +607,14 @@ function kiRenderProductList(){
       el.innerHTML = KI.products.map(p => {
         const name = p.name;
         const safe = name.replace(/'/g,"\\'");
-        const line = KI.lines[name] || {};
-        const qty = line.qty || '';
-        const price = (line.price !== undefined ? line.price : (p.price !== null && p.price !== undefined ? p.price : ''));
+       const line = KI.lines[name] || {};
+        const qty = (line.qty && Number(line.qty) > 0) ? line.qty : '';
+        let price = '';
+        if(line.price !== undefined && line.price !== null && Number(line.price) > 0) {
+          price = line.price;
+        } else if(p.price !== null && p.price !== undefined && Number(p.price) > 0) {
+          price = p.price;
+        }
         const amt = (Number(qty)>0 && Number(price)>0) ? (Number(qty)*Number(price)).toFixed(2) : '0.00';
         return `
           <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">
