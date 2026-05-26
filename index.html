@@ -2183,6 +2183,33 @@ function downloadDispatch() {
   a.download = `dispatch_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
 }
+  async function downloadDispatchImage(){
+  try {
+    if(typeof html2canvas === 'undefined'){
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    const card = document.querySelector('.card');
+    if(!card){ alert('Dispatch sheet not found'); return; }
+    const canvas = await html2canvas(card, {scale: 2, backgroundColor: '#ffffff'});
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dispatch_' + (new Date().toISOString().slice(0,10)) + '.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Image downloaded ✓');
+    }, 'image/png');
+  } catch(e) {
+    alert('Image download failed: ' + e.message);
+  }
+}
   async function editDispatchCell(outletId, productId, productName, calculated) {
       const today = window._dispatchToday || new Date().toISOString().split('T')[0];
       const existing = await sbGet('dispatch_overrides', `?dispatch_date=eq.${today}&outlet_id=eq.${outletId}&product_id=eq.${productId}&select=qty`);
@@ -2296,6 +2323,7 @@ async function renderDispatch() {
       <button class="btn btn-s" style="width:auto;padding:7px 14px;margin-bottom:12px;display:inline-flex;align-items:center;gap:6px" onclick="goHome()">← Home</button>
       <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="window.print()">🖨 Print</button>
       <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="downloadDispatch()">⬇️ Download Excel</button>
+      + '<button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="downloadDispatchImage()">🖼️ Download Image</button>'
       <div class="card">
         <div class="card-title">📦 Dispatch Sheet — ${today} (${dayType})</div>
         <p style="font-size:12px;color:var(--txt2);margin-bottom:12px">Based on last night's closing stock vs ${dayType} par stock. Highlighted = needs dispatch.</p>
