@@ -243,10 +243,11 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
         <div id="hdr-sub" class="hdr-sub">Stock Management</div>
       </div>
     </div>
-    <div class="hdr-right" id="hdr-right" style="display:none">
-      <button class="hdr-btn" onclick="confirmHome()">🏠 Home</button>
-      <button class="logout-btn" onclick="confirmLogout()">Logout</button>
-    </div>
+   <div class="hdr-right" id="hdr-right" style="display:none">
+          <button class="hdr-btn" id="back-btn" onclick="goBack()" style="display:none">← Back</button>
+          <button class="hdr-btn" onclick="confirmHome()">🏠 Home</button>
+          <button class="logout-btn" onclick="confirmLogout()">Logout</button>
+        </div>
   </div>
   <div id="main-tabs" style="display:none" class="main-tabs">
     <button class="mt" id="mt0" onclick="setTab(0)">Overview</button>
@@ -256,9 +257,10 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
     <button class="mt" id="mt4" onclick="setTab(4)">Supply Ledger</button>
     <button class="mt" id="mt5" onclick="setTab(5)">Accessories</button>
     <button class="mt" id="mt6" onclick="setTab(6)">Hotels</button>
-   <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
+    <button class="mt" id="mt7" onclick="setTab(7)">Purchase</button>
     <button class="mt" id="mt8" onclick="setTab(8)" style="display:none">Shift Entries</button>
-  </div>
+    <button class="mt" id="mt9" onclick="setTab(9)" style="display:none">Kitchen Indent</button>
+        </div>
   <div class="screen" id="screen"></div>
 </div>
 
@@ -356,7 +358,7 @@ let S = {
   mainTab:0, adminOutlet:'1001', adminCatIdx:0,
   newProdName:{}, selMonth:new Date().getMonth(),
   selYear:new Date().getFullYear(),
- productionTab:0, productionData:{}, prodDate:null, role:null,
+productionTab:0, productionData:{}, prodDate:null, role:null, navHistory:[],
   demoMode:false
 };
 
@@ -421,16 +423,16 @@ function setHdr(sub, showTabs) {
 if(S.role==='dispatch' && document.getElementById('mt2')) document.getElementById('mt2').textContent='Dispatch';
   document.getElementById('hdr-right').style.display = (sub !== 'Stock Management') ? 'flex' : 'none';
   if (showTabs) {
-['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7','mt8'].forEach((id,i) => {
+['mt0','mt1','mt2','mt3','mt4','mt5','mt6','mt7','mt8','mt9'].forEach((id,i) => {
 const el = document.getElementById(id);
       if(S.role==='dispatch') {
         el.style.display = (i===1||i===2) ? '' : 'none';
         el.classList.toggle('active', i===1 ? S.mainTab===1 : S.mainTab===2);
-      } else if(S.role==='admin') {
+    } else if(S.role==='admin') {
         el.style.display = (i===1) ? 'none' : '';
         el.classList.toggle('active', i === S.mainTab);
       } else {
-        el.style.display = (i===1||i===8) ? 'none' : '';
+        el.style.display = (i===1||i===8||i===9) ? 'none' : '';
         el.classList.toggle('active', i === S.mainTab);
       }
 });
@@ -438,41 +440,504 @@ const el = document.getElementById(id);
 }
 
 function confirmHome() {
-  if (confirm('Go to Home screen? Unsaved entries will be lost.')) goHome();
-}
+      // Home goes to Overview/Production without logging out
+      if(S.role==='dispatch'){ setTab(1); }
+      else { setTab(0); }
+    }
 
 function confirmLogout() {
-  if (confirm('Logout? You will need to enter PIN again.')) goHome();
-}
+      if (confirm('Logout? You will need to enter PIN again.')) {
+        goHome();
+      }
+    }
 
 function goHome() {
-  S = {...S, screen:'pin', pin:'', outlet:null, shift:null, staffName:'',
-    activeTab:0, stockData:{}, demandData:{}, pinError:false, role:null, demoMode:false};
+      S = {...S, screen:'pin', pin:'', outlet:null, shift:null, staffName:'',
+        activeTab:0, stockData:{}, demandData:{}, pinError:false, role:null, demoMode:false, navHistory:[]};
+      if(typeof updateBackBtn==='function') updateBackBtn();
   const ma = document.getElementById('main-app');
   ma.classList.remove('app-visible');
   ma.style.display = 'none';
   document.getElementById('welcome-screen').style.display = 'flex';
 }
 
-function setTab(i) {
-  if(S.role==='admin' && i===1) return;
-  S.mainTab = i;
-setHdr('Dashboard', true);
-  if(S.role==='dispatch'){
-  if(i===1) renderProduction();
-  else if(i===2) renderDispatch();
-  return;
-}
-  if (i===0) renderOverview();
-  else if (i===1) renderProduction();
-  else if (i===2) renderMonthly();
-  else if (i===3) renderAdmin();
-  else if (i===4) renderSupplyLedger();
-  else if (i===5) renderAccessoriesLedger();
- else if (i===6) renderHotelsLedger();
-  else if (i===7) renderPurchase();
-  else if (i===8) renderShiftEntries();
-}
+function setTab(i, fromBack) {
+      if(S.role==='admin' && i===1) return;
+      // Push current tab onto history (unless this call IS a back navigation)
+      if(!fromBack && typeof S.mainTab === 'number' && S.mainTab !== i){
+        S.navHistory.push({type:'tab', mainTab:S.mainTab});
+        try{ history.pushState({nav:true}, '', ''); }catch(e){}
+      }
+      S.mainTab = i;
+      setHdr('Dashboard', true);
+      updateBackBtn();
+      if(S.role==='dispatch'){
+        if(i===1) renderProduction();
+        else if(i===2) renderDispatch();
+        return;
+      }
+      if (i===0) renderOverview();
+      else if (i===1) renderProduction();
+      else if (i===2) renderMonthly();
+      else if (i===3) renderAdmin();
+      else if (i===4) renderSupplyLedger();
+      else if (i===5) renderAccessoriesLedger();
+      else if (i===6) renderHotelsLedger();
+      else if (i===7) renderPurchase();
+      else if (i===8) renderShiftEntries();
+      else if (i===9) renderKitchenIndent();
+    }
+    function goBack(){
+      if(!S.navHistory || !S.navHistory.length){ updateBackBtn(); return; }
+      const prev = S.navHistory.pop();
+      if(prev.type==='tab'){
+        setTab(prev.mainTab, true);
+      }
+      updateBackBtn();
+    }
+
+    function updateBackBtn(){
+      const b = document.getElementById('back-btn');
+      if(!b) return;
+      b.style.display = (S.navHistory && S.navHistory.length>0) ? 'inline-block' : 'none';
+    }
+
+    window.addEventListener('popstate', function(){
+      if(S.navHistory && S.navHistory.length>0){ goBack(); }
+    });
+// — KITCHEN INDENT —————————————————
+ let KI = {
+      view: 'entry',
+      category: 'pastry',
+      date: new Date().toISOString().slice(0,10),
+      products: [],
+      lines: {},
+      historyRows: [],
+      filterCategory: '',
+      filterDate: '',
+      filterProduct: ''
+    };
+
+    async function renderKitchenIndent() {
+      setHdr('Kitchen Indent', true);
+      const el = document.getElementById('screen');
+      el.innerHTML = `
+        <div style="max-width:900px;margin:0 auto;padding:16px">
+         <div style="display:flex;gap:24px;border-bottom:1px solid var(--border);margin-bottom:20px">
+            <button onclick="kiSetView('entry')" id="ki-tab-entry" style="padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;${KI.view==='entry'?'color:var(--brown);font-weight:600;border-bottom:2px solid var(--brown)':'color:#888'}">New entry</button>
+            <button onclick="kiSetView('history')" id="ki-tab-history" style="padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;${KI.view==='history'?'color:var(--brown);font-weight:600;border-bottom:2px solid var(--brown)':'color:#888'}">History</button>
+            <button onclick="kiSetView('manage')" id="ki-tab-manage" style="padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;${KI.view==='manage'?'color:var(--brown);font-weight:600;border-bottom:2px solid var(--brown)':'color:#888'}">Manage products</button>
+          </div>
+          <div id="ki-body"></div>
+        </div>`;
+    if(KI.view==='entry') await kiRenderEntry();
+      else if(KI.view==='history') await kiRenderHistory();
+      else await kiRenderManage();
+    }
+
+    function kiSetView(v){ KI.view=v; renderKitchenIndent(); }
+
+  async function kiLoadProducts(){
+      try {
+        const rows = await sbGet('kitchen_products', `?category=eq.${KI.category}&is_active=eq.true&order=name.asc&select=name,price`);
+        KI.products = rows.map(r => ({name:r.name, price:r.price}));
+      } catch(e) {
+        KI.products = [];
+        toast('Error loading products: '+e.message);
+      }
+    }
+    async function kiRenderEntry(){
+      const body = document.getElementById('ki-body');
+      body.innerHTML = '<div style="text-align:center;color:#888;padding:40px">Loading products…</div>';
+      await kiLoadProducts();
+
+   body.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Category</label>
+            <select onchange="kiChangeCategory(this.value)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+              <option value="pastry" ${KI.category==='pastry'?'selected':''}>Pastry Indent</option>
+              <option value="brownie" ${KI.category==='brownie'?'selected':''}>Brownie Indent</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Date</label>
+            <input type="date" value="${KI.date}" onchange="KI.date=this.value" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+          </div>
+        </div>
+
+        <div style="background:#fffaf3;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div style="font-weight:600;color:var(--brown)">Enter quantity & price per item</div>
+            <div id="ki-grand-total" style="font-size:14px;font-weight:600;color:var(--brown)">Total: ₹0.00</div>
+          </div>
+          <div style="display:flex;gap:10px;padding:6px 0;border-bottom:2px solid var(--border);font-size:12px;color:#888;font-weight:600">
+            <div style="flex:1">Product</div>
+            <div style="width:80px;text-align:right">Qty</div>
+            <div style="width:80px;text-align:right">Price ₹</div>
+            <div style="width:90px;text-align:right">Amount ₹</div>
+          </div>
+          <div id="ki-product-list" style="max-height:60vh;overflow-y:auto"></div>
+        </div>
+
+        <div style="display:flex;gap:12px;justify-content:flex-end">
+          <button onclick="kiClearForm()" style="padding:10px 20px;background:#f5f5f5;border:1px solid var(--border);border-radius:6px;cursor:pointer">Clear</button>
+          <button id="ki-save-btn" onclick="kiSave()" style="padding:10px 24px;background:var(--brown);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Save indent</button>
+        </div>`;
+
+      kiRenderProductList();
+    }
+function kiRenderProductList(){
+      const el = document.getElementById('ki-product-list');
+      if(!el) return;
+      if(!KI.products.length){
+        el.innerHTML = '<div style="color:#888;padding:20px;text-align:center">No products in this category. Add some via Manage Products.</div>';
+        return;
+      }
+      el.innerHTML = KI.products.map(p => {
+        const name = p.name;
+        const safe = name.replace(/'/g,"\\'");
+       const line = KI.lines[name] || {};
+        const qty = (line.qty && Number(line.qty) > 0) ? line.qty : '';
+        let price = '';
+        if(line.price !== undefined && line.price !== null && Number(line.price) > 0) {
+          price = line.price;
+        } else if(p.price !== null && p.price !== undefined && Number(p.price) > 0) {
+          price = p.price;
+        }
+        const amt = (Number(qty)>0 && Number(price)>0) ? (Number(qty)*Number(price)).toFixed(2) : '0.00';
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">
+            <div style="flex:1;font-size:14px">${name}</div>
+           <input type="number" min="0" step="0.01" value="${qty}" placeholder="—" oninput="kiUpdateLine('${safe}','qty',this.value)" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:14px">
+           <input type="number" min="0" step="0.01" value="${price}" placeholder="—" oninput="kiUpdateLine('${safe}','price',this.value)" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:14px">
+          <div id="ki-amt-${name.replace(/[^a-zA-Z0-9]/g,'_')}" style="width:90px;text-align:right;font-size:13px;color:#666">₹${amt}</div>
+          </div>`;
+      }).join('');
+      kiUpdateGrandTotal();
+    }
+
+    function kiUpdateGrandTotal(){
+      const el = document.getElementById('ki-grand-total');
+      if(!el) return;
+      let total = 0;
+      Object.values(KI.lines).forEach(l => {
+        const q = Number(l.qty||0), p = Number(l.price||0);
+        if(q>0 && p>0) total += q*p;
+      });
+      el.textContent = 'Total: ₹' + total.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+
+ function kiUpdateLine(name, field, val){
+      if(!KI.lines[name]) KI.lines[name] = {qty:0, price:0};
+      const n = Number(val) || 0;
+      KI.lines[name][field] = n;
+      if(field==='qty' && n<=0){
+        KI.lines[name].qty = 0;
+      }
+      // Update just the amount cell for this row, live
+      const safeId = name.replace(/[^a-zA-Z0-9]/g,'_');
+      const amtEl = document.getElementById('ki-amt-'+safeId);
+      if(amtEl){
+        const q = Number(KI.lines[name].qty||0);
+        const p = Number(KI.lines[name].price||0);
+        amtEl.textContent = '₹' + ((q>0 && p>0) ? (q*p).toFixed(2) : '0.00');
+      }
+      kiUpdateGrandTotal();
+    }
+
+    function kiChangeCategory(cat){
+      KI.category = cat;
+      KI.lines = {};
+      kiRenderEntry();
+    }
+
+    function kiClearForm(){
+      if(!Object.keys(KI.lines).length) return;
+      if(confirm('Clear all entered quantities?')){ KI.lines={}; kiRenderProductList(); }
+    }
+    async function kiSave(){
+      if(!KI.date){ alert('Pick a date'); return; }
+      const entries = Object.entries(KI.lines).filter(([n,l])=>Number(l.qty)>0);
+      if(!entries.length){ alert('Enter at least one quantity'); return; }
+      const btn = document.getElementById('ki-save-btn');
+      if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+      try {
+       const rows = entries.map(([name, l]) => {
+          const qty = Number(l.qty)||0;
+          const price = Number(l.price)||0;
+          return {
+            date: KI.date,
+            category: KI.category,
+            product: name,
+            qty: qty,
+            price: price,
+            amount: qty*price
+          };
+        });
+        await sbPost('kitchen_indents', rows);
+        KI.lines = {};
+        toast('Indent saved ✓');
+        kiRenderEntry();
+      } catch(e) {
+        toast('Save failed: '+e.message);
+      }
+      if(btn){ btn.disabled=false; btn.textContent='Save indent'; }
+    }
+
+async function kiLoadHistory(){
+      try {
+        let params = '?order=date.desc,created_at.desc';
+        if(KI.filterCategory) params += `&category=eq.${KI.filterCategory}`;
+        if(KI.filterDate) params += `&date=eq.${KI.filterDate}`;
+        if(KI.filterProduct) params += `&product=ilike.*${encodeURIComponent(KI.filterProduct)}*`;
+        const rows = await sbGet('kitchen_indents', params);
+        KI.historyRows = rows || [];
+      } catch(e) {
+        KI.historyRows = [];
+        toast('Error loading history: '+e.message);
+      }
+    }
+
+    async function kiRenderHistory(){
+      const body = document.getElementById('ki-body');
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;margin-bottom:20px;align-items:end">
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Category</label>
+            <select onchange="KI.filterCategory=this.value;kiRenderHistory()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+              <option value="" ${!KI.filterCategory?'selected':''}>All</option>
+              <option value="pastry" ${KI.filterCategory==='pastry'?'selected':''}>Pastry</option>
+              <option value="brownie" ${KI.filterCategory==='brownie'?'selected':''}>Brownie</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Date</label>
+           <input type="date" value="${KI.filterDate||''}" onchange="KI.filterDate=this.value;kiRenderHistory()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Product name</label>
+            <input type="text" value="${KI.filterProduct}" placeholder="Search…" onkeyup="if(event.key==='Enter'){KI.filterProduct=this.value;kiRenderHistory()}" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+          </div>
+          <button onclick="KI.filterCategory='';KI.filterDate='';KI.filterProduct='';kiRenderHistory()" style="padding:8px 16px;background:#f5f5f5;border:1px solid var(--border);border-radius:6px;cursor:pointer">Clear</button>
+        </div>
+        <div id="ki-history-list"><div style="text-align:center;color:#888;padding:40px">Loading…</div></div>`;
+      
+      await kiLoadHistory();
+      kiRenderHistoryList();
+    }
+
+  function kiGroupHistory(){
+      const g = {};
+      KI.historyRows.forEach(r => {
+        const k = r.date + '|' + r.category;
+        if(!g[k]) g[k] = {date:r.date, category:r.category, rows:[], totalAmount:0, totalQty:0};
+        g[k].rows.push(r);
+        g[k].totalQty += Number(r.qty||0);
+        g[k].totalAmount += Number(r.amount||0);
+      });
+      return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date) || a.category.localeCompare(b.category));
+    }
+
+  function kiRenderHistoryList(){
+      const el = document.getElementById('ki-history-list');
+      if(!el) return;
+      const groups = kiGroupHistory();
+      if(!groups.length){
+        el.innerHTML = '<div style="color:#888;padding:40px;text-align:center">No entries match the filters.</div>';
+        return;
+      }
+
+      // --- Grand totals (Pastry vs Brownie) ---
+      let pastryTotal = 0, brownieTotal = 0, pastryDays = 0, brownieDays = 0;
+      groups.forEach(g => {
+        if(g.category==='pastry'){ pastryTotal += g.totalAmount; pastryDays++; }
+        else if(g.category==='brownie'){ brownieTotal += g.totalAmount; brownieDays++; }
+      });
+      const grandTotal = pastryTotal + brownieTotal;
+      const fmtRs = n => '₹' + Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits:2});
+
+      const summary = `
+        <div style="background:#fffaf3;border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:12px;color:#888">Pastry</div>
+              <div style="font-size:18px;font-weight:600;color:var(--brown)">${fmtRs(pastryTotal)}</div>
+              <div style="font-size:11px;color:#999">${pastryDays} day${pastryDays!==1?'s':''}</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:#888">Brownie</div>
+              <div style="font-size:18px;font-weight:600;color:var(--brown)">${fmtRs(brownieTotal)}</div>
+              <div style="font-size:11px;color:#999">${brownieDays} day${brownieDays!==1?'s':''}</div>
+            </div>
+            <div style="border-left:1px solid var(--border);padding-left:16px">
+              <div style="font-size:12px;color:#888">Grand total</div>
+              <div style="font-size:20px;font-weight:700;color:#080">${fmtRs(grandTotal)}</div>
+              <div style="font-size:11px;color:#999">${KI.historyRows.length} line items</div>
+            </div>
+          </div>
+        </div>`;
+
+      el.innerHTML = summary + groups.map((g, gi) => {
+        const label = g.category==='pastry'?'Pastry Indent':'Brownie Indent';
+        return `
+          <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:10px;background:#fff">
+            <div onclick="kiToggleGroup(${gi})" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer">
+              <div>
+                <span style="font-weight:600;color:var(--brown)">${label}</span>
+                <span style="color:#888;margin-left:8px;font-size:13px">${g.date}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:13px;color:#666">${g.rows.length} item${g.rows.length>1?'s':''} · qty ${g.totalQty} · <b style="color:var(--brown)">${fmtRs(g.totalAmount)}</b></span>
+                <span id="ki-arrow-${gi}" style="color:#888">▼</span>
+              </div>
+            </div>
+            <div id="ki-group-${gi}" style="display:none;border-top:1px solid var(--border);padding:8px 16px">
+              ${g.rows.map(r => `
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">
+                  <div style="flex:1;font-size:14px">${r.product}</div>
+                  <input type="number" min="0" step="0.01" value="${r.qty}" onchange="kiUpdateQty('${r.id}', this.value)" style="width:70px;padding:5px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:13px">
+                  <div style="width:80px;text-align:right;font-size:13px;color:#666">${fmtRs(r.amount)}</div>
+                  <button onclick="kiDeleteRow('${r.id}')" style="padding:4px 10px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Delete</button>
+                </div>`).join('')}
+              <div style="display:flex;justify-content:flex-end;padding:12px 0 8px 0;border-top:2px solid var(--border);margin-top:6px;font-weight:600;color:var(--brown)">
+                Total: ${fmtRs(g.totalAmount)}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function kiToggleGroup(gi){
+      const div = document.getElementById('ki-group-'+gi);
+      const arr = document.getElementById('ki-arrow-'+gi);
+      if(!div) return;
+      const open = div.style.display !== 'none';
+      div.style.display = open ? 'none' : 'block';
+      if(arr) arr.textContent = open ? '▼' : '▲';
+    }
+
+    async function kiUpdateQty(id, val){
+      const n = Number(val);
+      if(!(n>0)){ alert('Quantity must be greater than 0. Use Delete to remove the line.'); kiRenderHistory(); return; }
+      try {
+        await sbPatch('kitchen_indents', `?id=eq.${id}`, {qty:n});
+        toast('Updated ✓');
+        const row = KI.historyRows.find(r=>r.id===id);
+        if(row) row.qty = n;
+        kiRenderHistoryList();
+      } catch(e) { toast('Update failed: '+e.message); }
+    }
+
+    async function kiDeleteRow(id){
+      if(!confirm('Delete this line item?')) return;
+      try {
+        await sbDelete('kitchen_indents', `?id=eq.${id}`);
+        toast('Deleted ✓');
+        KI.historyRows = KI.historyRows.filter(r=>r.id!==id);
+        kiRenderHistoryList();
+      } catch(e) { toast('Delete failed: '+e.message); }
+    }
+  let KIM = { category:'pastry', products:[], showInactive:false };
+
+    async function kiRenderManage(){
+      const body = document.getElementById('ki-body');
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;margin-bottom:16px;align-items:end">
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Category</label>
+            <select onchange="KIM.category=this.value;kiRenderManage()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px">
+              <option value="pastry" ${KIM.category==='pastry'?'selected':''}>Pastry Indent</option>
+              <option value="brownie" ${KIM.category==='brownie'?'selected':''}>Brownie Indent</option>
+            </select>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;padding:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" ${KIM.showInactive?'checked':''} onchange="KIM.showInactive=this.checked;kiRenderManage()">
+            Show deactivated
+          </label>
+          <button onclick="kiAddProduct()" style="padding:10px 16px;background:var(--brown);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">+ Add product</button>
+        </div>
+        <div id="kim-list"><div style="text-align:center;color:#888;padding:40px">Loading…</div></div>`;
+      
+      await kiLoadManageList();
+      kiRenderManageList();
+    }
+
+    async function kiLoadManageList(){
+      try {
+        let params = `?category=eq.${KIM.category}&order=is_active.desc,name.asc&select=id,name,is_active`;
+        if(!KIM.showInactive) params += `&is_active=eq.true`;
+        KIM.products = await sbGet('kitchen_products', params) || [];
+      } catch(e){
+        KIM.products = [];
+        toast('Error loading: '+e.message);
+      }
+    }
+
+    function kiRenderManageList(){
+      const el = document.getElementById('kim-list');
+      if(!el) return;
+      if(!KIM.products.length){
+        el.innerHTML = '<div style="color:#888;padding:40px;text-align:center">No products in this category.</div>';
+        return;
+      }
+      el.innerHTML = `<div style="margin-bottom:8px;color:#666;font-size:13px">${KIM.products.length} product${KIM.products.length>1?'s':''}</div>` +
+        KIM.products.map(p => {
+          const safeId = p.id;
+          const dim = p.is_active ? '' : 'opacity:0.5;';
+          return `
+            <div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:#fff;${dim}">
+              <div style="flex:1;font-size:14px">${p.name}${p.is_active?'':' <span style="color:#c00;font-size:11px;margin-left:6px">(deactivated)</span>'}</div>
+              <button onclick="kiRenameProduct('${safeId}')" style="padding:5px 12px;background:#f5f5f5;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px">Rename</button>
+              ${p.is_active 
+                ? `<button onclick="kiToggleActive('${safeId}', false)" style="padding:5px 12px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Deactivate</button>`
+                : `<button onclick="kiToggleActive('${safeId}', true)" style="padding:5px 12px;background:#f0fdf4;color:#080;border:1px solid #c4f0c4;border-radius:4px;cursor:pointer;font-size:12px">Reactivate</button>`}
+            </div>`;
+        }).join('');
+    }
+
+    async function kiAddProduct(){
+      const name = prompt(`Add new product to ${KIM.category==='pastry'?'Pastry':'Brownie'} Indent:\n\n(Include unit/size in name, e.g. "Amul Butter 500gms")`);
+      if(!name || !name.trim()) return;
+      const clean = name.trim();
+      try {
+        await sbPost('kitchen_products', {category:KIM.category, name:clean});
+        toast('Added ✓');
+        await kiLoadManageList();
+        kiRenderManageList();
+      } catch(e){
+        if(String(e.message).includes('duplicate')) toast('That name already exists.');
+        else toast('Add failed: '+e.message);
+      }
+    }
+
+    async function kiRenameProduct(id){
+      const p = KIM.products.find(x=>x.id===id);
+      if(!p) return;
+      const newName = prompt('Rename product:', p.name);
+      if(!newName || !newName.trim() || newName.trim()===p.name) return;
+      const clean = newName.trim();
+      try {
+        await sbPatch('kitchen_products', `?id=eq.${id}`, {name:clean});
+        toast('Renamed ✓');
+        await kiLoadManageList();
+        kiRenderManageList();
+      } catch(e){
+        if(String(e.message).includes('duplicate')) toast('That name already exists.');
+        else toast('Rename failed: '+e.message);
+      }
+    }
+
+    async function kiToggleActive(id, makeActive){
+      const action = makeActive ? 'reactivate' : 'deactivate';
+      if(!confirm(`${action.charAt(0).toUpperCase()+action.slice(1)} this product?\n\n(Past indent history is not affected. ${makeActive?'It will reappear':'It will no longer appear'} in the entry form.)`)) return;
+      try {
+        await sbPatch('kitchen_products', `?id=eq.${id}`, {is_active:makeActive});
+        toast(makeActive?'Reactivated ✓':'Deactivated ✓');
+        await kiLoadManageList();
+        kiRenderManageList();
+      } catch(e){ toast('Update failed: '+e.message); }
+    }
 // ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
 const PURCHASE_PRODUCTS = [
   {"name":"Egg pc","agency":"Aashirvad Egg Centre","category":"Brownie","unit":"pcs","rate":6.4,"gst":0},
@@ -1182,6 +1647,17 @@ async function loadPurchaseHistory(){
         </tbody>
       </table>
     </div>`).join('');
+  // === Agency total banner (shown when agency filter is active) ===
+  if(agency){
+    const grandTotal = Object.values(groups).reduce((s,g)=>s+(g.total||0),0);
+    const period = document.getElementById('pur-filter-date')?.value
+      || (document.getElementById('pur-filter-month')?.value || '');
+    el.innerHTML += `
+      <div style="margin-top:16px;padding:14px 18px;background:#6B2400;color:white;border-radius:8px;display:flex;justify-content:space-between;align-items:center;font-size:14px;">
+        <span style="font-weight:600;">${agency} — Total${period?' ('+period+')':''}</span>
+        <span style="font-weight:700;font-size:16px;">₹${grandTotal.toFixed(2)}</span>
+      </div>`;
+  }
 }
 
   async function deletePurchaseItem(id, name){
@@ -1253,7 +1729,7 @@ function pressNum(n) {
       S.pinError=false; S.stockData={}; S.demandData={};
       setHdr(S.outletName, false);
       renderShift();
-    } else if (S.pin==='9999') {
+   } else if (S.pin==='3555') {
       S.role='admin'; S.mainTab=0; setTab(0);
    } else if (S.pin==='3001'||S.pin==='2001') {
  S.role='dispatch'; S.mainTab=1; setTab(1);
@@ -1853,25 +2329,28 @@ async function renderOverview() {
     const monthEnd = `${ym}-${lastDay}`;
 
    // ── Fetch ledger totals ──
-  const [slTodayRaw, accToday, slMonthRaw, accMonth, purToday, purMonth] = await Promise.all([
-  sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount,outlet`),
-  sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
-  sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
-  sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
-  sbGet('purchase_ledger', `?date=eq.${today}&select=amount`),
-  sbGet('purchase_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`)
-]);
+ const hotelFilter = HOTEL_LIST.map(h => `"${h}"`).join(',');
+    const [slTodayRaw, accToday, slMonthRaw, accMonth, purToday, purMonth, hlToday, hlMonth] = await Promise.all([
+      sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount,outlet`),
+      sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
+      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
+      sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+      sbGet('purchase_ledger', `?date=eq.${today}&select=amount`),
+      sbGet('purchase_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+      sbGet('outlet_supply_ledger', `?date=eq.${today}&outlet=in.(${hotelFilter})&select=amount`),
+      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&outlet=in.(${hotelFilter})&select=amount`)
+    ]);
     const sum = arr => arr.reduce((s, r) => s + Number(r.amount || 0), 0);
 
     const slTodayAmt  = sum(slTodayRaw.filter(r=>!HOTEL_LIST.includes(r.outlet)));
-    const hlTodayAmt  = sum(slTodayRaw.filter(r=>HOTEL_LIST.includes(r.outlet)));
+    const hlTodayAmt  = sum(hlToday);
     const accTodayAmt = sum(accToday);
     const purTodayAmt = sum(purToday);
     const purMonthAmt = sum(purMonth);
     const todayGrand  = slTodayAmt + accTodayAmt + hlTodayAmt;
 
     const slMonthAmt  = sum(slMonthRaw.filter(r=>!HOTEL_LIST.includes(r.outlet)));
-    const hlMonthAmt  = sum(slMonthRaw.filter(r=>HOTEL_LIST.includes(r.outlet)));
+    const hlMonthAmt  = sum(hlMonth);
     const accMonthAmt = sum(accMonth);
     const monthGrand  = slMonthAmt + accMonthAmt + hlMonthAmt;
     const fmt = n => '₹' + Number(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -2739,16 +3218,19 @@ async function hlSave(){
   }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
 }
 async function hlLoadHistory(){
-  try{
- let q='outlet_supply_ledger?order=date.desc';
-      if(HL.filterOutlet){
-        q+=`&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
-      }
-      // No filter = show ALL hotels (no outlet filter needed)
-      if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
-   const rows=await sbGet(q);HL.history=HL.filterOutlet?rows:rows.filter(r=>HOTEL_LIST.includes(r.outlet));
-  }catch(e){HL.history=[];}
-}
+      try{
+       let q='outlet_supply_ledger?order=date.desc&select=*';
+           if(HL.filterOutlet){
+             q+=`&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
+           } else {
+             const hotelFilter = HOTEL_LIST.map(h => `"${h}"`).join(',');
+             q+=`&outlet=in.(${hotelFilter})`;
+           }
+           if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
+         const rows=await sbGet(q);
+         HL.history=rows;
+      }catch(e){HL.history=[];}
+    }
 function hlGroupHistory(){
   const g={};
   HL.history.forEach(r=>{const k=r.outlet+'|'+r.date;if(!g[k])g[k]={outlet:r.outlet,date:r.date,rows:[],total:0};g[k].rows.push(r);g[k].total+=Number(r.amount||0);});
@@ -2781,13 +3263,26 @@ async function renderHotelsLedger(){
   if(HL.view==='history'){
     if(!groups.length){histHTML='<p style="color:#aaa;font-size:13px;text-align:center;padding:2rem">No entries found.</p>';}
     else{histHTML=groups.map(function(g){
-      var rowsHtml=g.rows.map(function(r){return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+' '+(r.category||'')+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+Number(r.rate).toFixed(2)+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+hlFmt(r.amount)+'</td></tr>';}).join('');
+      var rowsHtml=g.rows.map(function(r){
+        return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+' '+(r.category||'')+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+Number(r.rate).toFixed(2)+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+hlFmt(r.amount)+'</td>'
+          +'<td style="padding:5px 8px;text-align:right"><button onclick="hlDeleteLine(\''+r.id+'\')" title="Delete this line" style="font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;border:.5px solid #f0c4c4;color:#c00;background:#fdf0f0">×</button></td></tr>';
+      }).join('');
       return '<div style="border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:8px;background:white">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;background:#fafaf8" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">'
         +'<div><span style="font-weight:500;font-size:14px;margin-right:8px">'+g.outlet+'</span><span style="font-size:12px;color:#888">'+g.date+'</span></div>'
         +'<div><span style="font-weight:600;font-size:15px;color:#0F6E56">'+hlFmt(g.total)+'</span><span style="color:#aaa;font-size:11px;margin-left:8px">▼</span></div></div>'
-        +'<div style="display:none"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5"><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th></tr></thead><tbody>'+rowsHtml+'</tbody><tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="3" style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+hlFmt(g.total)+'</td></tr></tfoot></table>'
-        +'<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f0f0ee"><button onclick="hlDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none">Delete</button></div></div></div>';
+        +'<div style="display:none">'
+        +'<div style="display:flex;gap:8px;padding:10px 14px;background:#fffaf3;border-bottom:.5px solid #f0f0ee;align-items:center">'
+          +'<span style="font-size:12px;color:#666;margin-right:4px">Change date:</span>'
+          +'<input type="date" value="'+g.date+'" onchange="hlChangeDate(\''+g.outlet+'\',\''+g.date+'\',this.value)" style="font-size:12px;padding:4px 8px;border-radius:4px;border:.5px solid #d5d5d0">'
+          +'<div style="flex:1"></div>'
+          +'<button onclick="hlDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none">Delete bill</button>'
+        +'</div>'
+        +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5"><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th><th style="padding:6px 8px"></th></tr></thead><tbody>'+rowsHtml+'</tbody><tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="3" style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+hlFmt(g.total)+'</td><td></td></tr></tfoot></table>'
+        +'</div></div>';
     }).join('');}
   }
   var hotelOptions=HOTEL_LIST.map(function(o){return '<option value="'+o+'" '+(HL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
@@ -2831,11 +3326,43 @@ async function renderHotelsLedger(){
     )
     +'</div>';
 }
-async function hlDelete(outlet,date){
-  if(!confirm('Delete entry for '+outlet+' on '+date+'?'))return;
-  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();}
-  catch(e){toast('Error: '+e.message);}
+async function hlDelete(outlet, date){
+  if(!confirm('Delete entry for '+outlet+' on '+date+'?')) return;
+  try {
+    await sbDelete('outlet_supply_ledger', `?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);
+    toast('Deleted');
+    await hlLoadHistory();
+    renderHotelsLedger();
+  } catch(e){
+    toast('Error: '+e.message);
+  }
 }
+
+async function hlDeleteLine(id){
+  if(!id){toast('Cannot delete: row id missing');return;}
+  if(!confirm('Delete this line item?'))return;
+  try{
+    await sbDelete('outlet_supply_ledger',`?id=eq.${id}`);
+    toast('Line deleted');
+    await hlLoadHistory();
+    renderHotelsLedger();
+  }catch(e){toast('Error: '+e.message);}
+}
+
+async function hlChangeDate(outlet, oldDate, newDate){
+  if(!newDate || newDate===oldDate){return;}
+  if(!confirm('Move all lines for '+outlet+' from '+oldDate+' to '+newDate+'?')){
+    await hlLoadHistory(); renderHotelsLedger(); // re-render to reset the date input
+    return;
+  }
+  try{
+    await sbPatch('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${oldDate}`,{date:newDate});
+    toast('Date updated');
+    await hlLoadHistory();
+    renderHotelsLedger();
+  }catch(e){toast('Error: '+e.message); await hlLoadHistory(); renderHotelsLedger();}
+}
+
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar'];
