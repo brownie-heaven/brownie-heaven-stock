@@ -3218,16 +3218,20 @@ async function hlSave(){
   }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
 }
 async function hlLoadHistory(){
-  try{
- let q='outlet_supply_ledger?order=date.desc';
-      if(HL.filterOutlet){
-        q+=`&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
-      }
-      // No filter = show ALL hotels (no outlet filter needed)
-      if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
-   const rows=await sbGet(q);HL.history=HL.filterOutlet?rows:rows.filter(r=>HOTEL_LIST.includes(r.outlet));
-  }catch(e){HL.history=[];}
-}
+      try{
+       let q='outlet_supply_ledger?order=date.desc';
+           if(HL.filterOutlet){
+             q+=`&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
+           } else {
+             // No outlet picked = filter to ALL hotels server-side using IN clause
+             const hotelFilter = HOTEL_LIST.map(h => `"${h}"`).join(',');
+             q+=`&outlet=in.(${hotelFilter})`;
+           }
+           if(HL.filterDate)q+=`&date=eq.${HL.filterDate}`;
+         const rows=await sbGet(q);
+         HL.history=rows;
+      }catch(e){HL.history=[];}
+    }
 function hlGroupHistory(){
   const g={};
   HL.history.forEach(r=>{const k=r.outlet+'|'+r.date;if(!g[k])g[k]={outlet:r.outlet,date:r.date,rows:[],total:0};g[k].rows.push(r);g[k].total+=Number(r.amount||0);});
