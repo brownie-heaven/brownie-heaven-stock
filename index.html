@@ -506,18 +506,16 @@ function setTab(i, fromBack) {
       if(S.navHistory && S.navHistory.length>0){ goBack(); }
     });
 // — KITCHEN INDENT —————————————————
-  let KI = {
-      view: 'entry',           // 'entry' or 'history' or 'manage'
-      category: 'pastry',      // 'pastry' or 'brownie'
-      outlet: '',              // outlet name (from OUTLET_PINS)
+ let KI = {
+      view: 'entry',
+      category: 'pastry',
       date: new Date().toISOString().slice(0,10),
-      products: [],            // [{name, price}]
-      lines: {},               // {productName: {qty, price}}
+      products: [],
+      lines: {},
       historyRows: [],
       filterCategory: '',
       filterDate: '',
-      filterProduct: '',
-      filterOutlet: ''
+      filterProduct: ''
     };
 
     async function renderKitchenIndent() {
@@ -553,16 +551,8 @@ function setTab(i, fromBack) {
       body.innerHTML = '<div style="text-align:center;color:#888;padding:40px">Loading products…</div>';
       await kiLoadProducts();
 
-    const outletOptions = Object.entries(OUTLET_PINS).map(([pin,name])=>`<option value="${name}" ${KI.outlet===name?'selected':''}>${name}</option>`).join('');
-      body.innerHTML = `
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
-          <div>
-            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Outlet</label>
-            <select onchange="KI.outlet=this.value" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px">
-              <option value="">Select outlet…</option>
-              ${outletOptions}
-            </select>
-          </div>
+   body.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
           <div>
             <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Category</label>
             <select onchange="kiChangeCategory(this.value)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px">
@@ -666,21 +656,19 @@ function kiRenderProductList(){
       if(!Object.keys(KI.lines).length) return;
       if(confirm('Clear all entered quantities?')){ KI.lines={}; kiRenderProductList(); }
     }
-async function kiSave(){
-      if(!KI.outlet){ alert('Select an outlet'); return; }
+    async function kiSave(){
       if(!KI.date){ alert('Pick a date'); return; }
       const entries = Object.entries(KI.lines).filter(([n,l])=>Number(l.qty)>0);
       if(!entries.length){ alert('Enter at least one quantity'); return; }
       const btn = document.getElementById('ki-save-btn');
       if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
       try {
-        const rows = entries.map(([name, l]) => {
+       const rows = entries.map(([name, l]) => {
           const qty = Number(l.qty)||0;
           const price = Number(l.price)||0;
           return {
             date: KI.date,
             category: KI.category,
-            outlet: KI.outlet,
             product: name,
             qty: qty,
             price: price,
