@@ -3325,10 +3325,16 @@ async function renderHotelsLedger(){
     )
     +'</div>';
 }
-async function hlDelete(outlet,date){
-  if(!confirm('Delete entry for '+outlet+' on '+date+'?'))return;
-  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();renderHotelsLedger();}
-  catch(e){toast('Error: '+e.message);}
+async function hlDelete(outlet, date){
+  if(!confirm('Delete entry for '+outlet+' on '+date+'?')) return;
+  try {
+    await sbDelete('outlet_supply_ledger', `?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);
+    toast('Deleted');
+    await hlLoadHistory();
+    renderHotelsLedger();
+  } catch(e){
+    toast('Error: '+e.message);
+  }
 }
 
 async function hlDeleteLine(id){
