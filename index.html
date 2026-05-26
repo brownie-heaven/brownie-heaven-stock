@@ -3262,7 +3262,7 @@ async function renderHotelsLedger(){
   var histHTML='';
   if(HL.view==='history'){
     if(!groups.length){histHTML='<p style="color:#aaa;font-size:13px;text-align:center;padding:2rem">No entries found.</p>';}
-   else{histHTML=groups.map(function(g){
+    else{histHTML=groups.map(function(g){
       var rowsHtml=g.rows.map(function(r){
         return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td>'
           +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+' '+(r.category||'')+'</td>'
@@ -3284,6 +3284,7 @@ async function renderHotelsLedger(){
         +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5"><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th><th style="padding:6px 8px"></th></tr></thead><tbody>'+rowsHtml+'</tbody><tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="3" style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+hlFmt(g.total)+'</td><td></td></tr></tfoot></table>'
         +'</div></div>';
     }).join('');}
+  }
   var hotelOptions=HOTEL_LIST.map(function(o){return '<option value="'+o+'" '+(HL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
   var filterOptions=HOTEL_LIST.map(function(o){return '<option value="'+o+'" '+(HL.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
   document.getElementById('screen').innerHTML=
