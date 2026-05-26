@@ -3219,11 +3219,10 @@ async function hlSave(){
 }
 async function hlLoadHistory(){
       try{
-       let q='outlet_supply_ledger?order=date.desc';
+       let q='outlet_supply_ledger?order=date.desc&select=*';
            if(HL.filterOutlet){
              q+=`&outlet=eq.${encodeURIComponent(HL.filterOutlet)}`;
            } else {
-             // No outlet picked = filter to ALL hotels server-side using IN clause
              const hotelFilter = HOTEL_LIST.map(h => `"${h}"`).join(',');
              q+=`&outlet=in.(${hotelFilter})`;
            }
@@ -3263,16 +3262,28 @@ async function renderHotelsLedger(){
   var histHTML='';
   if(HL.view==='history'){
     if(!groups.length){histHTML='<p style="color:#aaa;font-size:13px;text-align:center;padding:2rem">No entries found.</p>';}
-    else{histHTML=groups.map(function(g){
-      var rowsHtml=g.rows.map(function(r){return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+' '+(r.category||'')+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+Number(r.rate).toFixed(2)+'</td><td style="padding:5px 10px;text-align:right;font-size:12px">'+hlFmt(r.amount)+'</td></tr>';}).join('');
+   else{histHTML=groups.map(function(g){
+      var rowsHtml=g.rows.map(function(r){
+        return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+' '+(r.category||'')+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+Number(r.rate).toFixed(2)+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+hlFmt(r.amount)+'</td>'
+          +'<td style="padding:5px 8px;text-align:right"><button onclick="hlDeleteLine(\''+r.id+'\')" title="Delete this line" style="font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;border:.5px solid #f0c4c4;color:#c00;background:#fdf0f0">×</button></td></tr>';
+      }).join('');
       return '<div style="border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:8px;background:white">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;background:#fafaf8" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">'
         +'<div><span style="font-weight:500;font-size:14px;margin-right:8px">'+g.outlet+'</span><span style="font-size:12px;color:#888">'+g.date+'</span></div>'
         +'<div><span style="font-weight:600;font-size:15px;color:#0F6E56">'+hlFmt(g.total)+'</span><span style="color:#aaa;font-size:11px;margin-left:8px">▼</span></div></div>'
-        +'<div style="display:none"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5"><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th></tr></thead><tbody>'+rowsHtml+'</tbody><tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="3" style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+hlFmt(g.total)+'</td></tr></tfoot></table>'
-        +'<div style="display:flex;gap:8px;padding:10px 14px;border-top:.5px solid #f0f0ee"><button onclick="hlDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none">Delete</button></div></div></div>';
+        +'<div style="display:none">'
+        +'<div style="display:flex;gap:8px;padding:10px 14px;background:#fffaf3;border-bottom:.5px solid #f0f0ee;align-items:center">'
+          +'<span style="font-size:12px;color:#666;margin-right:4px">Change date:</span>'
+          +'<input type="date" value="'+g.date+'" onchange="hlChangeDate(\''+g.outlet+'\',\''+g.date+'\',this.value)" style="font-size:12px;padding:4px 8px;border-radius:4px;border:.5px solid #d5d5d0">'
+          +'<div style="flex:1"></div>'
+          +'<button onclick="hlDelete(\''+g.outlet+'\',\''+g.date+'\')" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none">Delete bill</button>'
+        +'</div>'
+        +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f7f7f5"><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:left">Product</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Qty</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Rate</th><th style="padding:6px 10px;font-size:11px;font-weight:500;color:#888;text-align:right">Amount</th><th style="padding:6px 8px"></th></tr></thead><tbody>'+rowsHtml+'</tbody><tfoot><tr style="background:#f7f7f5;font-weight:600"><td colspan="3" style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+hlFmt(g.total)+'</td><td></td></tr></tfoot></table>'
+        +'</div></div>';
     }).join('');}
-  }
   var hotelOptions=HOTEL_LIST.map(function(o){return '<option value="'+o+'" '+(HL.outlet===o?'selected':'')+'>'+o+'</option>';}).join('');
   var filterOptions=HOTEL_LIST.map(function(o){return '<option value="'+o+'" '+(HL.filterOutlet===o?'selected':'')+'>'+o+'</option>';}).join('');
   document.getElementById('screen').innerHTML=
@@ -3316,8 +3327,34 @@ async function renderHotelsLedger(){
 }
 async function hlDelete(outlet,date){
   if(!confirm('Delete entry for '+outlet+' on '+date+'?'))return;
-  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();}
+  try{await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await hlLoadHistory();renderHotelsLedger();}
   catch(e){toast('Error: '+e.message);}
+}
+
+async function hlDeleteLine(id){
+  if(!id){toast('Cannot delete: row id missing');return;}
+  if(!confirm('Delete this line item?'))return;
+  try{
+    await sbDelete('outlet_supply_ledger',`?id=eq.${id}`);
+    toast('Line deleted');
+    await hlLoadHistory();
+    renderHotelsLedger();
+  }catch(e){toast('Error: '+e.message);}
+}
+
+async function hlChangeDate(outlet, oldDate, newDate){
+  if(!newDate || newDate===oldDate){return;}
+  if(!confirm('Move all lines for '+outlet+' from '+oldDate+' to '+newDate+'?')){
+    await hlLoadHistory(); renderHotelsLedger(); // re-render to reset the date input
+    return;
+  }
+  try{
+    await sbPatch('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${oldDate}`,{date:newDate});
+    toast('Date updated');
+    await hlLoadHistory();
+    renderHotelsLedger();
+  }catch(e){toast('Error: '+e.message); await hlLoadHistory(); renderHotelsLedger();}
+}
 }
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
