@@ -727,18 +727,19 @@ async function kiLoadHistory(){
       kiRenderHistoryList();
     }
 
-    function kiGroupHistory(){
+  function kiGroupHistory(){
       const g = {};
       KI.historyRows.forEach(r => {
         const k = r.date + '|' + r.category;
-        if(!g[k]) g[k] = {date:r.date, category:r.category, rows:[], total:0, totalQty:0};
+        if(!g[k]) g[k] = {date:r.date, category:r.category, rows:[], totalAmount:0, totalQty:0};
         g[k].rows.push(r);
         g[k].totalQty += Number(r.qty||0);
+        g[k].totalAmount += Number(r.amount||0);
       });
       return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date) || a.category.localeCompare(b.category));
     }
 
-    function kiRenderHistoryList(){
+  function kiRenderHistoryList(){
       const el = document.getElementById('ki-history-list');
       if(!el) return;
       const groups = kiGroupHistory();
@@ -746,31 +747,65 @@ async function kiLoadHistory(){
         el.innerHTML = '<div style="color:#888;padding:40px;text-align:center">No entries match the filters.</div>';
         return;
       }
-      el.innerHTML = `<div style="margin-bottom:12px;color:#666;font-size:13px">Showing ${groups.length} indent${groups.length>1?'s':''} (${KI.historyRows.length} line item${KI.historyRows.length>1?'s':''})</div>` +
-        groups.map((g, gi) => {
-          const label = g.category==='pastry'?'Pastry Indent':'Brownie Indent';
-          return `
-            <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:10px;background:#fff">
-              <div onclick="kiToggleGroup(${gi})" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer">
-                <div>
-                  <span style="font-weight:600;color:var(--brown)">${label}</span>
-                  <span style="color:#888;margin-left:8px;font-size:13px">${g.date}</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:12px">
-                  <span style="font-size:13px;color:#666">${g.rows.length} item${g.rows.length>1?'s':''} · qty ${g.totalQty}</span>
-                  <span id="ki-arrow-${gi}" style="color:#888">▼</span>
-                </div>
+
+      // --- Grand totals (Pastry vs Brownie) ---
+      let pastryTotal = 0, brownieTotal = 0, pastryDays = 0, brownieDays = 0;
+      groups.forEach(g => {
+        if(g.category==='pastry'){ pastryTotal += g.totalAmount; pastryDays++; }
+        else if(g.category==='brownie'){ brownieTotal += g.totalAmount; brownieDays++; }
+      });
+      const grandTotal = pastryTotal + brownieTotal;
+      const fmtRs = n => '₹' + Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits:2});
+
+      const summary = `
+        <div style="background:#fffaf3;border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:12px;color:#888">Pastry</div>
+              <div style="font-size:18px;font-weight:600;color:var(--brown)">${fmtRs(pastryTotal)}</div>
+              <div style="font-size:11px;color:#999">${pastryDays} day${pastryDays!==1?'s':''}</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:#888">Brownie</div>
+              <div style="font-size:18px;font-weight:600;color:var(--brown)">${fmtRs(brownieTotal)}</div>
+              <div style="font-size:11px;color:#999">${brownieDays} day${brownieDays!==1?'s':''}</div>
+            </div>
+            <div style="border-left:1px solid var(--border);padding-left:16px">
+              <div style="font-size:12px;color:#888">Grand total</div>
+              <div style="font-size:20px;font-weight:700;color:#080">${fmtRs(grandTotal)}</div>
+              <div style="font-size:11px;color:#999">${KI.historyRows.length} line items</div>
+            </div>
+          </div>
+        </div>`;
+
+      el.innerHTML = summary + groups.map((g, gi) => {
+        const label = g.category==='pastry'?'Pastry Indent':'Brownie Indent';
+        return `
+          <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:10px;background:#fff">
+            <div onclick="kiToggleGroup(${gi})" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer">
+              <div>
+                <span style="font-weight:600;color:var(--brown)">${label}</span>
+                <span style="color:#888;margin-left:8px;font-size:13px">${g.date}</span>
               </div>
-              <div id="ki-group-${gi}" style="display:none;border-top:1px solid var(--border);padding:8px 16px">
-                ${g.rows.map(r => `
-                  <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">
-                    <div style="flex:1;font-size:14px">${r.product}</div>
-                    <input type="number" min="0" step="0.01" value="${r.qty}" onchange="kiUpdateQty('${r.id}', this.value)" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:13px">
-                    <button onclick="kiDeleteRow('${r.id}')" style="padding:4px 10px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Delete</button>
-                  </div>`).join('')}
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:13px;color:#666">${g.rows.length} item${g.rows.length>1?'s':''} · qty ${g.totalQty} · <b style="color:var(--brown)">${fmtRs(g.totalAmount)}</b></span>
+                <span id="ki-arrow-${gi}" style="color:#888">▼</span>
               </div>
-            </div>`;
-        }).join('');
+            </div>
+            <div id="ki-group-${gi}" style="display:none;border-top:1px solid var(--border);padding:8px 16px">
+              ${g.rows.map(r => `
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">
+                  <div style="flex:1;font-size:14px">${r.product}</div>
+                  <input type="number" min="0" step="0.01" value="${r.qty}" onchange="kiUpdateQty('${r.id}', this.value)" style="width:70px;padding:5px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:13px">
+                  <div style="width:80px;text-align:right;font-size:13px;color:#666">${fmtRs(r.amount)}</div>
+                  <button onclick="kiDeleteRow('${r.id}')" style="padding:4px 10px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Delete</button>
+                </div>`).join('')}
+              <div style="display:flex;justify-content:flex-end;padding:12px 0 8px 0;border-top:2px solid var(--border);margin-top:6px;font-weight:600;color:var(--brown)">
+                Total: ${fmtRs(g.totalAmount)}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
     }
 
     function kiToggleGroup(gi){
