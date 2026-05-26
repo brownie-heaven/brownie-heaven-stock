@@ -597,13 +597,16 @@ function kiRenderProductList(){
       el.innerHTML = KI.products.map(p => {
         const name = p.name;
         const safe = name.replace(/'/g,"\\'");
-       const line = KI.lines[name] || {};
+     const line = KI.lines[name] || {};
         const qty = (line.qty && Number(line.qty) > 0) ? line.qty : '';
         let price = '';
         if(line.price !== undefined && line.price !== null && Number(line.price) > 0) {
           price = line.price;
         } else if(p.price !== null && p.price !== undefined && Number(p.price) > 0) {
           price = p.price;
+          // Seed master price into the line state so qty math works immediately
+          if(!KI.lines[name]) KI.lines[name] = {qty:0, price:0};
+          KI.lines[name].price = Number(p.price);
         }
         const amt = (Number(qty)>0 && Number(price)>0) ? (Number(qty)*Number(price)).toFixed(2) : '0.00';
         return `
