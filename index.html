@@ -4064,11 +4064,50 @@ var outletOptions=accActiveList.map(function(o){return '<option value="'+o+'" '+
     )
     +'</div>';
 
-  accMonthlyTotal().then(function(mt){var me=document.getElementById('acc-monthly-disp');if(me)me.textContent=accFmt(mt);});
+accMonthlyTotal().then(function(mt){var me=document.getElementById('acc-monthly-disp');if(me)me.textContent=accFmt(mt);});
 }
+
+// Settings drawer
+function openSettings(){
+  document.getElementById('settingsDrawer').classList.add('open');
+  document.getElementById('settingsOverlay').classList.add('open');
+}
+function closeSettings(){
+  document.getElementById('settingsDrawer').classList.remove('open');
+  document.getElementById('settingsOverlay').classList.remove('open');
+}
+function toggleDark(){
+  const isDark = document.body.classList.toggle('dark');
+  document.getElementById('darkToggle').classList.toggle('on', isDark);
+  localStorage.setItem('bh_dark_mode', isDark ? '1' : '0');
+}
+function initDarkMode(){
+  const saved = localStorage.getItem('bh_dark_mode') === '1';
+  if(saved){
+    document.body.classList.add('dark');
+    const toggle = document.getElementById('darkToggle');
+    if(toggle) toggle.classList.add('on');
+  }
+}
+window.addEventListener('DOMContentLoaded', initDarkMode);
 </script>
 <script src="js/test.js"></script>
 <script src="js/supply.js"></script>
+<!-- Settings floating button + drawer -->
+<button class="settings-fab" id="settingsFab" onclick="openSettings()" title="Settings">⚙</button>
+<div class="settings-overlay" id="settingsOverlay" onclick="closeSettings()"></div>
+<div class="settings-drawer" id="settingsDrawer">
+  <div class="settings-header">
+    <h3>⚙ Settings</h3>
+    <button class="settings-close" onclick="closeSettings()">×</button>
+  </div>
+  <div class="settings-body">
+    <div class="settings-item">
+      <span class="settings-item-label">🌙 Night Mode</span>
+      <button class="toggle-switch" id="darkToggle" onclick="toggleDark()"></button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
 // App starts via welcome screen
