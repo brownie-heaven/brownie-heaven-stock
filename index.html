@@ -2669,10 +2669,11 @@ function renderProductionUI() {
   const todayStr = new Date().toISOString().split('T')[0];
   const isPastDate = S.prodDate && S.prodDate < todayStr;
 const lists = [
-        {id:'cakes_pastry',  label:'Cakes & Pastries',  cats:['half_cakes','one_cakes','pastry','cheesecake']},
-        {id:'brownies',      label:'Brownies',          cats:['brownies','eggless','boxes']},
-        {id:'evening',       label:'Evening Kitchen',   cats:['medovik','eclair','tubs','special']}
-      ];
+  {id:'cakes_pastry', label:'Cakes & Pastries', cats:['half_cakes','one_cakes','pastry','cheesecake']},
+  {id:'brownies',     label:'Brownies',         cats:['brownies','eggless','boxes']},
+  {id:'evening',      label:'Evening Kitchen',  cats:['medovik','eclair','tubs','special']},
+  {id:'savouries',    label:'Savouries',        cats:['savouries']}
+];
 
   const tabs = lists.map((l,i) =>
     `<button class="tab ${S.productionTab===i?'active':''}" onclick="S.productionTab=${i};renderProductionUI()">${l.label}</button>`
