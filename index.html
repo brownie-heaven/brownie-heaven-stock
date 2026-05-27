@@ -2705,11 +2705,13 @@ const lists = [
     const autobal = Math.max(0, ms - (dispatched[p.id]||0));
     const bal = pd.balance !== undefined ? +pd.balance : autobal;
 
-  // To Make: ALWAYS calculated from par - balance (no override on this field)
+// To Make: par-based auto calc for products with par; saved/override for others (e.g. Savouries)
         const par = getKitchenPar(p.name);
-        const tm = par !== null ? Math.max(0, par - bal) : 0;
-    // Closing = balance + to make
-    const cl = bal + tm;
+        const tm = par !== null
+          ? Math.max(0, par - bal)
+          : (pd.toMake !== undefined ? +pd.toMake : (saved.to_make !== undefined ? +saved.to_make : 0));
+        // Closing = balance + to make
+        const cl = bal + tm;
 
     if (p.category_id !== lastCat) {
       if (lastCat) {
