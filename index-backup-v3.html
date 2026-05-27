@@ -597,13 +597,16 @@ function kiRenderProductList(){
       el.innerHTML = KI.products.map(p => {
         const name = p.name;
         const safe = name.replace(/'/g,"\\'");
-       const line = KI.lines[name] || {};
+     const line = KI.lines[name] || {};
         const qty = (line.qty && Number(line.qty) > 0) ? line.qty : '';
         let price = '';
         if(line.price !== undefined && line.price !== null && Number(line.price) > 0) {
           price = line.price;
         } else if(p.price !== null && p.price !== undefined && Number(p.price) > 0) {
           price = p.price;
+          // Seed master price into the line state so qty math works immediately
+          if(!KI.lines[name]) KI.lines[name] = {qty:0, price:0};
+          KI.lines[name].price = Number(p.price);
         }
         const amt = (Number(qty)>0 && Number(price)>0) ? (Number(qty)*Number(price)).toFixed(2) : '0.00';
         return `
@@ -2180,6 +2183,33 @@ function downloadDispatch() {
   a.download = `dispatch_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
 }
+  async function downloadDispatchImage(){
+  try {
+    if(typeof html2canvas === 'undefined'){
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    const card = document.querySelector('.card');
+    if(!card){ alert('Dispatch sheet not found'); return; }
+    const canvas = await html2canvas(card, {scale: 2, backgroundColor: '#ffffff'});
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dispatch_' + (new Date().toISOString().slice(0,10)) + '.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Image downloaded ✓');
+    }, 'image/png');
+  } catch(e) {
+    alert('Image download failed: ' + e.message);
+  }
+}
   async function editDispatchCell(outletId, productId, productName, calculated) {
       const today = window._dispatchToday || new Date().toISOString().split('T')[0];
       const existing = await sbGet('dispatch_overrides', `?dispatch_date=eq.${today}&outlet_id=eq.${outletId}&product_id=eq.${productId}&select=qty`);
@@ -2293,6 +2323,7 @@ async function renderDispatch() {
       <button class="btn btn-s" style="width:auto;padding:7px 14px;margin-bottom:12px;display:inline-flex;align-items:center;gap:6px" onclick="goHome()">← Home</button>
       <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="window.print()">🖨 Print</button>
       <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="downloadDispatch()">⬇️ Download Excel</button>
+      + '<button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="downloadDispatchImage()">🖼️ Download Image</button>'
       <div class="card">
         <div class="card-title">📦 Dispatch Sheet — ${today} (${dayType})</div>
         <p style="font-size:12px;color:var(--txt2);margin-bottom:12px">Based on last night's closing stock vs ${dayType} par stock. Highlighted = needs dispatch.</p>
@@ -2638,10 +2669,11 @@ function renderProductionUI() {
   const todayStr = new Date().toISOString().split('T')[0];
   const isPastDate = S.prodDate && S.prodDate < todayStr;
 const lists = [
-        {id:'cakes_pastry',  label:'Cakes & Pastries',  cats:['half_cakes','one_cakes','pastry','cheesecake']},
-        {id:'brownies',      label:'Brownies',          cats:['brownies','eggless','boxes']},
-        {id:'evening',       label:'Evening Kitchen',   cats:['medovik','eclair','tubs','special']}
-      ];
+  {id:'cakes_pastry', label:'Cakes & Pastries', cats:['half_cakes','one_cakes','pastry','cheesecake']},
+  {id:'brownies',     label:'Brownies',         cats:['brownies','eggless','boxes']},
+  {id:'evening',      label:'Evening Kitchen',  cats:['medovik','eclair','tubs','special']},
+  {id:'savouries',    label:'Savouries',        cats:['savouries']}
+];
 
   const tabs = lists.map((l,i) =>
     `<button class="tab ${S.productionTab===i?'active':''}" onclick="S.productionTab=${i};renderProductionUI()">${l.label}</button>`
@@ -2673,11 +2705,13 @@ const lists = [
     const autobal = Math.max(0, ms - (dispatched[p.id]||0));
     const bal = pd.balance !== undefined ? +pd.balance : autobal;
 
-  // To Make: ALWAYS calculated from par - balance (no override on this field)
+// To Make: par-based auto calc for products with par; saved/override for others (e.g. Savouries)
         const par = getKitchenPar(p.name);
-        const tm = par !== null ? Math.max(0, par - bal) : 0;
-    // Closing = balance + to make
-    const cl = bal + tm;
+        const tm = par !== null
+          ? Math.max(0, par - bal)
+          : (pd.toMake !== undefined ? +pd.toMake : (saved.to_make !== undefined ? +saved.to_make : 0));
+        // Closing = balance + to make
+        const cl = bal + tm;
 
     if (p.category_id !== lastCat) {
       if (lastCat) {
