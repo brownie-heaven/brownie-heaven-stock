@@ -939,13 +939,28 @@ async function kiLoadHistory(){
               </div>
             </div>
             <div id="ki-group-${gi}" style="display:none;border-top:1px solid var(--border);padding:8px 16px">
-              ${g.rows.map(r => `
-                <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">
-                  <div style="flex:1;font-size:14px">${r.product}</div>
-                  <input type="number" min="0" step="0.01" value="${r.qty}" onchange="kiUpdateQty('${r.id}', this.value)" style="width:70px;padding:5px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:13px">
-                  <div style="width:80px;text-align:right;font-size:13px;color:#666">${fmtRs(r.amount)}</div>
-                  <button onclick="kiDeleteRow('${r.id}')" style="padding:4px 10px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Delete</button>
-                </div>`).join('')}
+             ${g.rows.map(r => {
+  if(KI.editingId === r.id){
+    // EDIT MODE
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px dashed #eee;background:#fffaf3">
+        <input id="ki-edit-name-${r.id}" type="text" value="${(r.product||'').replace(/"/g,'&quot;')}" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+        <input id="ki-edit-qty-${r.id}" type="number" min="0" step="0.01" value="${r.qty}" style="width:70px;padding:5px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:13px" placeholder="Qty">
+        <input id="ki-edit-price-${r.id}" type="number" min="0" step="0.01" value="${r.price||0}" style="width:80px;padding:5px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:13px" placeholder="Price">
+        <button onclick="kiSaveLine('${r.id}')" style="padding:4px 10px;background:#e1f5ee;color:#0F6E56;border:1px solid #1D9E75;border-radius:4px;cursor:pointer;font-size:12px">Save</button>
+        <button onclick="KI.editingId=null;kiLoadHistory().then(renderKitchenIndent)" style="padding:4px 10px;background:#f5f5f3;color:#666;border:1px solid #d5d5d0;border-radius:4px;cursor:pointer;font-size:12px">Cancel</button>
+      </div>`;
+  }
+  // DISPLAY MODE
+  return `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">
+      <div style="flex:1;font-size:14px">${r.product}</div>
+      <div style="width:70px;text-align:right;font-size:13px">${r.qty}</div>
+      <div style="width:80px;text-align:right;font-size:13px;color:#666">${fmtRs(r.amount)}</div>
+      <button onclick="KI.editingId='${r.id}';renderKitchenIndent()" style="padding:4px 10px;background:#fff7eb;color:#a35c00;border:1px solid #f0c878;border-radius:4px;cursor:pointer;font-size:12px">Edit</button>
+      <button onclick="kiDeleteRow('${r.id}')" style="padding:4px 10px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Delete</button>
+    </div>`;
+}).join('')}
               <div style="display:flex;justify-content:flex-end;padding:12px 0 8px 0;border-top:2px solid var(--border);margin-top:6px;font-weight:600;color:var(--brown)">
                 Total: ${fmtRs(g.totalAmount)}
               </div>
@@ -974,7 +989,28 @@ async function kiLoadHistory(){
         kiRenderHistoryList();
       } catch(e) { toast('Update failed: '+e.message); }
     }
-
+async function kiSaveLine(id){
+  const nameEl  = document.getElementById('ki-edit-name-'+id);
+  const qtyEl   = document.getElementById('ki-edit-qty-'+id);
+  const priceEl = document.getElementById('ki-edit-price-'+id);
+  if(!nameEl || !qtyEl || !priceEl){ toast('Edit fields not found'); return; }
+  const name  = (nameEl.value||'').trim();
+  const qty   = Number(qtyEl.value);
+  const price = Number(priceEl.value);
+  if(!name){ alert('Product name cannot be empty'); return; }
+  if(isNaN(qty) || qty < 0){ alert('Invalid quantity'); return; }
+  if(isNaN(price) || price < 0){ alert('Invalid price'); return; }
+  const amount = Number((qty * price).toFixed(2));
+  try{
+    await sbPatch('kitchen_indents', `?id=eq.${id}`, {product:name, qty:qty, price:price, amount:amount});
+    toast('Updated ✓');
+    KI.editingId = null;
+    await kiLoadHistory();
+    renderKitchenIndent();
+  }catch(e){
+    alert('Save failed: ' + e.message);
+  }
+}
     async function kiDeleteRow(id){
       if(!confirm('Delete this line item?')) return;
       try {
