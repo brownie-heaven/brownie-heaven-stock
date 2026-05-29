@@ -446,7 +446,7 @@ async function sbDelete(table, params) {
 
 const OUTLET_PINS = {'1001':'Royapettah','1002':'Anna Nagar','1003':'Porur','1004':'BSR Mall','1005':'Tambaram','1006':'RA Puram','1007':'Adyar','1008':'Perumbakkam','1111':'Egmore','2222':'Thiruvanmiyur (ECR)','3333':'Kovilambakkam','4444':'Besant Nagar'};
 const CAT_LABELS = {brownies:'Brownies',eggless:'Eggless Brownies',boxes:'Boxes & Lava',tubs:'Dessert Tubs',savouries:'Savouries',half_cakes:'1/2kg Cakes',one_cakes:'1kg Cakes',pastry:'Pastry Slices',mini_cups:'Mini Cups',cheesecake:'Cheesecake',medovik:'Medovik',eclair:'Eclair',special:'Special Items'};
-const CAT_ORDER = ['brownies','eggless','boxes','tubs','savouries','half_cakes','one_cakes','pastry','mini_cups','cheesecake','medovik','eclair','special'];
+const CAT_ORDER = ['half_cakes','one_cakes','pastry','mini_cups','cheesecake','tubs','medovik','eclair','brownies','eggless','boxes','savouries','special'];
 const DISABLED_BY_OUTLET = {'1005':['medovik','eclair'],'1008':['medovik','eclair','cheesecake']};
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -2381,7 +2381,7 @@ async function renderDispatch() {
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(new Date().setDate(new Date().getDate()-1)).toISOString().split('T')[0];
     const dayType = isWeekend() ? 'weekend' : 'weekday';
-    const outletList = Object.keys(OUTLET_PINS);
+    
 
     // Fetch yesterday's night shift closing stock for all outlets
       const entries = await sbGet('shift_entries', `?entry_date=eq.${yesterday}&shift=eq.night&is_demo=eq.false&select=id,outlet_id`);
@@ -2417,6 +2417,9 @@ async function renderDispatch() {
       if(!par[p.outlet_id]) par[p.outlet_id] = {};
       par[p.outlet_id][p.product_id] = +p.par_stock || 0;
     });
+
+  // Outlet order matching reference sheet: Porur, Anna Nagar, Perumbakkam, Tambaram, BSR Mall, Adyar, RA Puram, Royapettah
+    const outletList = ['1003','1002','1008','1005','1004','1007','1006','1001'];
 
     // Get all products
     const allProducts = DB.products.filter(p => !DISCONTINUED.includes(p.name));
