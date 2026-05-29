@@ -330,7 +330,9 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .dtbl-new .dtotal td{background:var(--brown-pale);font-weight:600;color:var(--brown)}
 
 /* Dispatch table new styling */
-.dtbl .d-cat td{background:var(--brown-pale);color:var(--brown);font-family:var(--font);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:6px 12px;border-bottom:1px solid var(--brown-border)}
+.dtbl .d-cat td{background:var(--brown-pale);color:var(--brown);font-family:var(--font);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:center;padding:6px 8px;border-bottom:1px solid var(--brown-border);border-top:1px solid var(--brown-border)}
+.dtbl .d-cat td:first-child{text-align:left;padding-left:12px}
+.dtbl .d-cat td.d-outlet-hdr{font-size:10px;font-weight:600;color:var(--brown);text-transform:none;letter-spacing:0}
 .dtbl .d-row td{border-bottom:1px solid var(--border2);padding:7px 6px;vertical-align:middle}
 .dtbl .d-row-active{background:#fffdf5}
 .dtbl .d-name{text-align:left;padding-left:12px !important;font-family:var(--font);font-size:12px;font-weight:500;color:var(--txt);white-space:nowrap}
@@ -2425,11 +2427,12 @@ async function renderDispatch() {
       return {id: catId, label: CAT_LABELS[catId], products: prods};
     }).filter(c => c.products.length > 0) : [];
 
-   // Build rows
+  // Build rows
+    const outletHdrCells = outletList.map(o => `<td class="d-outlet-hdr">${OUTLET_PINS[o].split(' ')[0]}</td>`).join('');
     let tableRows = '';
     cats.forEach(cat => {
       // Category section band
-      tableRows += `<tr class="d-cat"><td colspan="${outletList.length+2}">${cat.label}</td></tr>`;
+      tableRows += `<tr class="d-cat"><td>${cat.label}</td>${outletHdrCells}<td class="d-outlet-hdr">Total</td></tr>`;
       cat.products.forEach(p => {
         let hasDispatch = false;
         const cells = outletList.map(outletId => {
