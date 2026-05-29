@@ -18,6 +18,131 @@
   --font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;
   --radius:12px;--radius-sm:8px;
 }
+body.dark{
+  --bg:#121212;--card:#1E1E1E;--border:#2A2A2A;--border2:#333333;
+  --txt:#E8E0D8;--txt2:#B0A89E;--txt3:#807870;
+  --brown-pale:#2A1A10;--brown-border:#4A2A1A;
+  --green-pale:#1A2A1A;--orange-pale:#2A2010;--red-pale:#2A1515;
+}
+body.dark [style*="color:#666"],
+body.dark [style*="color: #666"],
+body.dark [style*="color:#555"],
+body.dark [style*="color: #555"],
+body.dark [style*="color:#777"],
+body.dark [style*="color: #777"],
+body.dark [style*="color:#888"],
+body.dark [style*="color: #888"],
+body.dark [style*="color:#999"],
+body.dark [style*="color: #999"],
+body.dark [style*="color:#aaa"],
+body.dark [style*="color: #aaa"],
+body.dark [style*="color:#bbb"],
+body.dark [style*="color: #bbb"]{color:#D8D0C8 !important;}
+body.dark [style*="color:#000"],
+body.dark [style*="color: #000"],
+body.dark [style*="color:black"]{color:var(--txt) !important;}
+body.dark [style*="background:#fff"],
+body.dark [style*="background: #fff"],
+body.dark [style*="background:#FFF"],
+body.dark [style*="background:white"],
+body.dark [style*="background:#FDECEB"],
+body.dark [style*="background:#FFF3EE"],
+body.dark [style*="background:#EAF3DE"],
+body.dark [style*="background:#FFF4E0"],
+body.dark [style*="background:#F7F4F1"],
+body.dark [style*="background:#FFFFFF"]{background:var(--card) !important;}
+body.dark [style*="background-color:#fff"],
+body.dark [style*="background-color: #fff"],
+body.dark [style*="background-color:#FDECEB"],
+body.dark [style*="background-color:#FFF3EE"]{background-color:var(--card) !important;}
+body.dark,
+html.dark{background:#121212 !important;}
+body.dark .app{background:#121212;}
+
+/* Sweeping dark-mode overrides for inline light backgrounds */
+body.dark div[style*="background"]:not([style*="rgba"]):not([style*="var(--brown)"]):not([style*="#6B2400"]):not([style*="#8B3A00"]){
+  background-color:var(--card) !important;
+}
+body.dark div[style*="background:#"]{
+  background-color:var(--card) !important;
+}
+body.dark span[style*="background:#"]{
+  background-color:var(--card) !important;
+}
+
+/* Settings floating icon */
+.settings-fab{
+  position:fixed;top:50%;right:0;transform:translateY(-50%);
+  width:40px;height:44px;
+  background:var(--brown);color:#fff;
+  border:none;border-radius:8px 0 0 8px;
+  font-size:20px;cursor:pointer;
+  z-index:300;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:-2px 0 8px rgba(0,0,0,0.15);
+}
+.settings-fab:hover{background:var(--brown2);}
+
+/* Settings drawer */
+.settings-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.4);
+  z-index:400;
+  opacity:0;pointer-events:none;
+  transition:opacity 0.2s;
+}
+.settings-overlay.open{opacity:1;pointer-events:auto;}
+
+.settings-drawer{
+  position:fixed;top:0;right:0;bottom:0;
+  width:340px;max-width:90vw;
+  background:var(--card);
+  z-index:401;
+  transform:translateX(100%);
+  transition:transform 0.25s ease-out;
+  display:flex;flex-direction:column;
+  box-shadow:-4px 0 16px rgba(0,0,0,0.2);
+}
+.settings-drawer.open{transform:translateX(0);}
+
+.settings-header{
+  padding:16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--brown);color:#fff;
+}
+.settings-header h3{margin:0;font-size:16px;font-weight:600;}
+.settings-close{
+  background:none;border:none;color:#fff;
+  font-size:24px;cursor:pointer;padding:0;
+  width:32px;height:32px;
+  display:flex;align-items:center;justify-content:center;
+}
+
+.settings-body{padding:16px;overflow-y:auto;flex:1;}
+
+.settings-item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px;border-radius:var(--radius-sm);
+  background:var(--bg);
+  margin-bottom:10px;
+}
+.settings-item-label{font-size:14px;color:var(--txt);font-weight:500;}
+
+/* Toggle switch */
+.toggle-switch{
+  position:relative;width:44px;height:24px;
+  background:var(--border);border-radius:12px;
+  cursor:pointer;transition:background 0.2s;
+  border:none;padding:0;
+}
+.toggle-switch.on{background:var(--brown);}
+.toggle-switch::after{
+  content:'';position:absolute;
+  top:2px;left:2px;width:20px;height:20px;
+  background:#fff;border-radius:50%;
+  transition:transform 0.2s;
+}
+.toggle-switch.on::after{transform:translateX(20px);}
 html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--txt);font-size:14px}
 .app{min-height:100vh;display:none;flex-direction:column}
 .app.app-visible{display:flex}
@@ -36,7 +161,12 @@ html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--t
 .mt.active{color:var(--brown);border-bottom-color:var(--brown)}
 .screen{padding:14px;max-width:700px;width:100%;margin:0 auto;flex:1}
 .loading{display:flex;align-items:center;justify-content:center;padding:60px 20px;flex-direction:column;gap:12px}
-.spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--brown);border-radius:50%;animation:spin .7s linear infinite}
+.spinner{
+  width:200px;height:250px;
+  background:url('image.png') center/contain no-repeat;
+  animation:spin 1.5s linear infinite;
+  border:none;border-radius:0;
+}
 @keyframes spin{to{transform:rotate(360deg)}}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
 .card-title{font-size:11px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
@@ -2284,38 +2414,36 @@ async function renderDispatch() {
       return {id: catId, label: CAT_LABELS[catId], products: prods};
     }).filter(c => c.products.length > 0) : [];
 
-    // Build rows
+   // Build rows
     let tableRows = '';
     cats.forEach(cat => {
-      // Category header row
-      tableRows += `<tr style="background:var(--brown);color:white"><td colspan="${outletList.length+2}" style="padding:6px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">${cat.label}</td></tr>`;
+      // Category section band
+      tableRows += `<tr class="d-cat"><td colspan="${outletList.length+2}">${cat.label}</td></tr>`;
       cat.products.forEach(p => {
         let hasDispatch = false;
-       const cells = outletList.map(outletId => {
+        const cells = outletList.map(outletId => {
           const cl = (closing[outletId] && closing[outletId][p.id] !== undefined) ? closing[outletId][p.id] : null;
           const parVal = (par[outletId] && par[outletId][p.id] !== undefined) ? par[outletId][p.id] : 0;
           const calculated = cl !== null ? Math.max(0, parVal - cl) : 0;
           const isOverridden = overrides[outletId] && overrides[outletId][p.id] !== undefined;
           const toSend = isOverridden ? overrides[outletId][p.id] : calculated;
           if(toSend > 0) hasDispatch = true;
-          const bg = isOverridden ? '#d4edda' : (toSend > 0 ? '#fff3cd' : 'transparent');
-          const color = toSend > 0 ? 'var(--brown)' : 'var(--txt3)';
-          const star = isOverridden ? '<span style="color:#28a745;font-size:9px" title="Manually adjusted">●</span>' : '';
-          return `<td onclick="editDispatchCell(${outletId},${p.id},'${(p.name||'').replace(/'/g,"\\'")}',${calculated})" style="text-align:center;padding:4px 6px;font-size:12px;background:${bg};color:${color};font-weight:${toSend>0?'600':'400'};cursor:pointer" title="Click to edit. Calculated: ${calculated}">${toSend}${star}</td>`;
+          const cellClass = isOverridden ? 'd-cell d-override' : (toSend > 0 ? 'd-cell d-needed' : 'd-cell');
+          const star = isOverridden ? '<span class="d-dot" title="Manually adjusted">●</span>' : '';
+          return `<td class="${cellClass}" onclick="editDispatchCell(${outletId},${p.id},'${(p.name||'').replace(/'/g,"\\'")}',${calculated})" title="Click to edit. Calculated: ${calculated}">${toSend}${star}</td>`;
         }).join('');
-        const rowBg = hasDispatch ? '#fffdf5' : 'transparent';
-        tableRows += `<tr style="border-bottom:.5px solid var(--border2);background:${rowBg}">
-          <td style="padding:5px 10px;font-size:12px">${p.name}</td>
+        const rowTotal = outletList.reduce((s,oid)=>{
+          const cl=(closing[oid]&&closing[oid][p.id]!==undefined)?closing[oid][p.id]:null;
+          const parVal=(par[oid]&&par[oid][p.id]!==undefined)?par[oid][p.id]:0;
+          return s+Math.max(0,parVal-(cl!==null?cl:parVal));
+        },0);
+        tableRows += `<tr class="d-row${hasDispatch?' d-row-active':''}">
+          <td class="d-name">${p.name}</td>
           ${cells}
-          <td style="text-align:center;padding:4px 6px;font-size:12px;font-weight:600;color:var(--brown)">${outletList.reduce((s,oid)=>{
-            const cl=(closing[oid]&&closing[oid][p.id]!==undefined)?closing[oid][p.id]:null;
-            const parVal=(par[oid]&&par[oid][p.id]!==undefined)?par[oid][p.id]:0;
-            return s+Math.max(0,parVal-(cl!==null?cl:parVal));
-          },0)||''}</td>
+          <td class="d-total">${rowTotal||''}</td>
         </tr>`;
       });
     });
-
     const outletHeaders = outletList.map(o => `<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;min-width:60px">${OUTLET_PINS[o].split(' ')[0]}</th>`).join('');
 
     document.getElementById('screen').innerHTML = `
@@ -3984,11 +4112,50 @@ var outletOptions=accActiveList.map(function(o){return '<option value="'+o+'" '+
     )
     +'</div>';
 
-  accMonthlyTotal().then(function(mt){var me=document.getElementById('acc-monthly-disp');if(me)me.textContent=accFmt(mt);});
+accMonthlyTotal().then(function(mt){var me=document.getElementById('acc-monthly-disp');if(me)me.textContent=accFmt(mt);});
 }
+
+// Settings drawer
+function openSettings(){
+  document.getElementById('settingsDrawer').classList.add('open');
+  document.getElementById('settingsOverlay').classList.add('open');
+}
+function closeSettings(){
+  document.getElementById('settingsDrawer').classList.remove('open');
+  document.getElementById('settingsOverlay').classList.remove('open');
+}
+function toggleDark(){
+  const isDark = document.body.classList.toggle('dark');
+  document.getElementById('darkToggle').classList.toggle('on', isDark);
+  localStorage.setItem('bh_dark_mode', isDark ? '1' : '0');
+}
+function initDarkMode(){
+  const saved = localStorage.getItem('bh_dark_mode') === '1';
+  if(saved){
+    document.body.classList.add('dark');
+    const toggle = document.getElementById('darkToggle');
+    if(toggle) toggle.classList.add('on');
+  }
+}
+window.addEventListener('DOMContentLoaded', initDarkMode);
 </script>
 <script src="js/test.js"></script>
 <script src="js/supply.js"></script>
+<!-- Settings floating button + drawer -->
+<button class="settings-fab" id="settingsFab" onclick="openSettings()" title="Settings">⚙</button>
+<div class="settings-overlay" id="settingsOverlay" onclick="closeSettings()"></div>
+<div class="settings-drawer" id="settingsDrawer">
+  <div class="settings-header">
+    <h3>⚙ Settings</h3>
+    <button class="settings-close" onclick="closeSettings()">×</button>
+  </div>
+  <div class="settings-body">
+    <div class="settings-item">
+      <span class="settings-item-label">🌙 Night Mode</span>
+      <button class="toggle-switch" id="darkToggle" onclick="toggleDark()"></button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
 // App starts via welcome screen
