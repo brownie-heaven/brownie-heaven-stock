@@ -418,6 +418,29 @@ async function sbGet(table, params='') {
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
+  async function sbGetAll(table, params='') {
+  const all = [];
+  let from = 0;
+  const pageSize = 1000;
+  for(let i = 0; i < 50; i++){
+    const r = await fetch(`${SB_URL}/rest/v1/${table}${params}`, {
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Accept': 'application/json',
+        'Range': `${from}-${from + pageSize - 1}`,
+        'Range-Unit': 'items'
+      }
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    if(!Array.isArray(data) || data.length === 0) break;
+    all.push(...data);
+    if(data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+  }
 async function sbPost(table, body) {
   const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
     method:'POST',
@@ -2644,13 +2667,13 @@ async function renderOverview() {
 
    // ── Fetch ledger totals ──
  const hotelFilter = HOTEL_LIST.map(h => `"${h}"`).join(',');
-    const [slTodayRaw, accToday, slMonthRaw, accMonth, purToday, purMonth, hlToday, hlMonth] = await Promise.all([
+ const [slTodayRaw, accToday, slMonthRaw, accMonth, purToday, purMonth, hlToday, hlMonth] = await Promise.all([
       sbGet('outlet_supply_ledger', `?date=eq.${today}&select=amount,outlet`),
       sbGet('accessories_ledger', `?date=eq.${today}&select=amount`),
-      sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
-      sbGet('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+      sbGetAll('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount,outlet`),
+      sbGetAll('accessories_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
       sbGet('purchase_ledger', `?date=eq.${today}&select=amount`),
-      sbGet('purchase_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
+      sbGetAll('purchase_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&select=amount`),
       sbGet('outlet_supply_ledger', `?date=eq.${today}&outlet=in.(${hotelFilter})&select=amount`),
       sbGet('outlet_supply_ledger', `?date=gte.${monthStart}&date=lte.${monthEnd}&outlet=in.(${hotelFilter})&select=amount`)
     ]);
