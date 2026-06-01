@@ -896,9 +896,11 @@ async function kiLoadHistory(){
       kiRenderHistoryList();
     }
 
-  function kiGroupHistory(){
+ function kiGroupHistory(){
       const g = {};
+      const monthFilter = KI.filterMonth || '';
       KI.historyRows.forEach(r => {
+        if(monthFilter && !(r.date || '').startsWith(monthFilter)) return;
         const k = r.date + '|' + r.category;
         if(!g[k]) g[k] = {date:r.date, category:r.category, rows:[], totalAmount:0, totalQty:0};
         g[k].rows.push(r);
@@ -908,12 +910,28 @@ async function kiLoadHistory(){
       return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date) || a.category.localeCompare(b.category));
     }
 
-  function kiRenderHistoryList(){
+function kiRenderHistoryList(){
       const el = document.getElementById('ki-history-list');
       if(!el) return;
+      if(KI.filterMonth === undefined){
+        KI.filterMonth = new Date().toISOString().slice(0,7);
+      }
       const groups = kiGroupHistory();
+      const monthFilter = KI.filterMonth || '';
+      const filteredLineCount = KI.historyRows.filter(r => !monthFilter || (r.date||'').startsWith(monthFilter)).length;
+      const monthLabel = monthFilter
+        ? new Date(monthFilter + '-01').toLocaleString('en-IN', {month:'long', year:'numeric'})
+        : 'All time';
+      const pickerBar = `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:#faf6f0;border:1px solid var(--border);border-radius:8px">
+          <div style="font-size:13px;color:#666">Showing: <b style="color:var(--brown)">${monthLabel}</b></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="month" value="${monthFilter}" onchange="KI.filterMonth=this.value;kiRenderHistoryList()" style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px">
+            <button onclick="KI.filterMonth='';kiRenderHistoryList()" style="padding:6px 12px;background:#fff;color:#666;border:1px solid var(--border);border-radius:5px;cursor:pointer;font-size:12px">All time</button>
+          </div>
+        </div>`;
       if(!groups.length){
-        el.innerHTML = '<div style="color:#888;padding:40px;text-align:center">No entries match the filters.</div>';
+        el.innerHTML = pickerBar + '<div style="color:#888;padding:40px;text-align:center">No entries for this period.</div>';
         return;
       }
 
@@ -939,15 +957,14 @@ async function kiLoadHistory(){
               <div style="font-size:18px;font-weight:600;color:var(--brown)">${fmtRs(brownieTotal)}</div>
               <div style="font-size:11px;color:#999">${brownieDays} day${brownieDays!==1?'s':''}</div>
             </div>
-            <div style="border-left:1px solid var(--border);padding-left:16px">
+           <div style="border-left:1px solid var(--border);padding-left:16px">
               <div style="font-size:12px;color:#888">Grand total</div>
               <div style="font-size:20px;font-weight:700;color:#080">${fmtRs(grandTotal)}</div>
-              <div style="font-size:11px;color:#999">${KI.historyRows.length} line items</div>
+              <div style="font-size:11px;color:#999">${filteredLineCount} line items</div>
             </div>
           </div>
         </div>`;
-
-      el.innerHTML = summary + groups.map((g, gi) => {
+      el.innerHTML = pickerBar + summary + groups.map((g, gi) => {
         const label = g.category==='pastry'?'Pastry Indent':'Brownie Indent';
         return `
           <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:10px;background:#fff">
