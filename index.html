@@ -3832,7 +3832,8 @@ async function renderHotelsLedger(){
       +'</div>'
       +'<button id="hl-save-btn" onclick="hlSave()" style="background:#1D9E75;color:white;border:none;padding:10px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:500;font-family:var(--font)">Save entry</button>'
     :
-      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.5rem;align-items:flex-end">'
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1.5rem;align-items:flex-end;justify-content:space-between">'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
       +'<div><label style="font-size:12px;color:#666;font-weight:500;display:block;margin-bottom:4px">Hotel</label>'
       +'<select onchange="HL.filterOutlet=this.value;hlLoadHistory().then(renderHotelsLedger)" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)">'
       +'<option value="">All hotels</option>'+filterOptions+'</select></div>'
@@ -3840,6 +3841,9 @@ async function renderHotelsLedger(){
       +'<input type="date" value="'+HL.filterDate+'" onchange="HL.filterDate=this.value;hlLoadHistory().then(renderHotelsLedger)" style="font-size:13px;padding:6px 10px;border-radius:6px;border:.5px solid #d5d5d0;font-family:var(--font)"></div>'
       +'<button onclick="HL.filterOutlet=\'\';HL.filterDate=\'\';hlLoadHistory().then(renderHotelsLedger)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;border:.5px solid #d5d5d0;color:#555;background:none;font-family:var(--font)">Clear</button>'
       +'</div>'
+      +'<button onclick="hlShowReportModal()" style="font-size:13px;padding:7px 14px;background:#6B2400;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:500">⬇️ Download Report</button>'
+      +'</div>'
+      +'<div id="hl-report-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center"></div>'
       +histHTML
     )
     +'</div>';
@@ -3847,6 +3851,139 @@ async function renderHotelsLedger(){
   function hlUpdateDailyTotal(){
   const el = document.getElementById('hl-daily-total');
   if(el) el.textContent = hlFmt(hlCalcDaily() + Number(HL.shipping||0));
+}
+  function hlShowReportModal(){
+  const modal = document.getElementById('hl-report-modal');
+  if(!modal) return;
+  const today = new Date().toISOString().slice(0,10);
+  const firstOfMonth = today.slice(0,8) + '01';
+  modal.innerHTML = `
+    <div style="background:white;padding:24px;border-radius:10px;max-width:420px;width:90%;font-family:var(--font)" onclick="event.stopPropagation()">
+      <h3 style="margin:0 0 4px 0;color:#6B2400">⬇️ Download Hotels Report</h3>
+      <p style="font-size:12px;color:#888;margin:0 0 16px 0">One row per bill. Pick a date range or a single month.</p>
+      
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">Quick pick — single month</label>
+        <input type="month" id="hl-rep-month" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px" onchange="hlReportFromMonth(this.value)">
+      </div>
+      
+      <div style="margin:14px 0 6px 0;text-align:center;color:#aaa;font-size:11px">— OR —</div>
+      
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <div style="flex:1">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">From date</label>
+          <input type="date" id="hl-rep-from" value="${firstOfMonth}" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">To date</label>
+          <input type="date" id="hl-rep-to" value="${today}" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        </div>
+      </div>
+      
+      <div style="margin-bottom:18px">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">Hotel</label>
+        <select id="hl-rep-hotel" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+          <option value="">All hotels</option>
+          ${HOTEL_LIST.map(h => `<option value="${h}">${h}</option>`).join('')}
+        </select>
+      </div>
+      
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="document.getElementById('hl-report-modal').style.display='none'" style="padding:8px 16px;background:none;color:#666;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:13px">Cancel</button>
+        <button onclick="hlDownloadReport()" style="padding:8px 18px;background:#1D9E75;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500">⬇️ Download Excel</button>
+      </div>
+    </div>`;
+  modal.style.display = 'flex';
+  modal.onclick = () => { modal.style.display = 'none'; };
+}
+
+function hlReportFromMonth(ym){
+  if(!ym) return;
+  const fromEl = document.getElementById('hl-rep-from');
+  const toEl = document.getElementById('hl-rep-to');
+  const [y, m] = ym.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  if(fromEl) fromEl.value = `${ym}-01`;
+  if(toEl) toEl.value = `${ym}-${String(lastDay).padStart(2,'0')}`;
+}
+
+async function hlDownloadReport(){
+  const from = document.getElementById('hl-rep-from')?.value;
+  const to = document.getElementById('hl-rep-to')?.value;
+  const hotel = document.getElementById('hl-rep-hotel')?.value;
+  if(!from || !to){ alert('Pick from and to dates'); return; }
+  if(from > to){ alert('From date must be before To date'); return; }
+  
+  try {
+    const hotelFilter = HOTEL_LIST.map(h => `"${h}"`).join(',');
+    let q = `?date=gte.${from}&date=lte.${to}&select=*&order=date.asc,outlet.asc`;
+    if(hotel) q += `&outlet=eq.${encodeURIComponent(hotel)}`;
+    else q += `&outlet=in.(${hotelFilter})`;
+    
+    const rows = await sbGetAll('outlet_supply_ledger', q);
+    if(!rows.length){ alert('No hotel bills found for this range.'); return; }
+    
+    // Group by outlet+date → one row per bill
+    const billsMap = {};
+    rows.forEach(r => {
+      const k = r.outlet + '|' + r.date;
+      if(!billsMap[k]) billsMap[k] = {
+        date: r.date, outlet: r.outlet, items: 0, subtotal: 0, shipping: 0
+      };
+      billsMap[k].items += 1;
+      billsMap[k].subtotal += Number(r.amount || 0);
+      billsMap[k].shipping += Number(r.shipping_charge || 0);
+    });
+    const bills = Object.values(billsMap).sort((a,b) => a.date.localeCompare(b.date) || a.outlet.localeCompare(b.outlet));
+    
+    // Load SheetJS if not present
+    if(typeof XLSX === 'undefined'){
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    
+    const sheetData = bills.map(b => ({
+      'Date': b.date,
+      'Hotel': b.outlet,
+      'Items': b.items,
+      'Subtotal (₹)': Number(b.subtotal.toFixed(2)),
+      'Shipping (₹)': Number(b.shipping.toFixed(2)),
+      'Total (₹)': Number((b.subtotal + b.shipping).toFixed(2))
+    }));
+    
+    // Totals row
+    const totSub = bills.reduce((s,b)=>s+b.subtotal, 0);
+    const totShip = bills.reduce((s,b)=>s+b.shipping, 0);
+    const totItems = bills.reduce((s,b)=>s+b.items, 0);
+    sheetData.push({});
+    sheetData.push({
+      'Date': '', 'Hotel': 'TOTAL',
+      'Items': totItems,
+      'Subtotal (₹)': Number(totSub.toFixed(2)),
+      'Shipping (₹)': Number(totShip.toFixed(2)),
+      'Total (₹)': Number((totSub + totShip).toFixed(2))
+    });
+    
+    const ws = XLSX.utils.json_to_sheet(sheetData);
+    ws['!cols'] = [{wch:12},{wch:28},{wch:8},{wch:14},{wch:14},{wch:14}];
+    const wb = XLSX.utils.book_new();
+    const sheetName = hotel ? hotel.substring(0,28).replace(/[^a-zA-Z0-9 ]/g,'') : 'Hotels';
+    XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Hotels');
+    
+    const filename = `hotels_report_${from}_to_${to}${hotel?'_'+hotel.replace(/[^a-zA-Z0-9]/g,'_'):''}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    
+    toast(`✅ Downloaded ${bills.length} bills`);
+    document.getElementById('hl-report-modal').style.display = 'none';
+  } catch(e){
+    console.error('Hotels report failed:', e);
+    alert('Download failed: ' + (e?.message || JSON.stringify(e)));
+  }
 }
 async function hlDelete(outlet, date){
   if(!confirm('Delete entry for '+outlet+' on '+date+'?')) return;
