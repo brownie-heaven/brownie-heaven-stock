@@ -3696,16 +3696,27 @@ function hlUpdateLine(name,field,val){const l=HL.lines[name];if(!l)return;l[fiel
 async function hlSave(){
   const btn=document.getElementById('hl-save-btn');
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
-  const active=Object.entries(HL.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l])=>{
+  const shipping = Number(HL.shipping || 0);
+  const active=Object.entries(HL.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l],idx)=>{
     const catalog=hlGetCatalog(HL.outlet);const def=catalog.find(p=>p.name===name);
-    return{outlet:HL.outlet,date:HL.date,product:name,category:def?def.unit:'piece',qty:Number(l.qty),rate:Number(l.rate)};
+    return{
+      outlet:HL.outlet,
+      date:HL.date,
+      product:name,
+      category:def?def.unit:'piece',
+      qty:Number(l.qty),
+      rate:Number(l.rate),
+      shipping_charge: idx===0 ? shipping : 0  // attach shipping only to first row
+    };
   });
   if(!HL.outlet){alert('Select a hotel');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
   if(!active.length){alert('Enter at least one quantity');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
   try{
     await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(HL.outlet)}&date=eq.${HL.date}`);
     await sbPost('outlet_supply_ledger',active);
-    HL.lines={};toast('Hotel entry saved!');
+    HL.lines={};
+    HL.shipping=0;
+    toast('Hotel entry saved!');
     await hlLoadHistory();
   }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
 }
@@ -3799,10 +3810,14 @@ async function renderHotelsLedger(){
       +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Rate ₹</div>'
       +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Amount ₹</div>'
       +'</div>'
-      +prodHTML
+     +prodHTML
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#fff7eb;border:.5px solid #f0d8b0;border-radius:8px;margin-bottom:10px">'
+      +'<label style="font-size:13px;color:#a35c00;font-weight:500">Shipping charge ₹</label>'
+      +'<input type="number" min="0" step="0.01" value="'+(HL.shipping||0)+'" placeholder="0" oninput="HL.shipping=this.value;hlUpdateDailyTotal()" style="width:120px;font-size:13px;padding:6px 10px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right">'
+      +'</div>'
       +'<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:#E1F5EE;border-radius:8px;margin-bottom:1.5rem;font-weight:500">'
-      +'<span>Grand total (daily)</span>'
-      +'<span id="hl-daily-total" style="font-size:20px;font-weight:600;color:#0F6E56;font-family:var(--mono)">'+hlFmt(daily)+'</span>'
+      +'<span>Grand total (daily, incl. shipping)</span>'
+      +'<span id="hl-daily-total" style="font-size:20px;font-weight:600;color:#0F6E56;font-family:var(--mono)">'+hlFmt(daily + Number(HL.shipping||0))+'</span>'
       +'</div>'
       +'<button id="hl-save-btn" onclick="hlSave()" style="background:#1D9E75;color:white;border:none;padding:10px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:500;font-family:var(--font)">Save entry</button>'
     :
@@ -3817,6 +3832,10 @@ async function renderHotelsLedger(){
       +histHTML
     )
     +'</div>';
+}
+  function hlUpdateDailyTotal(){
+  const el = document.getElementById('hl-daily-total');
+  if(el) el.textContent = hlFmt(hlCalcDaily() + Number(HL.shipping||0));
 }
 async function hlDelete(outlet, date){
   if(!confirm('Delete entry for '+outlet+' on '+date+'?')) return;
