@@ -4271,29 +4271,15 @@ SL_CATALOG.forEach(function(group){
     if(!groups.length){
       histHTML='<p style="color:var(--txt3);font-size:13px;text-align:center;padding:2rem">No entries found.</p>';
     }else{
-      histHTML=groups.map(function(g){
+     histHTML=groups.map(function(g){
       var rowsHtml=g.rows.map(function(r){
-        if(HL.editingId === r.id){
-          // EDIT MODE
-          return '<tr style="background:#fffaf3">'
-            +'<td style="padding:5px 10px;font-size:12px">'+r.product+'</td>'
-            +'<td style="padding:4px 5px;text-align:right"><input id="hl-edit-qty-'+r.id+'" type="number" min="0" step="0.01" value="'+r.qty+'" style="width:80px;font-size:12px;padding:4px 6px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right"></td>'
-            +'<td style="padding:4px 5px;text-align:right"><input id="hl-edit-rate-'+r.id+'" type="number" min="0" step="0.01" value="'+r.rate+'" style="width:80px;font-size:12px;padding:4px 6px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right"></td>'
-            +'<td style="padding:5px 10px;text-align:right;font-size:12px;color:#888">—</td>'
-            +'<td style="padding:5px 8px;text-align:right;white-space:nowrap">'
-              +'<button onclick="hlSaveLine(\''+r.id+'\')" title="Save" style="font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;border:.5px solid #1D9E75;color:#0F6E56;background:#e1f5ee;margin-right:4px">✓</button>'
-              +'<button onclick="HL.editingId=null;renderHotelsLedger()" title="Cancel" style="font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;border:.5px solid #d5d5d0;color:#666;background:#f5f5f3">✗</button>'
-            +'</td></tr>';
-        }
-        // DISPLAY MODE
-        return '<tr><td style="padding:5px 10px;font-size:12px">'+r.product+'</td>'
-          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+' '+(r.category||'')+'</td>'
-          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+Number(r.rate).toFixed(2)+'</td>'
-          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+hlFmt(r.amount)+'</td>'
-          +'<td style="padding:5px 8px;text-align:right;white-space:nowrap">'
-            +'<button onclick="HL.editingId=\''+r.id+'\';renderHotelsLedger()" title="Edit" style="font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;border:.5px solid #f0c878;color:#a35c00;background:#fff7eb;margin-right:4px">✏️</button>'
-            +'<button onclick="hlDeleteLine(\''+r.id+'\')" title="Delete" style="font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;border:.5px solid #f0c4c4;color:#c00;background:#fdf0f0">×</button>'
-          +'</td></tr>';
+        return '<tr>'
+          +'<td style="padding:5px 10px;font-size:12px;color:#888">'+(r.category||'')+'</td>'
+          +'<td style="padding:5px 10px;font-size:12px">'+r.product+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px">'+r.qty+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px;font-family:var(--mono)">'+Number(r.rate).toFixed(2)+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-size:12px;font-family:var(--mono)">'+slFmt(r.amount)+'</td>'
+          +'</tr>';
       }).join('');
         var encoded=encodeURIComponent(JSON.stringify(g.rows));
         return '<div style="border:.5px solid #e5e5e3;border-radius:8px;overflow:hidden;margin-bottom:8px;background:white">'
