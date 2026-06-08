@@ -3697,6 +3697,13 @@ async function hlSave(){
   const btn=document.getElementById('hl-save-btn');
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
   const shipping = Number(HL.shipping || 0);
+  const gstPct = HL.gstPercent !== undefined ? Number(HL.gstPercent) : 5;
+  // Subtotal of all active products
+  const subtotal = Object.entries(HL.lines)
+    .filter(([,l])=>Number(l.qty)>0)
+    .reduce((s,[,l]) => s + (Number(l.qty)*Number(l.rate)||0), 0);
+  // GST applies to subtotal + shipping
+  const gstAmount = Number(((subtotal + shipping) * gstPct / 100).toFixed(2));
   const active=Object.entries(HL.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l],idx)=>{
     const catalog=hlGetCatalog(HL.outlet);const def=catalog.find(p=>p.name===name);
     return{
@@ -3706,7 +3713,9 @@ async function hlSave(){
       category:def?def.unit:'piece',
       qty:Number(l.qty),
       rate:Number(l.rate),
-      shipping_charge: idx===0 ? shipping : 0  // attach shipping only to first row
+      shipping_charge: idx===0 ? shipping : 0,    // attach shipping only to first row
+      gst_percent:    idx===0 ? gstPct    : 0,    // attach GST % only to first row
+      gst_amount:     idx===0 ? gstAmount : 0     // attach GST amount only to first row
     };
   });
   if(!HL.outlet){alert('Select a hotel');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
@@ -3716,6 +3725,7 @@ async function hlSave(){
     await sbPost('outlet_supply_ledger',active);
     HL.lines={};
     HL.shipping=0;
+    HL.gstPercent=5;
     toast('Hotel entry saved!');
     await hlLoadHistory();
   }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
@@ -3823,14 +3833,22 @@ async function renderHotelsLedger(){
       +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Rate ₹</div>'
       +'<div style="font-size:11px;font-weight:500;color:#888;text-align:right">Amount ₹</div>'
       +'</div>'
-     +prodHTML
-      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#fff7eb;border:.5px solid #f0d8b0;border-radius:8px;margin-bottom:10px">'
+    +prodHTML
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#fff7eb;border:.5px solid #f0d8b0;border-radius:8px;margin-bottom:8px">'
       +'<label style="font-size:13px;color:#a35c00;font-weight:500">Shipping charge ₹</label>'
       +'<input type="number" min="0" step="0.01" value="'+(HL.shipping||0)+'" placeholder="0" oninput="HL.shipping=this.value;hlUpdateDailyTotal()" style="width:120px;font-size:13px;padding:6px 10px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right">'
       +'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#eef4ff;border:.5px solid #c5d4ed;border-radius:8px;margin-bottom:10px">'
+      +'<label style="font-size:13px;color:#2b5797;font-weight:500">GST</label>'
+      +'<div style="display:flex;align-items:center;gap:6px">'
+      +'<input type="number" min="0" step="0.01" value="'+(HL.gstPercent!==undefined?HL.gstPercent:5)+'" oninput="HL.gstPercent=this.value;hlUpdateDailyTotal()" style="width:60px;font-size:13px;padding:6px 10px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right"><span style="font-size:12px;color:#666">%</span>'
+      +'<span style="margin-left:8px;font-size:12px;color:#666">=</span>'
+      +'<span id="hl-gst-amt-preview" style="font-size:13px;font-weight:600;color:#2b5797;font-family:var(--mono);min-width:90px;text-align:right">'+hlFmt((daily + Number(HL.shipping||0)) * (HL.gstPercent!==undefined?Number(HL.gstPercent):5) / 100)+'</span>'
+      +'</div>'
+      +'</div>'
       +'<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:#E1F5EE;border-radius:8px;margin-bottom:1.5rem;font-weight:500">'
-      +'<span>Grand total (daily, incl. shipping)</span>'
-      +'<span id="hl-daily-total" style="font-size:20px;font-weight:600;color:#0F6E56;font-family:var(--mono)">'+hlFmt(daily + Number(HL.shipping||0))+'</span>'
+      +'<span>Grand total (incl. shipping + GST)</span>'
+      +'<span id="hl-daily-total" style="font-size:20px;font-weight:600;color:#0F6E56;font-family:var(--mono)">'+hlFmt(daily + Number(HL.shipping||0) + (daily + Number(HL.shipping||0)) * (HL.gstPercent!==undefined?Number(HL.gstPercent):5) / 100)+'</span>'
       +'</div>'
       +'<button id="hl-save-btn" onclick="hlSave()" style="background:#1D9E75;color:white;border:none;padding:10px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:500;font-family:var(--font)">Save entry</button>'
     :
@@ -3851,8 +3869,15 @@ async function renderHotelsLedger(){
     +'</div>';
 }
   function hlUpdateDailyTotal(){
+  const daily = hlCalcDaily();
+  const ship = Number(HL.shipping||0);
+  const gstPct = HL.gstPercent !== undefined ? Number(HL.gstPercent) : 5;
+  const gst = (daily + ship) * gstPct / 100;
+  const total = daily + ship + gst;
   const el = document.getElementById('hl-daily-total');
-  if(el) el.textContent = hlFmt(hlCalcDaily() + Number(HL.shipping||0));
+  if(el) el.textContent = hlFmt(total);
+  const gstEl = document.getElementById('hl-gst-amt-preview');
+  if(gstEl) gstEl.textContent = hlFmt(gst);
 }
   function hlShowReportModal(){
   const modal = document.getElementById('hl-report-modal');
