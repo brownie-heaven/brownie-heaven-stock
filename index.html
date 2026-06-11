@@ -2744,7 +2744,7 @@ async function renderDispatch() {
     }).filter(c => c.products.length > 0) : [];
 
   // Build rows
-    const outletHdrCells = outletList.map(o => `<td class="d-outlet-hdr">${OUTLET_PINS[o].split(' ')[0]}</td>`).join('');
+    const outletHdrCells = outletList.map(o => `<td class="d-outlet-hdr">${OUTLET_PINS[o]}</td>`).join('');
     let tableRows = '';
     cats.forEach(cat => {
       // Category section band
