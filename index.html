@@ -2281,6 +2281,37 @@ async function goStock() {
         }
       } catch(e) { console.error('Draft load failed:', e); }
 
+     // If MORNING shift, auto-fill opening from yesterday's closing
+      if (S.shift === 'morning') {
+        try {
+          const y = new Date();
+          y.setDate(y.getDate() - 1);
+          const yesterday = y.toISOString().split('T')[0];
+          const yEntries = await sbGet('shift_entries',
+            `?outlet_id=eq.${S.outlet}&entry_date=eq.${yesterday}&or=(is_demo.eq.false,is_demo.is.null)&select=id,shift`);
+          // Night line holds the full-day snapshot; fall back to morning if no night
+          const src = yEntries.find(e => e.shift === 'night') || yEntries.find(e => e.shift === 'morning');
+          if (src) {
+            const yLines = await sbGet('stock_lines', `?entry_id=eq.${src.id}&select=*`);
+            S.stockData = {};
+            yLines.forEach(line => {
+              const prod = DB.products.find(p => p.id === line.product_id);
+              if (!prod) return;
+              const catId = prod.category_id;
+              const closing = Math.max(0,
+                (+line.opening || 0) + (+line.incoming || 0)
+                - ((+line.dine_in || 0) + (+line.swiggy || 0) + (+line.zomato || 0))
+                - (+line.expiry_qty || 0) - (+line.wastage || 0) - (+line.complimentary || 0));
+              if (!S.stockData[catId]) S.stockData[catId] = {};
+              S.stockData[catId][line.product_id] = { opening: String(closing) };
+            });
+            toast(`✅ Opening auto-filled from yesterday's closing`);
+          }
+        } catch(e) {
+          console.error('Opening auto-fill failed:', e);
+        }
+      }
+
       // If night shift, try to load morning's entry for auto-carry
       if (S.shift === 'night') {
     const today = new Date().toISOString().split('T')[0];
