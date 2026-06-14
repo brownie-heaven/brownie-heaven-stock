@@ -2219,6 +2219,7 @@ function renderShift() {
       </div>
       <button class="btn btn-p" id="cbtn" onclick="goStock()" ${!S.shift||!S.staffName?'disabled':''}>Continue to stock entry →</button>
       <button class="btn btn-s" style="margin-top:8px" onclick="loadDemoData()">🎯 Load demo values (for testing)</button>
+      <button class="btn btn-s" style="margin-top:8px" onclick="showMyShifts()">📅 View my past entries</button>
     </div>
   </div>`;
 }
@@ -3629,6 +3630,32 @@ async function showShiftDetail(pin, shift, date){
     </div>
   </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
+}
+  // ── OUTLET SELF-VIEW ──────────────────────────────────────────────────────────
+function showMyShifts() {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  const yStr = y.toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+  setHdr(`${S.outletName} — My entries`, false);
+  document.getElementById('screen').innerHTML = `
+  <div style="margin-top:14px">
+    <button class="btn btn-s" style="width:auto;padding:7px 14px;margin-bottom:12px;display:inline-flex;align-items:center;gap:6px" onclick="renderShift()">← Back</button>
+    <div class="card">
+      <div class="card-title">📅 My shift entries</div>
+      <div class="outlet-badge">🍫 ${S.outletName}</div>
+      <div class="field"><label>Pick a date</label>
+        <input type="date" id="myShiftDate" value="${yStr}" max="${todayStr}" style="width:100%">
+      </div>
+      <button class="btn btn-p" onclick="openMyShift()">View day →</button>
+    </div>
+  </div>`;
+}
+
+function openMyShift() {
+  const date = document.getElementById('myShiftDate').value;
+  if (!date) { alert('Please pick a date'); return; }
+  showShiftDetail(S.outlet, 'night', date);
 }
   
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
