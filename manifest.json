@@ -1,0 +1,16 @@
+{
+  "name": "Brownie Heaven Stock",
+  "short_name": "BH Stock",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#6B2400",
+  "theme_color": "#6B2400",
+  "icons": [
+    {
+      "src": "/image.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
