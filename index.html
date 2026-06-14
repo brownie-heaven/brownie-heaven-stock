@@ -4750,6 +4750,8 @@ accMonthlyTotal().then(function(mt){var me=document.getElementById('acc-monthly-
 
 // Settings drawer
 function openSettings(){
+  const myShifts = document.getElementById('myShiftsSettingsItem');
+  if(myShifts) myShifts.style.display = (OUTLET_PINS[S.outlet] && !S.role) ? 'flex' : 'none';
   document.getElementById('settingsDrawer').classList.add('open');
   document.getElementById('settingsOverlay').classList.add('open');
 }
@@ -4783,9 +4785,13 @@ window.addEventListener('DOMContentLoaded', initDarkMode);
     <button class="settings-close" onclick="closeSettings()">×</button>
   </div>
   <div class="settings-body">
-    <div class="settings-item">
+   <div class="settings-item">
       <span class="settings-item-label">🌙 Night Mode</span>
       <button class="toggle-switch" id="darkToggle" onclick="toggleDark()"></button>
+    </div>
+    <div class="settings-item" id="myShiftsSettingsItem" style="display:none;cursor:pointer" onclick="closeSettings();showMyShifts()">
+      <span class="settings-item-label">📅 My shift entries</span>
+      <span style="color:var(--txt3)">→</span>
     </div>
   </div>
 </div>
