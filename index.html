@@ -2722,6 +2722,105 @@ function downloadDispatch() {
         alert('Could not save. Details: ' + (e?.message || JSON.stringify(e)));
       }
     }
+  // ── PAR STOCK EDITOR (dispatch) ───────────────────────────────────────────────
+let PAR = { dayType: 'weekday', rows: {}, existing: {} }; // existing[outlet|pid|dt] = true
+
+async function renderParStock() {
+  showLoading('Loading par stock...');
+  try {
+    const dt = PAR.dayType;
+    const outletList = ['1003','1002','1008','1005','1004','1007','1006','1001','1111','2222','3333','4444','6666','7777','8888'];
+
+    // Load current par for this day type
+    const rows = await sbGet('outlet_product_config', `?day_type=eq.${dt}&select=outlet_id,product_id,par_stock`);
+    PAR.rows = {}; PAR.existing = {};
+    rows.forEach(r => {
+      if (!PAR.rows[r.outlet_id]) PAR.rows[r.outlet_id] = {};
+      PAR.rows[r.outlet_id][r.product_id] = (r.par_stock == null ? 0 : +r.par_stock);
+      PAR.existing[`${r.outlet_id}|${r.product_id}|${dt}`] = true;
+    });
+
+    const products = DB.products.filter(p => !DISCONTINUED.includes(p.name));
+    const cats = CAT_ORDER.map(catId => ({
+      id: catId, label: CAT_LABELS[catId],
+      products: products.filter(p => p.category_id === catId)
+    })).filter(c => c.products.length > 0);
+
+    const outletHeaders = outletList.map(o =>
+      `<th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;min-width:54px">${OUTLET_PINS[o].split(' ')[0]}</th>`
+    ).join('');
+
+    let body = '';
+    cats.forEach(cat => {
+      body += `<tr style="background:var(--bg2)"><td colspan="${outletList.length+1}" style="padding:6px 10px;font-size:12px;font-weight:700;color:var(--brown)">${cat.label}</td></tr>`;
+      cat.products.forEach(p => {
+        const cells = outletList.map(o => {
+          const val = (PAR.rows[o] && PAR.rows[o][p.id] !== undefined) ? PAR.rows[o][p.id] : '';
+          return `<td style="padding:2px;text-align:center">
+            <input type="number" min="0" value="${val}" data-o="${o}" data-p="${p.id}"
+              onchange="saveParCell(this)"
+              style="width:46px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:12px;text-align:center">
+          </td>`;
+        }).join('');
+        body += `<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:6px 10px;font-size:12px;min-width:160px">${p.name}</td>${cells}</tr>`;
+      });
+    });
+
+    document.getElementById('screen').innerHTML = `
+    <div style="margin-top:14px">
+      <button class="btn btn-s" style="width:auto;padding:7px 14px;margin-bottom:12px" onclick="renderDispatch()">← Dispatch</button>
+      <div class="card">
+        <div class="card-title">🎯 Par Stock Editor</div>
+        <div style="display:flex;gap:8px;margin:10px 0">
+          <button class="btn ${dt==='weekday'?'btn-p':'btn-s'}" style="width:auto;padding:6px 16px" onclick="setParDay('weekday')">Weekday</button>
+          <button class="btn ${dt==='weekend'?'btn-p':'btn-s'}" style="width:auto;padding:6px 16px" onclick="setParDay('weekend')">Weekend</button>
+        </div>
+        <p style="font-size:12px;color:var(--txt2);margin-bottom:10px">Editing <b>${dt}</b> par. Each cell saves on change. Weekend = Sat + Sun.</p>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="background:var(--bg2)">
+              <th style="padding:6px 10px;font-size:11px;font-weight:600;text-align:left">Product</th>
+              ${outletHeaders}
+            </tr></thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  } catch(e) {
+    document.getElementById('screen').innerHTML = `<div class="card" style="margin-top:14px"><p style="color:var(--red);font-size:13px">Error loading par stock: ${e.message}</p></div>`;
+  }
+}
+
+function setParDay(dt) { PAR.dayType = dt; renderParStock(); }
+
+async function saveParCell(input) {
+  const outlet = input.dataset.o;
+  const pid = +input.dataset.p;
+  const dt = PAR.dayType;
+  const val = input.value === '' ? 0 : Math.max(0, +input.value);
+  const key = `${outlet}|${pid}|${dt}`;
+  const orig = input.style.background;
+  input.style.background = '#fff8e1';
+  try {
+    if (PAR.existing[key]) {
+      await sbPatch('outlet_product_config',
+        `?outlet_id=eq.${outlet}&product_id=eq.${pid}&day_type=eq.${dt}`,
+        { par_stock: val, is_active: true });
+    } else {
+      await sbPost('outlet_product_config',
+        [{ outlet_id: outlet, product_id: pid, day_type: dt, par_stock: val, is_active: true }]);
+      PAR.existing[key] = true;
+    }
+    if (!PAR.rows[outlet]) PAR.rows[outlet] = {};
+    PAR.rows[outlet][pid] = val;
+    input.style.background = '#e8f5e9';
+    setTimeout(() => { input.style.background = orig || ''; }, 600);
+  } catch(e) {
+    input.style.background = '#ffebee';
+    toast('Save failed — try again');
+  }
+}
 // ── DISPATCH ──────────────────────────────────────────────────────────────────
 async function renderDispatch() {
   showLoading('Loading dispatch data...');
@@ -2816,6 +2915,7 @@ async function renderDispatch() {
       <button class="btn btn-s" style="width:auto;padding:7px 14px;margin-bottom:12px;display:inline-flex;align-items:center;gap:6px" onclick="goHome()">← Home</button>
       <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="window.print()">🖨 Print</button>
       <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="downloadDispatch()">⬇️ Download Excel</button>
+      <button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="renderParStock()">🎯 Edit Par Stock</button>
       + '<button class="btn btn-s no-print" style="width:auto;padding:7px 14px;margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" onclick="downloadDispatchImage()">🖼️ Download Image</button>'
       <div class="card">
         <div class="card-title">📦 Dispatch Sheet — ${today} (${dayType})</div>
