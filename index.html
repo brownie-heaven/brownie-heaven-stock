@@ -4562,7 +4562,7 @@ var outletOptions=activeList.map(function(o){return '<option value="'+o+'" '+(SL
   slMonthlyTotal().then(function(mt){var me=document.getElementById('sl-monthly-disp');if(me)me.textContent=slFmt(mt);});
 }
   // ── ACCESSORIES LEDGER ───────────────────────────────────────────────────────
-const ACC_CATALOG=[
+let ACC_CATALOG=[
   {cat:'Dairy & Ingredients',items:[
     {name:'Butter',rate:262},{name:'Milk',rate:65},{name:'Almond',rate:123},
     {name:'Whipped Topping Dairy',rate:30},{name:'Caramel Topping',rate:256},
@@ -4627,7 +4627,20 @@ const ACC_CATALOG=[
 ];
 
 let ACC={outlet:'',date:new Date().toISOString().slice(0,10),lines:{},view:'entry',history:[],filterOutlet:'',filterDate:'',editKey:null,outletType:'outlets'};
-
+async function accLoadCatalog(){
+  try{
+    const rows=await sbGet('accessories_catalog','?active=eq.true&order=sort_order');
+    if(rows&&rows.length){
+      const groups=[];const idx={};
+      rows.forEach(function(r){
+        if(idx[r.category]===undefined){idx[r.category]=groups.length;groups.push({cat:r.category,items:[]});}
+        groups[idx[r.category]].items.push({id:r.id,name:r.name,rate:Number(r.rate)});
+      });
+      ACC_CATALOG=groups;
+      ACC.catalogLoaded=true;
+    }
+  }catch(e){/* keep hardcoded fallback */}
+}
 function accFmt(n){return '₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function accSafeId(n){return n.replace(/[^a-zA-Z0-9]/g,'_');}
 function accGetLine(name){
@@ -4722,6 +4735,7 @@ async function accExport(){
 
 async function renderAccessoriesLedger(){
   setHdr('Dashboard',true);
+  if(!ACC.catalogLoaded)await accLoadCatalog();
   if(!ACC.history.length)await accLoadHistory();
   const daily=accCalcDaily();
   const groups=accGroupHistory();
