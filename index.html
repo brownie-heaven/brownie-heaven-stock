@@ -1090,7 +1090,7 @@ async function kiSaveLine(id){
 
     async function kiLoadManageList(){
       try {
-        let params = `?category=eq.${KIM.category}&order=is_active.desc,name.asc&select=id,name,is_active`;
+        let params = `?category=eq.${KIM.category}&order=is_active.desc,name.asc&select=id,name,price,is_active`;
         if(!KIM.showInactive) params += `&is_active=eq.true`;
         KIM.products = await sbGet('kitchen_products', params) || [];
       } catch(e){
@@ -1112,7 +1112,9 @@ async function kiSaveLine(id){
           const dim = p.is_active ? '' : 'opacity:0.5;';
           return `
             <div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:#fff;${dim}">
-              <div style="flex:1;font-size:14px">${p.name}${p.is_active?'':' <span style="color:#c00;font-size:11px;margin-left:6px">(deactivated)</span>'}</div>
+             <div style="flex:1;font-size:14px">${p.name}${p.is_active?'':' <span style="color:#c00;font-size:11px;margin-left:6px">(deactivated)</span>'}</div>
+              <input id="kim-price-${safeId}" type="number" min="0" step="0.01" value="${p.price!=null?p.price:''}" placeholder="₹" style="width:90px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;text-align:right;font-size:13px">
+              <button onclick="kiSavePrice('${safeId}')" style="padding:5px 12px;background:#e1f5ee;color:#0F6E56;border:1px solid #1D9E75;border-radius:4px;cursor:pointer;font-size:12px">Save</button>
               <button onclick="kiRenameProduct('${safeId}')" style="padding:5px 12px;background:#f5f5f5;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px">Rename</button>
               ${p.is_active 
                 ? `<button onclick="kiToggleActive('${safeId}', false)" style="padding:5px 12px;background:#fdf0f0;color:#c00;border:1px solid #f0c4c4;border-radius:4px;cursor:pointer;font-size:12px">Deactivate</button>`
@@ -1126,7 +1128,7 @@ async function kiSaveLine(id){
       if(!name || !name.trim()) return;
       const clean = name.trim();
       try {
-        await sbPost('kitchen_products', {category:KIM.category, name:clean});
+       await sbPost('kitchen_products', {category:KIM.category, name:clean, price:Number(prompt('Price for "'+clean+'" (₹, optional):'))||0});
         toast('Added ✓');
         await kiLoadManageList();
         kiRenderManageList();
@@ -1134,6 +1136,28 @@ async function kiSaveLine(id){
         if(String(e.message).includes('duplicate')) toast('That name already exists.');
         else toast('Add failed: '+e.message);
       }
+    }
+  async function kiSavePrice(id){
+      const el = document.getElementById('kim-price-'+id);
+      if(!el){ toast('Price field not found'); return; }
+      const price = Number(el.value)||0;
+      const p = KIM.products.find(x=>x.id===id);
+      const pname = p ? p.name : '';
+      try {
+        await sbPatch('kitchen_products', `?id=eq.${id}`, {price:price});
+        let synced = 0;
+        if(pname){
+          try {
+            const matches = await sbGet('purchase_products', `?name=eq.${encodeURIComponent(pname)}&select=id`);
+            if(matches && matches.length){
+              await sbPatch('purchase_products', `?name=eq.${encodeURIComponent(pname)}`, {rate:price});
+              synced = matches.length;
+            }
+          } catch(e){ /* purchase sync is best-effort */ }
+        }
+        if(p) p.price = price;
+        toast(synced ? `Saved \u2713 (also updated ${synced} Purchase item${synced>1?'s':''})` : 'Saved \u2713');
+      } catch(e){ toast('Save failed: '+e.message); }
     }
 
     async function kiRenameProduct(id){
