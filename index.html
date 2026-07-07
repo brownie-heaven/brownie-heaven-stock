@@ -4734,9 +4734,7 @@ async function accExport(){
 }
 
   async function accCatOpen(){
-  var pin=prompt('Admin PIN to manage items:');
-  if(pin!=='9999'){ if(pin!==null)alert('Wrong PIN'); return; }
-  await accLoadCatalog();
+   await accLoadCatalog();
   if(!ACC_CATALOG.length||ACC_CATALOG[0].items[0].id===undefined){alert('Could not load items from database. Please try again.');return;}
   renderAccCatalog();
 }
