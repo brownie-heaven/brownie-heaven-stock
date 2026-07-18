@@ -4284,7 +4284,7 @@ async function hlChangeDate(outlet, oldDate, newDate){
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
 const SL_HOTELS=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)','Jalpaan','Food Nirvana','Abids','Juice World','Flower Drum','Thalapakati','Veda Dairy','Roll Baby Roll','Frutta','Far East','Sona Foods (Sangam)'];
-const ACC_HOTELS=SL_HOTELS;const SL_CATALOG=[{cat:'Cakes – ½ kg',items:[
+const ACC_HOTELS=SL_HOTELS;let SL_CATALOG=[{cat:'Cakes – ½ kg',items:[
     {name:'Chocolate Truffle 1/2kg',rate:595},{name:'Overloaded Cake 750g',rate:775},
     {name:'Tiramisu Cake 1/2kg',rate:595},{name:'Triple Chocolate Truffle 1/2kg',rate:695},
     {name:'Butterscotch Cake 1/2kg',rate:695},{name:'Biscoff Cake 1/2kg',rate:695},
@@ -4439,7 +4439,114 @@ function slGroupHistory(){
   return Object.values(g).sort((a,b)=>b.date.localeCompare(a.date)||a.outlet.localeCompare(b.outlet));
 }
 
+async function slLoadCatalog(){
+  try{
+    const rows=await sbGet('supply_catalog','?active=eq.true&order=sort_order');
+    if(rows&&rows.length){
+      const groups=[];const idx={};
+      rows.forEach(function(r){
+        if(idx[r.category]===undefined){idx[r.category]=groups.length;groups.push({cat:r.category,items:[]});}
+        groups[idx[r.category]].items.push({id:r.id,name:r.name,rate:Number(r.rate)});
+      });
+      SL_CATALOG=groups;
+      SL.catalogLoaded=true;
+    }
+  }catch(e){/* keep hardcoded fallback */}
+}
+
+async function slCatOpen(){
+  await slLoadCatalog();
+  if(!SL_CATALOG.length||SL_CATALOG[0].items[0].id===undefined){alert('Could not load items from database. Please try again.');return;}
+  renderSlCatalog();
+}
+
+async function slCatAdd(){
+  var cat=(document.getElementById('slnew-category')||{}).value||'';
+  var name=(document.getElementById('slnew-name')||{}).value||'';
+  var rate=(document.getElementById('slnew-rate')||{}).value||'';
+  if(!cat.trim()||!name.trim()){alert('Enter both category and item name');return;}
+  try{
+    await sbPost('supply_catalog',[{category:cat.trim(),name:name.trim(),rate:Number(rate)||0,sort_order:9999,active:true}]);
+    await slLoadCatalog();toast('Item added');renderSlCatalog();
+  }catch(e){toast('Error: '+e.message);}
+}
+
+async function slCatSave(id){
+  var name=(document.getElementById('slci-name-'+id)||{}).value||'';
+  var rate=(document.getElementById('slci-rate-'+id)||{}).value||'';
+  var cat=(document.getElementById('slci-cat-'+id)||{}).value||'';
+  if(!name.trim()){alert('Name cannot be empty');return;}
+  try{
+    var r=await fetch(`${SB_URL}/rest/v1/supply_catalog?id=eq.`+id,{
+      method:'PATCH',
+      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({name:name.trim(),rate:Number(rate)||0,category:cat.trim()})
+    });
+    if(!r.ok)throw new Error(await r.text());
+    await slLoadCatalog();toast('Saved');renderSlCatalog();
+  }catch(e){toast('Error: '+e.message);}
+}
+
+async function slCatRemove(id){
+  var name=(document.getElementById('slci-name-'+id)||{}).value||'this item';
+  if(!confirm('Remove "'+name+'" from the list?'))return;
+  try{
+    var r=await fetch(`${SB_URL}/rest/v1/supply_catalog?id=eq.`+id,{
+      method:'PATCH',
+      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({active:false})
+    });
+    if(!r.ok)throw new Error(await r.text());
+    await slLoadCatalog();toast('Removed');renderSlCatalog();
+  }catch(e){toast('Error: '+e.message);}
+}
+
+function renderSlCatalog(){
+  setHdr('Dashboard',true);
+  var cats=SL_CATALOG.map(function(g){return g.cat;});
+  var catOptions=cats.map(function(c){return '<option value="'+String(c).replace(/"/g,'&quot;')+'">'+c+'</option>';}).join('');
+  var body=SL_CATALOG.map(function(group){
+    var rows=group.items.map(function(p){
+      return '<tr>'
+        +'<td style="padding:5px 6px;border-bottom:.5px solid #f0f0ee">'
+        +'<input id="slci-name-'+p.id+'" value="'+String(p.name).replace(/"/g,'&quot;')+'" style="width:100%;font-size:13px;padding:5px 6px;border:.5px solid #d5d5d0;border-radius:4px;font-family:var(--font)">'
+        +'<input id="slci-cat-'+p.id+'" type="hidden" value="'+String(group.cat).replace(/"/g,'&quot;')+'"></td>'
+        +'<td style="padding:5px 6px;border-bottom:.5px solid #f0f0ee;width:100px">'
+        +'<input id="slci-rate-'+p.id+'" type="number" step="0.01" value="'+p.rate+'" style="width:100%;font-size:13px;padding:5px 6px;border:.5px solid #d5d5d0;border-radius:4px;text-align:right;font-family:var(--mono)"></td>'
+        +'<td style="padding:5px 6px;border-bottom:.5px solid #f0f0ee;width:150px;white-space:nowrap">'
+        +'<button onclick="slCatSave('+p.id+')" style="font-size:12px;padding:5px 10px;border-radius:5px;cursor:pointer;border:.5px solid #1D9E75;color:#0F6E56;background:none;font-family:var(--font)">Save</button> '
+        +'<button onclick="slCatRemove('+p.id+')" style="font-size:12px;padding:5px 10px;border-radius:5px;cursor:pointer;border:.5px solid #e24b4a;color:#e24b4a;background:none;font-family:var(--font)">Remove</button>'
+        +'</td></tr>';
+    }).join('');
+    return '<div style="margin-bottom:1.25rem">'
+      +'<div style="font-size:11px;font-weight:600;color:#1D9E75;text-transform:uppercase;letter-spacing:.05em;padding:6px 0 4px;border-bottom:1px solid #E1F5EE">'+group.cat+'</div>'
+      +'<table style="width:100%;border-collapse:collapse"><tbody>'+rows+'</tbody></table></div>';
+  }).join('');
+  document.getElementById('screen').innerHTML=
+    '<div style="padding:0 0 3rem">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin:12px 0 1.25rem">'
+    +'<button onclick="SL.catalogLoaded=false;SL.view=\'entry\';renderSupplyLedger()" style="font-size:13px;padding:7px 14px;border-radius:8px;cursor:pointer;border:.5px solid #d5d5d0;background:none;color:#555;font-family:var(--font)">&#8592; Back to entry</button>'
+    +'<span style="font-size:15px;font-weight:600">Manage items</span>'
+    +'</div>'
+    +'<div style="background:#fafaf8;border:.5px solid #e5e5e3;border-radius:10px;padding:14px 16px;margin-bottom:1.5rem">'
+    +'<div style="font-size:12px;font-weight:600;color:#0F6E56;margin-bottom:10px">Add new item</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 90px auto;gap:8px;align-items:end">'
+    +'<div><label style="font-size:11px;color:#666;display:block;margin-bottom:3px">Category</label>'
+    +'<input id="slnew-category" list="slcatlist" placeholder="Type or pick" style="width:100%;font-size:13px;padding:7px 8px;border:.5px solid #d5d5d0;border-radius:6px;font-family:var(--font)">'
+    +'<datalist id="slcatlist">'+catOptions+'</datalist></div>'
+    +'<div><label style="font-size:11px;color:#666;display:block;margin-bottom:3px">Item name</label>'
+    +'<input id="slnew-name" placeholder="e.g. New Cake 1/2kg" style="width:100%;font-size:13px;padding:7px 8px;border:.5px solid #d5d5d0;border-radius:6px;font-family:var(--font)"></div>'
+    +'<div><label style="font-size:11px;color:#666;display:block;margin-bottom:3px">Rate</label>'
+    +'<input id="slnew-rate" type="number" step="0.01" placeholder="0" style="width:100%;font-size:13px;padding:7px 8px;border:.5px solid #d5d5d0;border-radius:6px;text-align:right;font-family:var(--mono)"></div>'
+    +'<button onclick="slCatAdd()" style="background:#1D9E75;color:white;border:none;padding:8px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500;font-family:var(--font)">Add</button>'
+    +'</div></div>'
+    +body
+    +'</div>';
+}
+
+
 async function renderSupplyLedger(){
+  if(!SL.catalogLoaded)await slLoadCatalog();
   setHdr('Dashboard',true);
   if(!SL.history.length)await slLoadHistory();
   const daily=slCalcDaily();
@@ -4533,6 +4640,7 @@ var outletOptions=activeList.map(function(o){return '<option value="'+o+'" '+(SL
     +'<button onclick="SL.view=\'entry\';renderSupplyLedger()" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(SL.view==='entry'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(SL.view==='entry'?'#0F6E56':'#888')+';font-weight:'+(SL.view==='entry'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">New entry'+(SL.editKey?' (editing)':'')+'</button>'
     +'<button onclick="SL.view=\'history\';slLoadHistory().then(function(){renderSupplyLedger();})" style="padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;border-bottom:'+(SL.view==='history'?'2px solid #1D9E75':'2px solid transparent')+';color:'+(SL.view==='history'?'#0F6E56':'#888')+';font-weight:'+(SL.view==='history'?'500':'400')+';margin-bottom:-1px;font-family:var(--font)">History '+(groups.length?'('+groups.length+')':'')+'</button>'
     +'</div>'
+    +'<button onclick="slCatOpen()" style="margin-left:auto;padding:8px 14px;font-size:13px;cursor:pointer;background:none;border:none;color:#888;font-family:var(--font)">⚙ Manage items</button>'
 
     +(SL.view==='entry'?
       // ENTRY VIEW
