@@ -4832,19 +4832,46 @@ async function accSave(){
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
   const active=Object.entries(ACC.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l])=>{
     const def=ACC_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);
-    return{outlet:ACC.outlet,date:ACC.date,product:name,category:def?def.cat:'Other',qty:Number(l.qty),rate:Number(l.rate)};
+    return{outlet:ACC.outlet,date:ACC.date,product:name,category:def?def.cat:'Other',qty:Number(l.qty),rate:Number(l.rate),_catId:def?def.id:null,_oldRate:def?Number(def.rate):null};
   });
   if(!ACC.outlet){alert('Select an outlet');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
   if(!active.length){alert('Enter at least one quantity');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
+
+  // Check for price changes
+  const changed = active.filter(a => {
+    if(!a._catId || a._oldRate === null) return false;
+    return Math.abs(Number(a.rate) - Number(a._oldRate)) > 0.001;
+  });
+  if(changed.length){
+    const list = changed.map(c => `• ${c.product}: ₹${c._oldRate} → ₹${c.rate}`).join('\n');
+    const msg = `Price changed for ${changed.length} item(s):\n\n${list}\n\nUpdate master price for future entries?`;
+    if(confirm(msg)){
+      for(const c of changed){
+        try{
+          await fetch(`${SB_URL}/rest/v1/accessories_catalog?id=eq.${c._catId}`,{
+            method:'PATCH',
+            headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+            body:JSON.stringify({rate:Number(c.rate)})
+          });
+          ACC_CATALOG.forEach(g => g.items.forEach(it => {
+            if(it.id === c._catId) it.rate = Number(c.rate);
+          }));
+        }catch(e){/* silent */}
+      }
+      toast('Master prices updated');
+    }
+  }
+
+  const toSave = active.map(({_catId,_oldRate,...rest}) => rest);
+
   try{
     await sbDelete('accessories_ledger',`?outlet=eq.${encodeURIComponent(ACC.outlet)}&date=eq.${ACC.date}`);
-    await sbPost('accessories_ledger',active);
+    await sbPost('accessories_ledger',toSave);
     ACC.editKey=null;ACC.lines={};
     toast('Accessories entry saved!');
     await accLoadHistory();renderAccessoriesLedger();
   }catch(e){toast('Error: '+e.message);if(btn){btn.disabled=false;btn.textContent='Save entry';}}
 }
-
 async function accDelete(outlet,date){
   if(!confirm('Delete all entries for '+outlet+' on '+date+'?'))return;
   try{await sbDelete('accessories_ledger',`?outlet=eq.${encodeURIComponent(outlet)}&date=eq.${date}`);toast('Deleted');await accLoadHistory();renderAccessoriesLedger();}
