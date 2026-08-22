@@ -4396,13 +4396,37 @@ function slWhatsApp(){
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
   const active=Object.entries(SL.lines).filter(([,l])=>Number(l.qty)>0).map(([name,l])=>{
     const def=SL_CATALOG.flatMap(g=>g.items).find(p=>p.name===name);
-    return{outlet:SL.outlet,date:SL.date,product:name,category:def?def.cat:'Other',qty:Number(l.qty),rate:Number(l.rate)};
+    return{outlet:SL.outlet,date:SL.date,product:name,category:def?def.cat:'Other',qty:Number(l.qty),rate:Number(l.rate),_catId:def?def.id:null,_oldRate:def?Number(def.rate):null};
   });
   if(!SL.outlet){alert('Select an outlet');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
   if(!active.length){alert('Enter at least one product quantity');if(btn){btn.disabled=false;btn.textContent='Save entry';}return;}
+
+  // Check for price changes and ask about master update
+  const changed = active.filter(a => a._catId && a._oldRate !== null && Number(a.rate) !== a._oldRate);
+  if(changed.length){
+    const list = changed.map(c => `• ${c.product}: ₹${c._oldRate} → ₹${c.rate}`).join('\n');
+    const msg = `Price changed for ${changed.length} item(s):\n\n${list}\n\nUpdate master price for future entries?`;
+    if(confirm(msg)){
+      for(const c of changed){
+        try{
+          await fetch(`${SB_URL}/rest/v1/supply_catalog?id=eq.${c._catId}`,{
+            method:'PATCH',
+            headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+            body:JSON.stringify({rate:Number(c.rate)})
+          });
+        }catch(e){/* silent, entry still saves */}
+      }
+      // Refresh in-memory catalog so UI shows new master rate next time
+      await slLoadCatalog();
+    }
+  }
+
+  // Strip helper fields before insert
+  const toSave = active.map(({_catId,_oldRate,...rest}) => rest);
+
   try{
     await sbDelete('outlet_supply_ledger',`?outlet=eq.${encodeURIComponent(SL.outlet)}&date=eq.${SL.date}`);
-    await sbPost('outlet_supply_ledger',active);
+    await sbPost('outlet_supply_ledger',toSave);
     SL.editKey=null;SL.lines={};
     toast('Supply entry saved!');
     await slLoadHistory();renderSupplyLedger();
