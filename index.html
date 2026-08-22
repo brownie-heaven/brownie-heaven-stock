@@ -4407,17 +4407,20 @@ function slWhatsApp(){
     const list = changed.map(c => `• ${c.product}: ₹${c._oldRate} → ₹${c.rate}`).join('\n');
     const msg = `Price changed for ${changed.length} item(s):\n\n${list}\n\nUpdate master price for future entries?`;
     if(confirm(msg)){
-      for(const c of changed){
+           for(const c of changed){
         try{
           await fetch(`${SB_URL}/rest/v1/supply_catalog?id=eq.${c._catId}`,{
             method:'PATCH',
             headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
             body:JSON.stringify({rate:Number(c.rate)})
           });
+          // Update in-memory catalog immediately so next render shows new rate
+          SL_CATALOG.forEach(g => g.items.forEach(it => {
+            if(it.id === c._catId) it.rate = Number(c.rate);
+          }));
         }catch(e){/* silent, entry still saves */}
       }
-      // Refresh in-memory catalog so UI shows new master rate next time
-      await slLoadCatalog();
+      toast('Master prices updated');
     }
   }
 
