@@ -4345,8 +4345,8 @@ function chqOnFile(which, input){
 }
 
 async function chqSave(){
-  if(!CHQ.selectedSupplier){ alert('Pick a supplier.'); return; }
-  if(CHQ.selectedSupplier==='__new__' && !CHQ.newSupplierName.trim()){ alert("Enter the new supplier's name."); return; }
+  const typedName = (document.getElementById('chq-supplier-input')?.value || '').trim();
+  if(!typedName){ alert('Type or pick a supplier.'); return; }
   const amt = Number(document.getElementById('chq-amount')?.value || CHQ.amount);
   if(!amt || amt<=0){ alert('Enter a valid amount.'); return; }
   const dateVal = document.getElementById('chq-date')?.value || CHQ.dateIssued;
@@ -4354,10 +4354,12 @@ async function chqSave(){
 
   CHQ.saving = true; renderChequeLedger();
   try{
-    let supplierId = CHQ.selectedSupplier;
-    let supplierName = (CHQ.suppliers.find(s=>s.id===CHQ.selectedSupplier)||{}).name || '';
-    if(CHQ.selectedSupplier==='__new__'){
-      const created = await sbPost('cheque_suppliers', {name: CHQ.newSupplierName.trim()});
+    let match = CHQ.suppliers.find(s=>s.name.toLowerCase()===typedName.toLowerCase());
+    let supplierId, supplierName;
+    if(match){
+      supplierId = match.id; supplierName = match.name;
+    } else {
+      const created = await sbPost('cheque_suppliers', {name: typedName});
       supplierId = created[0].id;
       supplierName = created[0].name;
     }
@@ -4462,20 +4464,13 @@ async function renderChequeLedger(){
   var formHtml = !CHQ.formOpen ? '' : (
     '<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:20px 22px;margin-top:16px">'
     +'<div style="font-family:Georgia,serif;font-size:17px;font-weight:600;color:'+C.ink+';margin-bottom:14px">Add a cheque</div>'
+       +'<datalist id="chq-supplier-list">'+CHQ.suppliers.map(function(s){return '<option value="'+s.name+'">';}).join('')+'</datalist>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
-      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Supplier</label>'
-      +'<select onchange="CHQ.selectedSupplier=this.value;renderChequeLedger()" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px">'
-      +'<option value="">— pick —</option>'+supplierOptions+'<option value="__new__">+ Add new supplier</option></select></div>'
-      +(CHQ.selectedSupplier==='__new__'
-        ? '<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">New supplier name</label>'
-          +'<input type="text" oninput="CHQ.newSupplierName=this.value" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
-        : '<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Amount (₹)</label>'
-          +'<input id="chq-amount" type="number" placeholder="e.g. 25000" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>')
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Supplier — type to search or add new</label>'
+      +'<input id="chq-supplier-input" type="text" list="chq-supplier-list" placeholder="Start typing…" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Amount (₹)</label>'
+      +'<input id="chq-amount" type="number" placeholder="e.g. 25000" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
     +'</div>'
-    +(CHQ.selectedSupplier==='__new__'
-      ? '<div style="margin-bottom:12px"><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Amount (₹)</label>'
-        +'<input id="chq-amount" type="number" placeholder="e.g. 25000" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
-      : '')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
       +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Date issued</label>'
       +'<input id="chq-date" type="date" value="'+CHQ.dateIssued+'" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
