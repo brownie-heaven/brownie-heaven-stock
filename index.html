@@ -4367,11 +4367,13 @@ async function chqSave(){
     if(CHQ.photoFront) frontUrl = await chqUploadPhoto(CHQ.photoFront, 'front');
     if(CHQ.photoBack) backUrl = await chqUploadPhoto(CHQ.photoBack, 'back');
 
+       const invoiceVal = document.getElementById('chq-invoice')?.value || '';
     await sbPost('cheques', {
       supplier_id: supplierId,
       supplier_name: supplierName,
       amount: amt,
       date_issued: dateVal,
+      invoice_number: invoiceVal.trim() || null,
       photo_front_url: frontUrl,
       photo_back_url: backUrl,
       notes: notesVal.trim() || null
@@ -4454,7 +4456,7 @@ async function renderChequeLedger(){
         var statusColor = c.status==='cleared' ? C.brass : C.rust;
         return '<tr style="border-bottom:1px solid '+C.line+'">'
           +'<td style="padding:8px 10px;font-family:monospace;font-size:12px;color:'+C.inkSoft+'">'+c.date_issued+'</td>'
-          +'<td style="padding:8px 10px;font-size:13px;font-weight:600;color:'+C.ink+'">'+c.supplier_name+'</td>'
+          +'<td style="padding:8px 10px;font-size:13px;font-weight:600;color:'+C.ink+'">'+c.supplier_name+(c.invoice_number?'<br><span style="font-family:monospace;font-size:10px;color:'+C.inkSoft+'">Inv# '+c.invoice_number+'</span>':'')+'</td>'
           +'<td style="padding:8px 10px;text-align:right;font-family:monospace;font-size:13px;font-weight:600;color:'+C.ink+'">'+chqFmt(c.amount)+'</td>'
           +'<td style="padding:8px 10px">'+photoLink+'</td>'
           +'<td style="padding:8px 10px"><button onclick="chqToggleStatus(\''+c.id+'\',\''+c.status+'\')" style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-radius:100px;border:1.5px solid '+statusColor+';color:'+statusColor+';background:none;cursor:pointer">'+c.status+'</button></td>'
@@ -4471,12 +4473,14 @@ async function renderChequeLedger(){
       +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Amount (₹)</label>'
       +'<input id="chq-amount" type="number" placeholder="e.g. 25000" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
     +'</div>'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
+       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
       +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Date issued</label>'
       +'<input id="chq-date" type="date" value="'+CHQ.dateIssued+'" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
-      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Notes (optional)</label>'
-      +'<input id="chq-notes" type="text" placeholder="What is this for" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Invoice number</label>'
+      +'<input id="chq-invoice" type="text" placeholder="e.g. 4521/26" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
     +'</div>'
+    +'<div style="margin-bottom:12px"><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Notes (optional)</label>'
+      +'<input id="chq-notes" type="text" placeholder="What is this for" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'
       +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Cheque photo — front</label>'
       +'<input type="file" accept="image/*" onchange="chqOnFile(\'front\',this)" style="font-size:12px;color:'+C.inkSoft+'"></div>'
