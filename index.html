@@ -4281,6 +4281,242 @@ async function hlChangeDate(outlet, oldDate, newDate){
     renderHotelsLedger();
   }catch(e){toast('Error: '+e.message); await hlLoadHistory(); renderHotelsLedger();}
 }
+  // ============================================================
+// CHEQUE LEDGER — paste this whole block right after renderHotelsLedger
+// (or anywhere among your other render functions, order doesn't matter)
+// ============================================================
+
+var CHQ = {
+  suppliers: [],
+  rows: [],
+  formOpen: false,
+  selectedSupplier: '',
+  newSupplierName: '',
+  amount: '',
+  dateIssued: new Date().toISOString().slice(0,10),
+  photoFront: null,
+  photoBack: null,
+  notes: '',
+  saving: false
+};
+
+function chqFmt(n){ return '₹' + Math.round(Number(n)||0).toLocaleString('en-IN'); }
+
+async function chqLoadSuppliers(){
+  CHQ.suppliers = await sbGet('cheque_suppliers', '?select=*&order=name.asc');
+}
+async function chqLoadRows(){
+  CHQ.rows = await sbGet('cheques', '?select=*&order=date_issued.desc');
+}
+
+async function chqUploadPhoto(file, label){
+  const ext = (file.name.split('.').pop() || 'jpg');
+  const path = Date.now() + '_' + label + '.' + ext;
+  const r = await fetch(`${SB_URL}/storage/v1/object/cheque-photos/${path}`, {
+    method: 'POST',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': `Bearer ${SB_KEY}`,
+      'Content-Type': file.type || 'image/jpeg'
+    },
+    body: file
+  });
+  if(!r.ok){ toast('Photo upload failed: ' + await r.text()); return null; }
+  return `${SB_URL}/storage/v1/object/public/cheque-photos/${path}`;
+}
+
+function chqOnFile(which, input){
+  const f = input.files && input.files[0] ? input.files[0] : null;
+  if(which==='front') CHQ.photoFront = f;
+  else CHQ.photoBack = f;
+}
+
+async function chqSave(){
+  if(!CHQ.selectedSupplier){ alert('Pick a supplier.'); return; }
+  if(CHQ.selectedSupplier==='__new__' && !CHQ.newSupplierName.trim()){ alert("Enter the new supplier's name."); return; }
+  const amt = Number(document.getElementById('chq-amount')?.value || CHQ.amount);
+  if(!amt || amt<=0){ alert('Enter a valid amount.'); return; }
+  const dateVal = document.getElementById('chq-date')?.value || CHQ.dateIssued;
+  const notesVal = document.getElementById('chq-notes')?.value || '';
+
+  CHQ.saving = true; renderChequeLedger();
+  try{
+    let supplierId = CHQ.selectedSupplier;
+    let supplierName = (CHQ.suppliers.find(s=>s.id===CHQ.selectedSupplier)||{}).name || '';
+    if(CHQ.selectedSupplier==='__new__'){
+      const created = await sbPost('cheque_suppliers', {name: CHQ.newSupplierName.trim()});
+      supplierId = created[0].id;
+      supplierName = created[0].name;
+    }
+    let frontUrl = null, backUrl = null;
+    if(CHQ.photoFront) frontUrl = await chqUploadPhoto(CHQ.photoFront, 'front');
+    if(CHQ.photoBack) backUrl = await chqUploadPhoto(CHQ.photoBack, 'back');
+
+    await sbPost('cheques', {
+      supplier_id: supplierId,
+      supplier_name: supplierName,
+      amount: amt,
+      date_issued: dateVal,
+      photo_front_url: frontUrl,
+      photo_back_url: backUrl,
+      notes: notesVal.trim() || null
+    });
+    toast('Cheque saved ✓');
+    CHQ.selectedSupplier=''; CHQ.newSupplierName=''; CHQ.amount=''; CHQ.photoFront=null; CHQ.photoBack=null; CHQ.notes=''; CHQ.formOpen=false;
+    await chqLoadSuppliers();
+    await chqLoadRows();
+  }catch(e){
+    alert('Save failed: ' + (e?.message || e));
+  }
+  CHQ.saving = false;
+  renderChequeLedger();
+}
+
+async function chqToggleStatus(id, currentStatus){
+  const next = currentStatus==='cleared' ? 'pending' : 'cleared';
+  try{
+    await sbPatch('cheques', `?id=eq.${id}`, {status: next});
+    await chqLoadRows();
+    renderChequeLedger();
+  }catch(e){ toast('Error: '+e.message); }
+}
+
+async function renderChequeLedger(){
+  setHdr('Dashboard', true);
+  if(!CHQ.suppliers.length) await chqLoadSuppliers();
+  if(!CHQ.rows.length) await chqLoadRows();
+
+  // ---- palette: ledger / passbook theme ----
+  var C = { paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F', brass:'#9C7A2E', rust:'#9B3A22' };
+
+  // ---- Cash Runway: first 10 days of current month ----
+  var now = new Date();
+  var ym = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  var byDay = {};
+  CHQ.rows.forEach(function(c){
+    if((c.date_issued||'').slice(0,7)===ym){
+      var day = Number(c.date_issued.slice(8,10));
+      if(day>=1 && day<=10){
+        if(!byDay[day]) byDay[day] = {amount:0, cleared:true};
+        byDay[day].amount += Number(c.amount)||0;
+        if(c.status!=='cleared') byDay[day].cleared = false;
+      }
+    }
+  });
+  var todayDate = now.getDate();
+  var stubsHtml = '';
+  for(var d=1; d<=10; d++){
+    var info = byDay[d];
+    var isToday = d===todayDate;
+    stubsHtml += '<div style="position:relative;padding:10px 6px 12px;border-right:1px dashed '+C.line+';text-align:center;display:flex;flex-direction:column;gap:5px;min-height:92px;'+(isToday?'background:rgba(156,122,46,0.10)':'')+'">'
+      +'<span style="font-family:monospace;font-size:9px;color:'+(isToday?C.brass:C.inkSoft)+';font-weight:'+(isToday?'700':'400')+'">'+d+(isToday?' · today':'')+'</span>'
+      +'<span style="font-family:monospace;font-size:11px;font-weight:600;color:'+(info?C.ink:C.line)+'">'+(info?chqFmt(info.amount):'—')+'</span>'
+      +(info?'<span style="margin-top:auto;font-family:monospace;font-size:7.5px;letter-spacing:.5px;text-transform:uppercase;padding:2px 4px;border-radius:3px;border:1px solid currentColor;color:'+(info.cleared?C.brass:C.rust)+';align-self:center">'+(info.cleared?'Cleared':'Pending')+'</span>':'')
+      +'</div>';
+  }
+
+  // ---- totals ----
+  var totalIssued=0, totalCleared=0, totalPending=0;
+  CHQ.rows.forEach(function(c){
+    var a = Number(c.amount)||0;
+    totalIssued += a;
+    if(c.status==='cleared') totalCleared += a; else totalPending += a;
+  });
+
+  // ---- supplier dropdown options ----
+  var supplierOptions = CHQ.suppliers.map(function(s){
+    return '<option value="'+s.id+'" '+(CHQ.selectedSupplier===s.id?'selected':'')+'>'+s.name+'</option>';
+  }).join('');
+
+  // ---- register rows ----
+  var registerHtml = CHQ.rows.length===0
+    ? '<tr><td colspan="5" style="padding:16px;text-align:center;color:'+C.inkSoft+';font-size:13px">No cheques logged yet.</td></tr>'
+    : CHQ.rows.map(function(c){
+        var photoLink = c.photo_front_url
+          ? '<a href="'+c.photo_front_url+'" target="_blank" style="color:'+C.brass+';font-size:12px;text-decoration:underline">View</a>'
+          : '<span style="color:'+C.line+';font-size:12px">—</span>';
+        var statusColor = c.status==='cleared' ? C.brass : C.rust;
+        return '<tr style="border-bottom:1px solid '+C.line+'">'
+          +'<td style="padding:8px 10px;font-family:monospace;font-size:12px;color:'+C.inkSoft+'">'+c.date_issued+'</td>'
+          +'<td style="padding:8px 10px;font-size:13px;font-weight:600;color:'+C.ink+'">'+c.supplier_name+'</td>'
+          +'<td style="padding:8px 10px;text-align:right;font-family:monospace;font-size:13px;font-weight:600;color:'+C.ink+'">'+chqFmt(c.amount)+'</td>'
+          +'<td style="padding:8px 10px">'+photoLink+'</td>'
+          +'<td style="padding:8px 10px"><button onclick="chqToggleStatus(\''+c.id+'\',\''+c.status+'\')" style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-radius:100px;border:1.5px solid '+statusColor+';color:'+statusColor+';background:none;cursor:pointer">'+c.status+'</button></td>'
+          +'</tr>';
+      }).join('');
+
+  var formHtml = !CHQ.formOpen ? '' : (
+    '<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:20px 22px;margin-top:16px">'
+    +'<div style="font-family:Georgia,serif;font-size:17px;font-weight:600;color:'+C.ink+';margin-bottom:14px">Add a cheque</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Supplier</label>'
+      +'<select onchange="CHQ.selectedSupplier=this.value;renderChequeLedger()" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px">'
+      +'<option value="">— pick —</option>'+supplierOptions+'<option value="__new__">+ Add new supplier</option></select></div>'
+      +(CHQ.selectedSupplier==='__new__'
+        ? '<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">New supplier name</label>'
+          +'<input type="text" oninput="CHQ.newSupplierName=this.value" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+        : '<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Amount (₹)</label>'
+          +'<input id="chq-amount" type="number" placeholder="e.g. 25000" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>')
+    +'</div>'
+    +(CHQ.selectedSupplier==='__new__'
+      ? '<div style="margin-bottom:12px"><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Amount (₹)</label>'
+        +'<input id="chq-amount" type="number" placeholder="e.g. 25000" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+      : '')
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Date issued</label>'
+      +'<input id="chq-date" type="date" value="'+CHQ.dateIssued+'" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Notes (optional)</label>'
+      +'<input id="chq-notes" type="text" placeholder="What is this for" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Cheque photo — front</label>'
+      +'<input type="file" accept="image/*" onchange="chqOnFile(\'front\',this)" style="font-size:12px;color:'+C.inkSoft+'"></div>'
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Cheque photo — back (optional)</label>'
+      +'<input type="file" accept="image/*" onchange="chqOnFile(\'back\',this)" style="font-size:12px;color:'+C.inkSoft+'"></div>'
+    +'</div>'
+    +'<button onclick="chqSave()" '+(CHQ.saving?'disabled':'')+' style="background:'+C.brass+';color:'+C.paper+';border:none;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 10px rgba(0,0,0,0.15)">'+(CHQ.saving?'Saving…':'Save Cheque')+'</button>'
+    +'</div>'
+  );
+
+  document.getElementById('screen').innerHTML =
+    '<div style="padding:0 0 3rem;font-family:Georgia,serif;color:'+C.ink+'">'
+
+    // header
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;border-bottom:2px solid '+C.ink+';padding-bottom:16px;margin-bottom:22px;margin-top:12px">'
+      +'<div><div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:4px">Brownie Heaven · Production Stock</div>'
+      +'<div style="font-size:30px;font-weight:700;letter-spacing:-.01em">Cheque Ledger</div></div>'
+      +'<button onclick="CHQ.formOpen=!CHQ.formOpen;renderChequeLedger()" style="font-family:Arial,sans-serif;font-weight:600;font-size:13px;background:'+C.brass+';color:'+C.paper+';border:none;padding:9px 16px;border-radius:6px;cursor:pointer">'+(CHQ.formOpen?'Close':'+ Add Cheque')+'</button>'
+    +'</div>'
+
+    // cash runway
+    +'<div style="margin-bottom:26px">'
+      +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:4px">First 10 days</div>'
+      +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600;margin-bottom:12px">Cash Runway — this month</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(10,1fr);background:'+C.card+';border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,0.10);overflow:hidden;border:1px solid '+C.line+'">'+stubsHtml+'</div>'
+    +'</div>'
+
+    // summary cards
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:26px">'
+      +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px"><div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">Total Issued</div><div style="font-family:Georgia,serif;font-size:21px;font-weight:700">'+chqFmt(totalIssued)+'</div></div>'
+      +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px"><div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">Cleared</div><div style="font-family:Georgia,serif;font-size:21px;font-weight:700;color:'+C.brass+'">'+chqFmt(totalCleared)+'</div></div>'
+      +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px"><div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">Pending</div><div style="font-family:Georgia,serif;font-size:21px;font-weight:700;color:'+C.rust+'">'+chqFmt(totalPending)+'</div></div>'
+    +'</div>'
+
+    +formHtml
+
+    // register
+    +'<div style="margin-top:26px">'
+      +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:4px">Register</div>'
+      +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600;margin-bottom:12px">All cheques</div>'
+      +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,0.10)">'
+      +'<table style="width:100%;border-collapse:collapse">'
+      +'<thead><tr style="background:'+C.ink+'"><th style="padding:9px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Date</th><th style="padding:9px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Paid to</th><th style="padding:9px 10px;text-align:right;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Amount</th><th style="padding:9px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Photo</th><th style="padding:9px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Status</th></tr></thead>'
+      +'<tbody>'+registerHtml+'</tbody>'
+      +'</table></div>'
+    +'</div>'
+
+    +'</div>';
+}
 
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
