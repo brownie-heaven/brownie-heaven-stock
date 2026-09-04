@@ -4292,6 +4292,13 @@ async function hlChangeDate(outlet, oldDate, newDate){
   rows: [],
   balance: null,
   formOpen: false,
+  gpayFormOpen: false,
+  gpayRows: [],
+  gpayLabel: '',
+  gpayAmount: '',
+  gpayDate: new Date().toISOString().slice(0,10),
+  gpayPhoto: null,
+  gpaySaving: false,
   entryMode: 'manual',
   purchaseDate: new Date().toISOString().slice(0,10),
   purchaseBills: [],
@@ -4330,6 +4337,30 @@ async function chqLoadRows(){
 function chqPickPurchaseBill(agency, amount){
   CHQ.prefillSupplier = agency;
   CHQ.prefillAmount = amount;
+  renderChequeLedger();
+}
+  async function chqLoadGpay(){
+  CHQ.gpayRows = await sbGet('gpay_debits', '?select=*&order=date_issued.desc');
+}
+function chqGpayOnFile(input){
+  CHQ.gpayPhoto = input.files && input.files[0] ? input.files[0] : null;
+}
+async function chqGpaySave(){
+  var labelVal = document.getElementById('chq-gpay-label')?.value || '';
+  var amtVal = Number(document.getElementById('chq-gpay-amount')?.value);
+  var dateVal = document.getElementById('chq-gpay-date')?.value || CHQ.gpayDate;
+  if(!labelVal.trim()){ alert('Enter what this was for.'); return; }
+  if(!amtVal || amtVal<=0){ alert('Enter a valid amount.'); return; }
+  CHQ.gpaySaving = true; renderChequeLedger();
+  try{
+    var photoUrl = null;
+    if(CHQ.gpayPhoto) photoUrl = await chqUploadPhoto(CHQ.gpayPhoto, 'gpay');
+    await sbPost('gpay_debits', {label: labelVal.trim(), amount: amtVal, date_issued: dateVal, photo_url: photoUrl});
+    toast('Saved ✓');
+    CHQ.gpayLabel=''; CHQ.gpayAmount=''; CHQ.gpayPhoto=null; CHQ.gpayFormOpen=false;
+    await chqLoadGpay();
+  }catch(e){ alert('Save failed: ' + (e?.message||e)); }
+  CHQ.gpaySaving = false;
   renderChequeLedger();
 }
 async function chqLoadBalance(){
@@ -4423,9 +4454,9 @@ async function chqToggleStatus(id, currentStatus){
 
 async function renderChequeLedger(){
   setHdr('Dashboard', true);
-  if(!CHQ.suppliers.length) await chqLoadSuppliers();
+   if(!CHQ.suppliers.length) await chqLoadSuppliers();
   if(!CHQ.rows.length) await chqLoadRows();
-  if(CHQ.balance===null) await chqLoadBalance();
+  if(!CHQ.gpayRows.length) await chqLoadGpay();
 
   // ---- palette: ledger / passbook theme ----
   var C = { paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F', brass:'#9C7A2E', rust:'#9B3A22' };
