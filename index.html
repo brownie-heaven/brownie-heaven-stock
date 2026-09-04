@@ -4589,7 +4589,7 @@ async function renderChequeLedger(){
 
       +formHtml
 
-    // register
+        // register
     +'<div style="margin-top:26px">'
       +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:4px">Register</div>'
       +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600;margin-bottom:12px">All cheques</div>'
@@ -4598,6 +4598,39 @@ async function renderChequeLedger(){
       +'<thead><tr style="background:'+C.ink+'"><th style="padding:9px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Date</th><th style="padding:9px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Paid to</th><th style="padding:9px 10px;text-align:right;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Amount</th><th style="padding:9px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Photo</th><th style="padding:9px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase">Status</th></tr></thead>'
       +'<tbody>'+registerHtml+'</tbody>'
       +'</table></div>'
+    +'</div>'
+
+    // gpay / personal
+    +'<div style="margin-top:32px;padding-top:24px;border-top:2px solid '+C.ink+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+        +'<div><div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+'">Not tied to a supplier</div>'
+        +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600">GPay / Personal</div></div>'
+        +'<button onclick="CHQ.gpayFormOpen=!CHQ.gpayFormOpen;renderChequeLedger()" style="font-family:Arial,sans-serif;font-weight:600;font-size:12px;background:'+C.ink+';color:'+C.paper+';border:none;padding:8px 14px;border-radius:6px;cursor:pointer">'+(CHQ.gpayFormOpen?'Close':'+ Add')+'</button>'
+      +'</div>'
+      +(CHQ.gpayFormOpen
+        ? '<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:16px 18px;margin-top:12px">'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
+          +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">What was it for</label>'
+          +'<input id="chq-gpay-label" type="text" placeholder="e.g. Office water repair" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+          +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Amount (₹)</label>'
+          +'<input id="chq-gpay-amount" type="number" placeholder="e.g. 1500" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+          +'</div>'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'
+          +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Date</label>'
+          +'<input id="chq-gpay-date" type="date" value="'+CHQ.gpayDate+'" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+          +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Proof (optional)</label>'
+          +'<input type="file" accept="image/*" onchange="chqGpayOnFile(this)" style="font-size:12px;color:'+C.inkSoft+'"></div>'
+          +'</div>'
+          +'<button onclick="chqGpaySave()" '+(CHQ.gpaySaving?'disabled':'')+' style="background:'+C.ink+';color:'+C.paper+';border:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">'+(CHQ.gpaySaving?'Saving…':'Save')+'</button>'
+          +'</div>'
+        : '')
+      +'<div style="margin-top:14px">'
+      +(CHQ.gpayRows.length===0
+        ? '<p style="font-size:13px;color:'+C.inkSoft+'">Nothing logged yet.</p>'
+        : CHQ.gpayRows.map(function(g){
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid '+C.line+';font-size:13px"><div><span style="font-weight:600">'+g.label+'</span><span style="color:'+C.inkSoft+';font-family:monospace;font-size:11px;margin-left:8px">'+g.date_issued+'</span></div><div style="display:flex;align-items:center;gap:10px"><span style="font-family:monospace;font-weight:600">'+chqFmt(g.amount)+'</span>'+(g.photo_url?'<a href="'+g.photo_url+'" target="_blank" style="color:'+C.brass+';font-size:12px">View</a>':'')+'</div></div>';
+          }).join(''))
+      +'</div>'
     +'</div>'
 
     +'</div>';
