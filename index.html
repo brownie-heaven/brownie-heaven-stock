@@ -4511,38 +4511,7 @@ async function renderChequeLedger(){
       +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px"><div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">Pending</div><div style="font-family:Georgia,serif;font-size:21px;font-weight:700;color:'+C.rust+'">'+chqFmt(totalPending)+'</div></div>'
     +'</div>'
 
-       +formHtml
-
-    // low balance alert
-    +(CHQ.balance!==null && (CHQ.balance - totalPending) < 0
-      ? '<div style="background:'+C.rust+';color:'+C.paper+';font-weight:600;font-size:13px;padding:12px 16px;border-radius:8px;margin-bottom:20px;display:flex;align-items:center;gap:10px"><span>⚠️</span><span>Balance is running short against what\'s still pending — check before more cheques go out.</span></div>'
-      : (CHQ.balance!==null && (CHQ.balance - totalPending) < totalPending*0.25
-        ? '<div style="background:'+C.rust+';color:'+C.paper+';font-weight:600;font-size:13px;padding:12px 16px;border-radius:8px;margin-bottom:20px;display:flex;align-items:center;gap:10px"><span>⚠️</span><span>Balance is tight against what\'s still pending this window.</span></div>'
-        : ''))
-
-    // bank balance input
-    +'<div style="margin-bottom:26px">'
-      +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:4px">Enter manually</div>'
-      +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600;margin-bottom:6px">Bank Balance Left</div>'
-      +'<div style="font-size:12px;color:'+C.inkSoft+';margin-bottom:12px">Just the number that\'s left — nothing about the account itself.</div>'
-      +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
-      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Current balance (₹)</label>'
-      +'<input id="chq-balance-input" type="number" placeholder="e.g. 150000" value="'+(CHQ.balance||'')+'" style="width:220px;padding:9px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
-      +'<button onclick="chqSaveBalance()" style="background:'+C.ink+';color:'+C.paper+';border:none;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Update Status</button>'
-      +'</div>'
-    +'</div>'
-
-    // current status
-    +'<div style="margin-bottom:26px">'
-      +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:4px">Result</div>'
-      +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600;margin-bottom:12px">Current Status</div>'
-      +'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">'
-        +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px"><div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">Balance left</div><div style="font-family:Georgia,serif;font-size:19px;font-weight:700">'+(CHQ.balance!==null?chqFmt(CHQ.balance):'— not entered —')+'</div></div>'
-        +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px"><div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">Still pending</div><div style="font-family:Georgia,serif;font-size:19px;font-weight:700;color:'+C.rust+'">'+chqFmt(totalPending)+'</div></div>'
-        +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px"><div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">Projected after clearing</div><div style="font-family:Georgia,serif;font-size:19px;font-weight:700">'+(CHQ.balance!==null?chqFmt(CHQ.balance-totalPending):'—')+'</div></div>'
-        +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px"><div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">Verdict</div><div style="font-family:Georgia,serif;font-size:15px;font-weight:700;color:'+(CHQ.balance===null?C.inkSoft:(CHQ.balance-totalPending)<0?C.rust:(CHQ.balance-totalPending)<totalPending*0.25?C.rust:C.brass)+'">'+(CHQ.balance===null?'Enter balance above':(CHQ.balance-totalPending)<0?'Short by '+chqFmt(Math.abs(CHQ.balance-totalPending)):(CHQ.balance-totalPending)<totalPending*0.25?'Tight, but covered':'Healthy — covered')+'</div></div>'
-      +'</div>'
-    +'</div>'
+      +formHtml
 
     // register
     +'<div style="margin-top:26px">'
