@@ -4427,6 +4427,8 @@ async function chqSave(){
   if(!amt || amt<=0){ alert('Enter a valid amount.'); return; }
   const dateVal = document.getElementById('chq-date')?.value || CHQ.dateIssued;
   const notesVal = document.getElementById('chq-notes')?.value || '';
+  const manualInvoiceVal = document.getElementById('chq-invoice')?.value || '';
+  const pulledInvoices = Object.keys(CHQ.selectedInvoices || {});
 
   CHQ.saving = true; renderChequeLedger();
   try{
@@ -4443,19 +4445,36 @@ async function chqSave(){
     if(CHQ.photoFront) frontUrl = await chqUploadPhoto(CHQ.photoFront, 'front');
     if(CHQ.photoBack) backUrl = await chqUploadPhoto(CHQ.photoBack, 'back');
 
-       const invoiceVal = document.getElementById('chq-invoice')?.value || '';
-    await sbPost('cheques', {
+    const singleInvoiceLabel = pulledInvoices.length ? pulledInvoices.join(', ') : (manualInvoiceVal.trim() || null);
+
+    const createdCheque = await sbPost('cheques', {
       supplier_id: supplierId,
       supplier_name: supplierName,
       amount: amt,
       date_issued: dateVal,
-      invoice_number: invoiceVal.trim() || null,
+      invoice_number: singleInvoiceLabel,
       photo_front_url: frontUrl,
       photo_back_url: backUrl,
       notes: notesVal.trim() || null
     });
+    const chequeId = createdCheque[0].id;
+
+    if(pulledInvoices.length){
+      const invoiceRows = pulledInvoices.map(function(inv){
+        var found = (CHQ.purchaseInvoices||[]).find(function(x){ return x.invoice===inv; });
+        return {
+          cheque_id: chequeId,
+          invoice_number: inv,
+          invoice_date: found ? found.date : null,
+          amount: CHQ.selectedInvoices[inv]
+        };
+      });
+      await sbPost('cheque_invoices', invoiceRows);
+    }
+
     toast('Cheque saved ✓');
     CHQ.selectedSupplier=''; CHQ.newSupplierName=''; CHQ.amount=''; CHQ.photoFront=null; CHQ.photoBack=null; CHQ.notes=''; CHQ.formOpen=false;
+    CHQ.selectedInvoices={}; CHQ.purchaseInvoices=[]; CHQ.purchaseAgency='';
     await chqLoadSuppliers();
     await chqLoadRows();
   }catch(e){
@@ -4464,7 +4483,6 @@ async function chqSave(){
   CHQ.saving = false;
   renderChequeLedger();
 }
-
 async function chqToggleStatus(id, currentStatus){
   const next = currentStatus==='cleared' ? 'pending' : 'cleared';
   try{
