@@ -1818,8 +1818,12 @@ async function savePurchase(){
   const valid = purchaseRows.filter(r=>r.product && r.qty>0);
   if(!valid.length){alert('Please add at least one product with quantity');return;}
 
+   const missingInvoice = valid.find(r=>!r.invoice || !r.invoice.trim());
+  if(missingInvoice){alert('Every row needs an Invoice Number before saving.');return;}
+
   const rows = valid.map(r=>({
     date, agency:r.agency, product:r.product, category:r.category,
+    invoice_number: r.invoice.trim(),
     qty:r.qty, unit:r.unit, rate:r.rate,
     gst_percent:r.gst,
     gst_amount: (r.qty*r.rate*r.gst/100),
