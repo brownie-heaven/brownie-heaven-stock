@@ -1802,7 +1802,9 @@ function updatePurchaseTotal(){
 
 function addPurchaseRow(){
   purchaseRowId++;
-  purchaseRows.push({id:purchaseRowId,product:'',agency:'',category:'',invoice:'',qty:'',unit:'',rate:'',gst:0,amount:0});
+  const lastRow = purchaseRows[purchaseRows.length - 1];
+  const carriedInvoice = lastRow ? (lastRow.invoice || '') : '';
+  purchaseRows.push({id:purchaseRowId,product:'',agency:'',category:'',invoice:carriedInvoice,qty:'',unit:'',rate:'',gst:0,amount:0});
   renderPurchaseRows();
 }
 
