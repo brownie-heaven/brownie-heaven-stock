@@ -4491,6 +4491,16 @@ async function chqToggleStatus(id, currentStatus){
     renderChequeLedger();
   }catch(e){ toast('Error: '+e.message); }
 }
+async function chqDelete(id, supplierName){
+  if(!confirm('Delete this cheque to "'+supplierName+'"?\n\nThis also removes any linked invoice records. Cannot be undone.')) return;
+  try{
+    await sbDelete('cheque_invoices', `?cheque_id=eq.${id}`);
+    await sbDelete('cheques', `?id=eq.${id}`);
+    toast('Cheque deleted ✓');
+    await chqLoadRows();
+    renderChequeLedger();
+  }catch(e){ toast('Error: '+e.message); }
+}
 
 async function renderChequeLedger(){
   setHdr('Dashboard', true);
@@ -4553,7 +4563,8 @@ async function renderChequeLedger(){
           +'<td style="padding:8px 10px;font-size:13px;font-weight:600;color:'+C.ink+'">'+c.supplier_name+(c.invoice_number?'<br><span style="font-family:monospace;font-size:10px;color:'+C.inkSoft+'">Inv# '+c.invoice_number+'</span>':'')+'</td>'
           +'<td style="padding:8px 10px;text-align:right;font-family:monospace;font-size:13px;font-weight:600;color:'+C.ink+'">'+chqFmt(c.amount)+'</td>'
           +'<td style="padding:8px 10px">'+photoLink+'</td>'
-          +'<td style="padding:8px 10px"><button onclick="chqToggleStatus(\''+c.id+'\',\''+c.status+'\')" style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-radius:100px;border:1.5px solid '+statusColor+';color:'+statusColor+';background:none;cursor:pointer">'+c.status+'</button></td>'
+          +'<td style="padding:8px 10px;white-space:nowrap"><button onclick="chqToggleStatus(\''+c.id+'\',\''+c.status+'\')" style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-radius:100px;border:1.5px solid '+statusColor+';color:'+statusColor+';background:none;cursor:pointer;margin-right:6px">'+c.status+'</button>'
+          +'<button onclick="chqDelete(\''+c.id+'\',\''+c.supplier_name.replace(/'/g,"\\'")+'\')" title="Delete" style="background:none;border:1px solid '+C.line+';border-radius:6px;padding:4px 7px;cursor:pointer;color:'+C.rust+'">🗑️</button></td>'
           +'</tr>';
       }).join('');
 
