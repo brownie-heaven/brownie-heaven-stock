@@ -4306,8 +4306,11 @@ async function hlChangeDate(outlet, oldDate, newDate){
   gpayPhoto: null,
   gpaySaving: false,
   entryMode: 'manual',
-  purchaseDate: new Date().toISOString().slice(0,10),
-  purchaseBills: [],
+  purchaseFrom: new Date(Date.now()-6*86400000).toISOString().slice(0,10),
+  purchaseTo: new Date().toISOString().slice(0,10),
+  purchaseAgency: '',
+  purchaseInvoices: [],
+  selectedInvoices: {},
   prefillSupplier: '',
   prefillAmount: '',
   selectedSupplier: '',
@@ -4328,21 +4331,34 @@ async function chqLoadSuppliers(){
 async function chqLoadRows(){
   CHQ.rows = await sbGet('cheques', '?select=*&order=date_issued.desc');
 }
-  async function chqLoadPurchaseBills(){
-  var date = document.getElementById('chq-purchase-date')?.value || CHQ.purchaseDate;
-  CHQ.purchaseDate = date;
-  var rows = await sbGet('purchase_ledger', `?date=eq.${date}&select=agency,amount`);
-  var byAgency = {};
+   async function chqLoadPurchaseBills(){
+  var agency = document.getElementById('chq-purchase-agency')?.value || '';
+  var from = document.getElementById('chq-purchase-from')?.value || CHQ.purchaseFrom;
+  var to = document.getElementById('chq-purchase-to')?.value || CHQ.purchaseTo;
+  CHQ.purchaseAgency = agency;
+  CHQ.purchaseFrom = from;
+  CHQ.purchaseTo = to;
+  if(!agency || !from || !to){ toast('Pick an agency and both dates.'); return; }
+  var rows = await sbGet('purchase_ledger', `?agency=eq.${encodeURIComponent(agency)}&date=gte.${from}&date=lte.${to}&select=invoice_number,date,amount`);
+  var byInvoice = {};
   rows.forEach(function(r){
-    var a = r.agency || 'Unknown';
-    byAgency[a] = (byAgency[a]||0) + (Number(r.amount)||0);
+    var inv = r.invoice_number || '(no invoice #)';
+    if(!byInvoice[inv]) byInvoice[inv] = {invoice: inv, date: r.date, amount: 0};
+    byInvoice[inv].amount += (Number(r.amount)||0);
   });
-  CHQ.purchaseBills = Object.keys(byAgency).map(function(a){ return {agency:a, amount:byAgency[a]}; });
+  CHQ.purchaseInvoices = Object.values(byInvoice).sort(function(a,b){ return a.date.localeCompare(b.date); });
+  CHQ.selectedInvoices = {};
   renderChequeLedger();
 }
-function chqPickPurchaseBill(agency, amount){
-  CHQ.prefillSupplier = agency;
-  CHQ.prefillAmount = amount;
+function chqToggleInvoice(invoice, amount){
+  if(CHQ.selectedInvoices[invoice]){
+    delete CHQ.selectedInvoices[invoice];
+  } else {
+    CHQ.selectedInvoices[invoice] = amount;
+  }
+  var total = Object.values(CHQ.selectedInvoices).reduce(function(s,a){ return s+a; }, 0);
+  CHQ.prefillSupplier = CHQ.purchaseAgency;
+  CHQ.prefillAmount = total;
   renderChequeLedger();
 }
   async function chqLoadGpay(){
