@@ -4547,18 +4547,26 @@ async function renderChequeLedger(){
       +'<button onclick="CHQ.entryMode=\'manual\';renderChequeLedger()" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:1px solid '+C.line+';background:'+(CHQ.entryMode==='manual'?C.brass:'none')+';color:'+(CHQ.entryMode==='manual'?C.paper:C.inkSoft)+'">Manual entry</button>'
       +'<button onclick="CHQ.entryMode=\'purchase\';renderChequeLedger()" style="font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;border:1px solid '+C.line+';background:'+(CHQ.entryMode==='purchase'?C.brass:'none')+';color:'+(CHQ.entryMode==='purchase'?C.paper:C.inkSoft)+'">Pull from Purchase</button>'
     +'</div>'
-    +(CHQ.entryMode==='purchase'
+       +(CHQ.entryMode==='purchase'
       ? '<div style="background:'+C.paper+';border:1px solid '+C.line+';border-radius:8px;padding:12px;margin-bottom:14px">'
-        +'<div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:10px">'
-        +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Purchase date</label>'
-        +'<input id="chq-purchase-date" type="date" value="'+CHQ.purchaseDate+'" style="padding:7px 9px;border:1px solid '+C.line+';border-radius:6px;background:white;font-size:13px"></div>'
-        +'<button onclick="chqLoadPurchaseBills()" style="background:'+C.ink+';color:'+C.paper+';border:none;padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer">Load bills</button>'
+        +'<datalist id="chq-agency-list">'+[...new Set(getAllPurchaseProducts().map(function(p){return p.agency;}).filter(Boolean))].sort().map(function(a){return '<option value="'+a+'">';}).join('')+'</datalist>'
+        +'<div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap">'
+        +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Agency</label>'
+        +'<input id="chq-purchase-agency" type="text" list="chq-agency-list" value="'+CHQ.purchaseAgency+'" placeholder="Start typing…" style="padding:7px 9px;border:1px solid '+C.line+';border-radius:6px;background:white;font-size:13px;min-width:160px"></div>'
+        +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">From</label>'
+        +'<input id="chq-purchase-from" type="date" value="'+CHQ.purchaseFrom+'" style="padding:7px 9px;border:1px solid '+C.line+';border-radius:6px;background:white;font-size:13px"></div>'
+        +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">To</label>'
+        +'<input id="chq-purchase-to" type="date" value="'+CHQ.purchaseTo+'" style="padding:7px 9px;border:1px solid '+C.line+';border-radius:6px;background:white;font-size:13px"></div>'
+        +'<button onclick="chqLoadPurchaseBills()" style="background:'+C.ink+';color:'+C.paper+';border:none;padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer">Load invoices</button>'
         +'</div>'
-        +(CHQ.purchaseBills.length
-          ? CHQ.purchaseBills.map(function(b){
-              return '<div onclick="chqPickPurchaseBill(\''+b.agency.replace(/'/g,"\\'")+'\','+b.amount+')" style="display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid '+C.line+';cursor:pointer;font-size:13px;'+(CHQ.prefillSupplier===b.agency?'background:rgba(156,122,46,0.15)':'')+'"><span>'+b.agency+'</span><span style="font-family:monospace;font-weight:600">'+chqFmt(b.amount)+'</span></div>';
+        +(CHQ.purchaseInvoices.length
+          ? CHQ.purchaseInvoices.map(function(inv){
+              var checked = !!CHQ.selectedInvoices[inv.invoice];
+              return '<div onclick="chqToggleInvoice(\''+inv.invoice.replace(/'/g,"\\'")+'\','+inv.amount+')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid '+C.line+';cursor:pointer;font-size:13px;'+(checked?'background:rgba(156,122,46,0.15)':'')+'">'
+                +'<span><input type="checkbox" '+(checked?'checked':'')+' style="margin-right:8px;pointer-events:none">'+inv.date+' — Inv# '+inv.invoice+'</span>'
+                +'<span style="font-family:monospace;font-weight:600">'+chqFmt(inv.amount)+'</span></div>';
             }).join('')
-          : '<div style="font-size:12px;color:'+C.inkSoft+'">Pick a date and click Load bills.</div>')
+          : '<div style="font-size:12px;color:'+C.inkSoft+'">Pick an agency and date range, then click Load invoices.</div>')
         +'</div>'
       : '')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
