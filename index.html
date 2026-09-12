@@ -1366,7 +1366,7 @@ async function loadCustomPurchaseProducts(){
 function getAllPurchaseProducts(){
   return [...PURCHASE_PRODUCTS, ...CUSTOM_PURCHASE_PRODUCTS];
 }
-let purchaseRows = [{id:1,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
+let purchaseRows = [{id:1,product:'',agency:'',category:'',invoice:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
 let purchaseRowId = 1;
 // — SHIFT ENTRIES (admin only)
 function renderShiftEntries() {
@@ -1644,6 +1644,7 @@ function renderPurchase(){
           <th style="padding:10px;text-align:left;min-width:200px">Product</th>
           <th style="padding:10px;text-align:left;min-width:130px">Agency</th>
           <th style="padding:10px;text-align:left;min-width:100px">Category</th>
+          <th style="padding:10px;text-align:left;min-width:110px">Invoice #</th>
           <th style="padding:10px;text-align:center;min-width:70px">Qty</th>
           <th style="padding:10px;text-align:center;min-width:70px">Unit</th>
           <th style="padding:10px;text-align:center;min-width:90px">Rate (₹)</th>
@@ -1747,6 +1748,7 @@ function renderPurchaseRows(){
       </td>
       <td style="padding:6px"><input value="${r.agency}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input value="${r.category}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
+      <td style="padding:6px"><input value="${r.invoice||''}" placeholder="e.g. BF26G15103" onchange="onPurchaseFieldChange(${r.id},'invoice',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px"></td>
       <td style="padding:6px"><input type="number" value="${r.qty}" min="0" onchange="onPurchaseFieldChange(${r.id},'qty',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
       <td style="padding:6px"><select onchange="onPurchaseFieldChange(${r.id},'unit',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px"><option value="pcs" ${r.unit==='pcs'?'selected':''}>pcs</option><option value="kg" ${r.unit==='kg'?'selected':''}>kg</option></select></td>
       <td style="padding:6px"><input type="number" value="${r.rate}" onchange="onPurchaseFieldChange(${r.id},'rate',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
@@ -1800,7 +1802,7 @@ function updatePurchaseTotal(){
 
 function addPurchaseRow(){
   purchaseRowId++;
-  purchaseRows.push({id:purchaseRowId,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0});
+  purchaseRows.push({id:purchaseRowId,product:'',agency:'',category:'',invoice:'',qty:'',unit:'',rate:'',gst:0,amount:0});
   renderPurchaseRows();
 }
 
@@ -1832,7 +1834,7 @@ const res = await fetch(`${SB_URL}/rest/v1/purchase_ledger`,{
 
   if(res.ok){
     alert('✅ Purchase bill saved!');
-    purchaseRows = [{id:1,product:'',agency:'',category:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
+    purchaseRows = [{id:1,product:'',agency:'',category:'',invoice:'',qty:'',unit:'',rate:'',gst:0,amount:0}];
     purchaseRowId = 1;
     renderPurchase();
   } else {
