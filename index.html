@@ -1886,9 +1886,10 @@ async function loadPurchaseHistory(){
         </div>
       </div>
       <div id="add-item-form-${g.agency.replace(/[^a-zA-Z0-9]/g,'_')}-${g.date.replace(/-/g,'')}" style="display:none;background:#fffaf3;padding:12px 14px;border-bottom:1px solid #f0d8b0"></div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:#fafafa">
           <th style="padding:6px 10px;text-align:left">Product</th>
+          <th style="padding:6px;text-align:center">Invoice #</th>
           <th style="padding:6px;text-align:center">Qty</th>
           <th style="padding:6px;text-align:center">Unit</th>
           <th style="padding:6px;text-align:center">Rate</th>
@@ -1900,6 +1901,7 @@ async function loadPurchaseHistory(){
           <tbody>
           ${g.items.map(i=>`<tr style="border-top:1px solid #f0f0f0">
             <td style="padding:6px 10px">${i.product} <span style="color:#bbb;font-size:11px">(${i.category})</span></td>
+            <td style="padding:6px;text-align:center;font-family:monospace;font-size:11px">${i.invoice_number||'—'}</td>
             <td style="padding:6px;text-align:center">${i.qty}</td>
             <td style="padding:6px;text-align:center">${i.unit}</td>
             <td style="padding:6px;text-align:center">₹${Number(i.rate).toFixed(2)}</td>
