@@ -1191,6 +1191,7 @@ async function kiSaveLine(id){
       } catch(e){ toast('Update failed: '+e.message); }
     }
 // ── PURCHASE LEDGER ──────────────────────────────────────────────────────────
+const MULTI_AGENCY_PRODUCTS = ['fresh cream 1000 ml','mithai mate 400g','mithai mate 400gms','whipping cream star'];
 const PURCHASE_PRODUCTS = [
   {"name":"Egg pc","agency":"Aashirvad Egg Centre","category":"Brownie","unit":"pcs","rate":6.4,"gst":0},
   {"name":"Cake Base 1/2kg  pcs","agency":"Ganesh Cartons","category":"Pastry","unit":"pcs","rate":7.8,"gst":5},
@@ -1638,6 +1639,7 @@ function renderPurchase(){
       </div>
     </div>
 
+   <datalist id="pur-agency-list">${[...new Set(getAllPurchaseProducts().map(p=>p.agency).filter(Boolean))].sort().map(a=>`<option value="${a}">`).join('')}</datalist>
    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:800px">
       <thead>
         <tr style="background:#6B2400;color:white">
@@ -1746,7 +1748,9 @@ function renderPurchaseRows(){
         <input type="text" id="psearch-${r.id}" value="${r.product}" placeholder="Type to search product..." oninput="filterPP(${r.id},this.value)" onfocus="filterPP(${r.id},this.value)" onblur="setTimeout(()=>{const d=document.getElementById('pdd-${r.id}');if(d)d.style.display='none'},200)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px" autocomplete="off">
 <div id="pdd-${r.id}" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:180px;overflow-y:auto;background:white;border:1px solid #ddd;border-radius:4px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div>
       </td>
-      <td style="padding:6px"><input value="${r.agency}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
+      <td style="padding:6px">${MULTI_AGENCY_PRODUCTS.includes((r.product||'').toLowerCase())
+        ? `<input value="${r.agency}" list="pur-agency-list" placeholder="Type agency…" onchange="onPurchaseFieldChange(${r.id},'agency',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">`
+        : `<input value="${r.agency}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9">`}</td>
       <td style="padding:6px"><input value="${r.category}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
       <td style="padding:6px"><input value="${r.invoice||''}" placeholder="e.g. BF26G15103" onchange="onPurchaseFieldChange(${r.id},'invoice',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px"></td>
       <td style="padding:6px"><input type="number" value="${r.qty}" min="0" onchange="onPurchaseFieldChange(${r.id},'qty',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
