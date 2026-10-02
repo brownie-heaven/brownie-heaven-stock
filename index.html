@@ -4699,6 +4699,29 @@ async function renderChequeLedger(){
       +'<button onclick="CHQ.formOpen=!CHQ.formOpen;renderChequeLedger()" style="font-family:Arial,sans-serif;font-weight:600;font-size:13px;background:'+C.brass+';color:'+C.paper+';border:none;padding:9px 16px;border-radius:6px;cursor:pointer">'+(CHQ.formOpen?'Close':'+ Add Cheque')+'</button>'
     +'</div>'
 
+     // invoice lookup
+    +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:16px 18px;margin-bottom:22px">'
+      +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:8px">Supplier says an invoice wasn\'t paid?</div'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +'<input id="chq-lookup-input" type="text" value="'+CHQ.lookupQuery+'" placeholder="Type an invoice number…" onkeydown="if(event.key===\'Enter\')chqLookupInvoice()" style="flex:1;min-width:200px;padding:9px 12px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px">'
+        +'<button onclick="chqLookupInvoice()" style="background:'+C.brass+';color:'+C.paper+';border:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">'+(CHQ.lookupSearching?'Searching…':'Look up')+'</button>'
+      +'</div>'
+      +(CHQ.lookupResults===null ? ''
+        : CHQ.lookupResults.length===0
+          ? '<div style="margin-top:12px;font-size:13px;color:'+C.rust+'">No cheque found covering invoice "'+CHQ.lookupQuery+'".</div>'
+          : '<div style="margin-top:14px">'+CHQ.lookupResults.map(function(r){
+              var c = r.cheques || {};
+              var statusColor = c.status==='cleared' ? C.brass : C.rust;
+              return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid '+C.line+';border-radius:8px;margin-bottom:8px;background:'+C.paper+'">'
+                +'<div>'
+                +'<div style="font-size:13px;font-weight:600;color:'+C.ink+'">Inv# '+r.invoice_number+(r.invoice_date?' — '+r.invoice_date:'')+'</div>'
+                +'<div style="font-size:12px;color:'+C.inkSoft+';margin-top:2px">Covered by cheque to <b>'+(c.supplier_name||'—')+'</b> dated '+(c.date_issued||'—')+' for '+chqFmt(c.amount||0)+'</div>'
+                +'</div>'
+                +'<span style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-radius:100px;border:1.5px solid '+statusColor+';color:'+statusColor+'">'+(c.status||'—')+'</span>'
+                +'</div>';
+            }).join('')+'</div>')
+    +'</div>'
+
     // cash runway
     +'<div style="margin-bottom:26px">'
       +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:4px">First 10 days</div>'
