@@ -4557,6 +4557,7 @@ async function chqSave(){
     toast('Cheque saved ✓');
     CHQ.selectedSupplier=''; CHQ.newSupplierName=''; CHQ.amount=''; CHQ.photoFront=null; CHQ.photoBack=null; CHQ.notes=''; CHQ.formOpen=false;
     CHQ.selectedInvoices={}; CHQ.purchaseInvoices=[]; CHQ.purchaseAgency='';
+    CHQ.outstanding=null;
     await chqLoadSuppliers();
     await chqLoadRows();
   }catch(e){
