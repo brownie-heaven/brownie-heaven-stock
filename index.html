@@ -4589,7 +4589,7 @@ async function renderChequeLedger(){
    if(!CHQ.suppliers.length) await chqLoadSuppliers();
   if(!CHQ.rows.length) await chqLoadRows();
   if(!CHQ.gpayRows.length) await chqLoadGpay();
-
+  if(CHQ.outstanding===null && !CHQ.outstandingLoading) { chqLoadOutstanding(); return; }
   // ---- palette: ledger / passbook theme ----
   var C = { paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F', brass:'#9C7A2E', rust:'#9B3A22' };
 
