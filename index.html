@@ -4756,6 +4756,31 @@ async function renderChequeLedger(){
                 +'<span style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-radius:100px;border:1.5px solid '+statusColor+';color:'+statusColor+'">'+(c.status||'—')+'</span>'
                 +'</div>';
             }).join('')+'</div>')
+       +'</div>'
+
+    // outstanding by agency
+    +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:16px 18px;margin-bottom:26px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+        +'<div><div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+'">Not yet covered by any cheque</div>'
+        +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600">Outstanding by Agency</div></div>'
+        +'<button onclick="chqLoadOutstanding()" style="font-family:Arial,sans-serif;font-weight:600;font-size:12px;background:'+C.ink+';color:'+C.paper+';border:none;padding:8px 14px;border-radius:6px;cursor:pointer">'+(CHQ.outstandingLoading?'Loading…':(CHQ.outstanding?'Refresh':'Load'))+'</button>'
+      +'</div>'
+      +(CHQ.outstanding===null ? '<div style="font-size:12px;color:'+C.inkSoft+';margin-top:10px">Click Load to see every agency\'s unpaid invoices.</div>'
+        : CHQ.outstanding.length===0 ? '<div style="font-size:12px;color:'+C.inkSoft+';margin-top:10px">Nothing outstanding — every invoice is covered by a cheque.</div>'
+        : '<div style="margin-top:12px">'+CHQ.outstanding.map(function(a, idx){
+            var safeId = 'oa-'+idx;
+            return '<div style="border:1px solid '+C.line+';border-radius:8px;margin-bottom:8px;overflow:hidden">'
+              +'<div onclick="document.getElementById(\''+safeId+'\').style.display=document.getElementById(\''+safeId+'\').style.display===\'none\'?\'block\':\'none\'" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;cursor:pointer;background:'+C.paper+'">'
+              +'<span style="font-size:14px;font-weight:600;color:'+C.ink+'">'+a.agency+' <span style="font-weight:400;color:'+C.inkSoft+';font-size:12px">('+a.invoices.length+' invoice'+(a.invoices.length>1?'s':'')+')</span></span>'
+              +'<span style="font-family:monospace;font-weight:700;color:'+C.rust+'">'+chqFmt(a.total)+'</span>'
+              +'</div>'
+              +'<div id="'+safeId+'" style="display:none;background:white">'
+              +a.invoices.map(function(inv){
+                return '<div style="display:flex;justify-content:space-between;padding:7px 14px;border-top:1px solid '+C.line+';font-size:13px"><span>'+inv.date+' — Inv# '+inv.invoice+'</span><span style="font-family:monospace">'+chqFmt(inv.amount)+'</span></div>';
+              }).join('')
+              +'</div>'
+              +'</div>';
+          }).join('')+'</div>')
     +'</div>'
 
     // cash runway
