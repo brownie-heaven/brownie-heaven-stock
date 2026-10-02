@@ -4314,6 +4314,9 @@ async function hlChangeDate(outlet, oldDate, newDate){
   gpayPhoto: null,
   gpaySaving: false,
   entryMode: 'manual',
+  lookupQuery: '',
+  lookupResults: null,
+  lookupSearching: false,
   purchaseFrom: new Date(Date.now()-6*86400000).toISOString().slice(0,10),
   purchaseTo: new Date().toISOString().slice(0,10),
   purchaseAgency: '',
@@ -4388,7 +4391,22 @@ function chqAddManualInvoice(){
   document.getElementById('chq-manual-invoice-date').value = '';
   chqUpdateSelectedTotal();
   renderChequeLedger();
-}  
+}
+async function chqLookupInvoice(){
+  var q = (document.getElementById('chq-lookup-input')?.value||'').trim();
+  CHQ.lookupQuery = q;
+  if(!q){ CHQ.lookupResults = null; renderChequeLedger(); return; }
+  CHQ.lookupSearching = true; renderChequeLedger();
+  try{
+    var rows = await sbGet('cheque_invoices', `?invoice_number=ilike.*${encodeURIComponent(q)}*&select=*,cheques(*)&order=invoice_date.desc`);
+    CHQ.lookupResults = rows || [];
+  }catch(e){
+    CHQ.lookupResults = [];
+    toast('Lookup failed: '+e.message);
+  }
+  CHQ.lookupSearching = false;
+  renderChequeLedger();
+}
   async function chqLoadGpay(){
   CHQ.gpayRows = await sbGet('gpay_debits', '?select=*&order=date_issued.desc');
 }
