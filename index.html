@@ -4319,6 +4319,7 @@ async function hlChangeDate(outlet, oldDate, newDate){
   lookupSearching: false,
   outstanding: null,
   outstandingLoading: false,
+  outstandingMonth: new Date().toISOString().slice(0,7),
   purchaseFrom: new Date(Date.now()-6*86400000).toISOString().slice(0,10),
   purchaseTo: new Date().toISOString().slice(0,10),
   purchaseAgency: '',
@@ -4397,8 +4398,13 @@ function chqAddManualInvoice(){
 async function chqLoadOutstanding(){
   CHQ.outstandingLoading = true; renderChequeLedger();
   try{
-    var purchaseRows = await sbGetAll('purchase_ledger', '?select=agency,invoice_number,date,amount&order=date.asc');
-    var coveredRows = await sbGetAll('cheque_invoices', '?select=invoice_number');
+    var ym = CHQ.outstandingMonth || new Date().toISOString().slice(0,7);
+    var parts = ym.split('-');
+    var lastDay = new Date(Number(parts[0]), Number(parts[1]), 0).getDate();
+    var from = ym+'-01';
+    var to = ym+'-'+String(lastDay).padStart(2,'0');
+    var purchaseRows = await sbGetAll('purchase_ledger', `?date=gte.${from}&date=lte.${to}&select=agency,invoice_number,date,amount&order=date.asc`);
+    var coveredRows = await sbGetAll('cheque_invoices', '?select=invoice_number');    
     var covered = {};
     coveredRows.forEach(function(r){ if(r.invoice_number) covered[r.invoice_number] = true; });
 
@@ -4764,7 +4770,10 @@ async function renderChequeLedger(){
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
         +'<div><div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+'">Not yet covered by any cheque</div>'
         +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600">Outstanding by Agency</div></div>'
-        +'<button onclick="chqLoadOutstanding()" style="font-family:Arial,sans-serif;font-weight:600;font-size:12px;background:'+C.ink+';color:'+C.paper+';border:none;padding:8px 14px;border-radius:6px;cursor:pointer">'+(CHQ.outstandingLoading?'Loading…':(CHQ.outstanding?'Refresh':'Load'))+'</button>'
+         +'<div style="display:flex;gap:8px;align-items:center">'
+        +'<input type="month" value="'+CHQ.outstandingMonth+'" onchange="CHQ.outstandingMonth=this.value;CHQ.outstanding=null;chqLoadOutstanding()" style="padding:6px 9px;border:1px solid '+C.line+';border-radius:6px;background:white;font-size:12px">'
+        +'<button onclick="chqLoadOutstanding()" style="font-family:Arial,sans-serif;font-weight:600;font-size:12px;background:'+C.ink+';color:'+C.paper+';border:none;padding:8px 14px;border-radius:6px;cursor:pointer">'+(CHQ.outstandingLoading?'Loading…':'Refresh')+'</button>'
+        +'</div>'
       +'</div>'
       +(CHQ.outstanding===null ? '<div style="font-size:12px;color:'+C.inkSoft+';margin-top:10px">Click Load to see every agency\'s unpaid invoices.</div>'
         : CHQ.outstanding.length===0 ? '<div style="font-size:12px;color:'+C.inkSoft+';margin-top:10px">Nothing outstanding — every invoice is covered by a cheque.</div>'
