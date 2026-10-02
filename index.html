@@ -4317,6 +4317,8 @@ async function hlChangeDate(outlet, oldDate, newDate){
   lookupQuery: '',
   lookupResults: null,
   lookupSearching: false,
+  outstanding: null,
+  outstandingLoading: false,
   purchaseFrom: new Date(Date.now()-6*86400000).toISOString().slice(0,10),
   purchaseTo: new Date().toISOString().slice(0,10),
   purchaseAgency: '',
@@ -4390,6 +4392,40 @@ function chqAddManualInvoice(){
   document.getElementById('chq-manual-invoice-amt').value = '';
   document.getElementById('chq-manual-invoice-date').value = '';
   chqUpdateSelectedTotal();
+  renderChequeLedger();
+}
+async function chqLoadOutstanding(){
+  CHQ.outstandingLoading = true; renderChequeLedger();
+  try{
+    var purchaseRows = await sbGetAll('purchase_ledger', '?select=agency,invoice_number,date,amount&order=date.asc');
+    var coveredRows = await sbGetAll('cheque_invoices', '?select=invoice_number');
+    var covered = {};
+    coveredRows.forEach(function(r){ if(r.invoice_number) covered[r.invoice_number] = true; });
+
+    var byAgency = {};
+    purchaseRows.forEach(function(r){
+      var inv = r.invoice_number;
+      if(!inv) return;
+      if(covered[inv]) return;
+      var agency = r.agency || 'Unknown';
+      if(!byAgency[agency]) byAgency[agency] = {};
+      if(!byAgency[agency][inv]) byAgency[agency][inv] = {invoice: inv, date: r.date, amount: 0};
+      byAgency[agency][inv].amount += (Number(r.amount)||0);
+    });
+
+    var result = Object.keys(byAgency).map(function(agency){
+      var invoices = Object.values(byAgency[agency]).sort(function(a,b){ return a.date.localeCompare(b.date); });
+      var total = invoices.reduce(function(s,x){ return s+x.amount; }, 0);
+      return {agency: agency, invoices: invoices, total: total};
+    }).filter(function(a){ return a.invoices.length>0; })
+      .sort(function(a,b){ return b.total-a.total; });
+
+    CHQ.outstanding = result;
+  }catch(e){
+    toast('Error loading outstanding: '+e.message);
+    CHQ.outstanding = [];
+  }
+  CHQ.outstandingLoading = false;
   renderChequeLedger();
 }
 async function chqLookupInvoice(){
