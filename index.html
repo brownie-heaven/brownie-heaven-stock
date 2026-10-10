@@ -553,7 +553,10 @@ async function init() {
       if (!DB.outletConfig[c.outlet_id]) DB.outletConfig[c.outlet_id] = {};
       DB.outletConfig[c.outlet_id][c.product_id] = c.is_active;
     });
-    renderPin();
+     var _r = window._restoring; window._restoring = null;
+    if (_r && (_r.role==='admin' || _r.role==='dispatch')) {
+      S.role=_r.role; S.mainTab=_r.tab; setTab(_r.tab, true);
+    } else { renderPin(); }
   } catch(e) {
     console.warn('Connection error:', e);
     // Show friendly error with retry — don't crash
@@ -623,6 +626,7 @@ function confirmLogout() {
     }
 
 function goHome() {
+        try{ sessionStorage.removeItem('bh_sess'); }catch(e){}
       S = {...S, screen:'pin', pin:'', outlet:null, shift:null, staffName:'',
         activeTab:0, stockData:{}, demandData:{}, pinError:false, role:null, demoMode:false, navHistory:[]};
       if(typeof updateBackBtn==='function') updateBackBtn();
@@ -640,6 +644,7 @@ function setTab(i, fromBack) {
         try{ history.pushState({nav:true}, '', ''); }catch(e){}
       }
       S.mainTab = i;
+      try{ sessionStorage.setItem('bh_sess', JSON.stringify({role:S.role, tab:i})); }catch(e){}
       setHdr('Dashboard', true);
       updateBackBtn();
       if(S.role==='dispatch'){
@@ -5790,6 +5795,11 @@ function initDarkMode(){
   }
 }
 window.addEventListener('DOMContentLoaded', initDarkMode);
+window.addEventListener('DOMContentLoaded', function(){
+var s=null;
+try{ s=JSON.parse(sessionStorage.getItem('bh_sess')||'null'); }catch(e){}
+if(s && s.role){ window._restoring=s; startApp(); }
+});
 </script>
 <script src="js/test.js"></script>
 <script src="js/supply.js"></script>
