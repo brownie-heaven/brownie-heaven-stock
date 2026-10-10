@@ -2981,6 +2981,30 @@ async function renderDispatch() {
 }
 
 // ── OVERVIEW ──────────────────────────────────────────────────────────────────
+  function ovRevCard(title, control, parts, total, purchase, fmt){
+  var pct = function(n){ return total>0 ? Math.round(n/total*100) : 0; };
+  var bar = total>0
+    ? parts.map(function(p){ return '<div title="'+p.label+'" style="width:'+(p.amt/total*100)+'%;background:'+p.color+'"></div>'; }).join('')
+    : '<div style="width:100%;background:rgba(160,145,127,.25)"></div>';
+  var rows = parts.map(function(p){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px">'
+      +'<span style="width:10px;height:10px;border-radius:3px;background:'+p.color+';flex:none"></span>'
+      +'<span style="color:var(--txt2);flex:1">'+p.label+'</span>'
+      +'<span style="font-size:11px;color:var(--txt3);min-width:34px;text-align:right">'+pct(p.amt)+'%</span>'
+      +'<span style="font-family:var(--mono);font-weight:500;min-width:110px;text-align:right">'+fmt(p.amt)+'</span>'
+      +'</div>';
+  }).join('');
+  return '<div class="card" style="margin-bottom:12px">'
+    +'<div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>'+title+'</span>'+control+'</div>'
+    +'<div style="font-size:11px;color:var(--txt3);margin-top:4px">TOTAL REVENUE</div>'
+    +'<div style="font-family:var(--mono);font-size:30px;font-weight:700;color:var(--green);letter-spacing:-.02em;margin-bottom:12px">'+fmt(total)+'</div>'
+    +'<div style="display:flex;height:10px;border-radius:6px;overflow:hidden;gap:2px;margin-bottom:10px">'+bar+'</div>'
+    +rows
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:10px;border-top:1px dashed var(--border2);font-size:13px">'
+    +'<span style="color:var(--red)">🧾 Purchase spend</span>'
+    +'<span style="font-family:var(--mono);font-weight:600;color:var(--red)">'+fmt(purchase)+'</span>'
+    +'</div></div>';
+}
 async function renderOverview() {
   if(!window._overviewDate) window._overviewDate = new Date().toISOString().split('T')[0];
   setHdr('Dashboard', true);
@@ -3068,64 +3092,23 @@ async function renderOverview() {
     <div style="margin-top:12px">
       ${hasDemoData ? `<div class="demo-banner">⚠️ Demo data exists for today. It is hidden from this view and does NOT affect production. Use "Clear demo data" below to remove it.</div>` : ''}
 
-      <!-- TODAY REVENUE CARD -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>💰 Today's Revenue — ${new Date(today).toLocaleDateString('en-GB')}</span>
-        <input type="date" value="${today}" max="${today}" onchange="window._overviewDate=this.value;renderOverview()" style="font-size:12px;padding:3px 6px;border-radius:6px;border:.5px solid var(--border2);font-family:var(--font);cursor:pointer;color:var(--txt2)">
-       </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
-            <span style="color:var(--txt2)">Supply Ledger</span>
-            <span style="font-family:var(--mono);font-weight:500">${fmt(slTodayAmt)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
-            <span style="color:var(--txt2)">Accessories</span>
-            <span style="font-family:var(--mono);font-weight:500">${fmt(accTodayAmt)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
-            <span style="color:var(--txt2)">Hotels</span>
-            <span style="font-family:var(--mono);font-weight:500">${fmt(hlTodayAmt)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
-            <span style="color:var(--txt2)">Purchase</span>
-            <span style="font-family:var(--mono);font-weight:500">${fmt(purTodayAmt)}</span>
-          </div>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:15px;padding:8px 0;font-weight:600">
-            <span style="color:var(--brown)">Grand Total</span>
-            <span style="font-family:var(--mono);color:var(--green)">${fmt(todayGrand)}</span>
-          </div>
-        </div>
-      </div>
+          ${ovRevCard(
+        `💰 Today's Revenue — ${new Date(today).toLocaleDateString('en-GB')}`,
+        `<input type="date" value="${today}" max="${today}" onchange="window._overviewDate=this.value;renderOverview()" style="font-size:12px;padding:3px 6px;border-radius:6px;border:.5px solid var(--border2);font-family:var(--font);cursor:pointer;color:var(--txt2)">`,
+        [
+          {label:'Supply Ledger', amt:slTodayAmt,  color:'rgba(107,36,0,.9)'},
+          {label:'Accessories',   amt:accTodayAmt, color:'rgba(201,96,0,.9)'},
+          {label:'Hotels',        amt:hlTodayAmt,  color:'rgba(45,106,45,.9)'}
+        ], todayGrand, purTodayAmt, fmt)}
 
-      <!-- THIS MONTH REVENUE CARD -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>📅 ${monthLabel} Revenue</span>
-        <input type="month" value="${ym}" onchange="window._overviewMonth=this.value;renderOverview()" style="font-size:12px;padding:3px 6px;border-radius:6px;border:.5px solid var(--border2);font-family:var(--font);cursor:pointer;color:var(--txt2)">
-       </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
-            <span style="color:var(--txt2)">Supply Ledger</span>
-            <span style="font-family:var(--mono);font-weight:500">${fmt(slMonthAmt)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
-            <span style="color:var(--txt2)">Accessories</span>
-            <span style="font-family:var(--mono);font-weight:500">${fmt(accMonthAmt)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
-            <span style="color:var(--txt2)">Hotels</span>
-            <span style="font-family:var(--mono);font-weight:500">${fmt(hlMonthAmt)}</span>
-         </div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--border2)">
-            <span style="color:var(--txt2)">Purchase</span>
-            <span style="font-family:var(--mono);font-weight:500">${fmt(purMonthAmt)}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="dash-grid">
+      ${ovRevCard(
+        `📅 ${monthLabel} Revenue`,
+        `<input type="month" value="${ym}" onchange="window._overviewMonth=this.value;renderOverview()" style="font-size:12px;padding:3px 6px;border-radius:6px;border:.5px solid var(--border2);font-family:var(--font);cursor:pointer;color:var(--txt2)">`,
+        [
+          {label:'Supply Ledger', amt:slMonthAmt,  color:'rgba(107,36,0,.9)'},
+          {label:'Accessories',   amt:accMonthAmt, color:'rgba(201,96,0,.9)'},
+          {label:'Hotels',        amt:hlMonthAmt,  color:'rgba(45,106,45,.9)'}
+        ], monthGrand, purMonthAmt, fmt)}
         <div class="metric-card"><div class="mv">${totalSold}</div><div class="ml">Units sold today</div></div>
         <div class="metric-card"><div class="mv" style="color:var(--red)">₹${totalWaste}</div><div class="ml">Wastage today</div></div>
       </div>
