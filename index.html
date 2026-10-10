@@ -4554,6 +4554,10 @@ async function chqSave(){
   const notesVal = document.getElementById('chq-notes')?.value || '';
   const manualInvoiceVal = document.getElementById('chq-invoice')?.value || '';
   const pulledInvoices = Object.keys(CHQ.selectedInvoices || {});
+  const chequeNoVal = (document.getElementById('chq-cheque-no')?.value || '').trim();
+  if(chequeNoVal && CHQ.rows.some(function(r){ return (r.cheque_number||'').toLowerCase()===chequeNoVal.toLowerCase(); })){
+    alert('Cheque number ' + chequeNoVal + ' is already recorded.'); return;
+  }
 
   CHQ.saving = true; renderChequeLedger();
   try{
@@ -4578,6 +4582,7 @@ async function chqSave(){
       amount: amt,
       date_issued: dateVal,
       invoice_number: singleInvoiceLabel,
+      cheque_number: chequeNoVal || null,
       photo_front_url: frontUrl,
       photo_back_url: backUrl,
       notes: notesVal.trim() || null
@@ -4610,7 +4615,7 @@ async function chqSave(){
   renderChequeLedger();
 }
 async function chqToggleStatus(id, currentStatus){
-  const next = currentStatus==='cleared' ? 'pending' : 'cleared';
+const next = currentStatus==='pending' ? 'issued' : currentStatus==='issued' ? 'cleared' : 'pending';
   try{
     await sbPatch('cheques', `?id=eq.${id}`, {status: next});
     await chqLoadRows();
@@ -4683,10 +4688,10 @@ async function renderChequeLedger(){
         var photoLink = c.photo_front_url
           ? '<a href="'+c.photo_front_url+'" target="_blank" style="color:'+C.brass+';font-size:12px;text-decoration:underline">View</a>'
           : '<span style="color:'+C.line+';font-size:12px">—</span>';
-        var statusColor = c.status==='cleared' ? C.brass : C.rust;
+        var statusColor = c.status==='cleared' ? C.brass : c.status==='issued' ? C.ink : C.rust;
         return '<tr style="border-bottom:1px solid '+C.line+'">'
           +'<td style="padding:8px 10px;font-family:monospace;font-size:12px;color:'+C.inkSoft+'">'+c.date_issued+'</td>'
-          +'<td style="padding:8px 10px;font-size:13px;font-weight:600;color:'+C.ink+'">'+c.supplier_name+(c.invoice_number?'<br><span style="font-family:monospace;font-size:10px;color:'+C.inkSoft+'">Inv# '+c.invoice_number+'</span>':'')+'</td>'
+          +'<td style="padding:8px 10px;font-size:13px;font-weight:600;color:'+C.ink+'">'+c.supplier_name+(c.cheque_number?'<br><span style="font-family:monospace;font-size:10px;color:'+C.brass+'">Chq# '+c.cheque_number+'</span>':'')+(c.invoice_number?'<br><span style="font-family:monospace;font-size:10px;color:'+C.inkSoft+'">Inv# '+c.invoice_number+'</span>':'')+'</td>'
           +'<td style="padding:8px 10px;text-align:right;font-family:monospace;font-size:13px;font-weight:600;color:'+C.ink+'">'+chqFmt(c.amount)+'</td>'
           +'<td style="padding:8px 10px">'+photoLink+'</td>'
           +'<td style="padding:8px 10px;white-space:nowrap"><button onclick="chqToggleStatus(\''+c.id+'\',\''+c.status+'\')" style="font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-radius:100px;border:1.5px solid '+statusColor+';color:'+statusColor+';background:none;cursor:pointer;margin-right:6px">'+c.status+'</button>'
@@ -4754,9 +4759,9 @@ async function renderChequeLedger(){
        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
       +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Date issued</label>'
       +'<input id="chq-date" type="date" value="'+CHQ.dateIssued+'" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
-      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Invoice number</label>'
-      +'<input id="chq-invoice" type="text" placeholder="e.g. 4521/26" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
-    +'</div>'
+      +'<div><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Cheque number</label>'
+      +'<input id="chq-cheque-no" type="text" placeholder="e.g. 004521" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
+      +'</div>'
     +'<div style="margin-bottom:12px"><label style="display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px">Notes (optional)</label>'
       +'<input id="chq-notes" type="text" placeholder="What is this for" style="width:100%;padding:8px 10px;border:1px solid '+C.line+';border-radius:6px;background:'+C.paper+';font-size:13px"></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'
@@ -4791,7 +4796,7 @@ async function renderChequeLedger(){
           ? '<div style="margin-top:12px;font-size:13px;color:'+C.rust+'">No cheque found covering invoice "'+CHQ.lookupQuery+'".</div>'
           : '<div style="margin-top:14px">'+CHQ.lookupResults.map(function(r){
               var c = r.cheques || {};
-              var statusColor = c.status==='cleared' ? C.brass : C.rust;
+              var statusColor = c.status==='cleared' ? C.brass : c.status==='issued' ? C.ink : C.rust;
               return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid '+C.line+';border-radius:8px;margin-bottom:8px;background:'+C.paper+'">'
                 +'<div>'
                 +'<div style="font-size:13px;font-weight:600;color:'+C.ink+'">Inv# '+r.invoice_number+(r.invoice_date?' — '+r.invoice_date:'')+'</div>'
