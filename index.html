@@ -4913,7 +4913,89 @@ async function renderChequeLedger(){
 
     +'</div>';
 }
+// ── VENDOR HISTORY (read-only: reads the vendor_history table, writes nothing) ──
+var VH = {agency:'Nutan Industries', month:'', rows:null, agencies:[], loading:false, err:''};
 
+async function vhInit(){
+  if(!VH.month) VH.month = new Date().toISOString().slice(0,7);
+  vhRender();
+  try{
+    if(!VH.agencies.length){
+      var a = await sbGetAll('vendor_history','?select=agency');
+      var seen = {}; a.forEach(function(r){ seen[r.agency]=true; });
+      VH.agencies = Object.keys(seen).sort();
+      if(VH.agencies.length && VH.agencies.indexOf(VH.agency)<0) VH.agency = VH.agencies[0];
+    }
+    await vhLoad();
+  }catch(e){ VH.err = e.message||String(e); VH.rows = []; vhRender(); }
+}
+
+async function vhLoad(){
+  VH.loading = true; VH.err = ''; vhRender();
+  try{
+    var p = VH.month.split('-');
+    var last = new Date(Number(p[0]), Number(p[1]), 0).getDate();
+    var from = VH.month+'-01', to = VH.month+'-'+String(last).padStart(2,'0');
+    VH.rows = await sbGetAll('vendor_history',
+      '?agency=eq.'+encodeURIComponent(VH.agency)+'&entry_date=gte.'+from+'&entry_date=lte.'+to+'&select=*&order=entry_date.asc,ref_no.asc');
+  }catch(e){ VH.err = e.message||String(e); VH.rows = []; }
+  VH.loading = false; vhRender();
+}
+
+function vhSet(k, v){ VH[k] = v; vhLoad(); }
+
+function vhRender(){
+  var el = document.getElementById('vh-card'); if(!el) return;
+  var C = {paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F', brass:'#9C7A2E', rust:'#9B3A22'};
+  var esc = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  var fmt = function(n){ return '₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2}); };
+  var rows = VH.rows || [];
+  var inv = rows.filter(function(r){ return r.entry_type==='invoice'; });
+  var chq = rows.filter(function(r){ return r.entry_type==='cheque'; });
+  var dn  = rows.filter(function(r){ return r.entry_type==='debit_note'; });
+  var sum = function(a){ return a.reduce(function(s,r){ return s+(Number(r.amount)||0); },0); };
+  var lbl = 'display:block;font-family:monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:5px';
+  var inp = 'padding:7px 9px;border:1px solid '+C.line+';border-radius:6px;background:white;font-size:13px';
+  var th  = 'padding:8px 10px;text-align:left;color:'+C.paper+';font-family:monospace;font-size:10px;text-transform:uppercase';
+  var opts = (VH.agencies.length ? VH.agencies : [VH.agency]).map(function(a){
+    return '<option value="'+esc(a)+'"'+(a===VH.agency?' selected':'')+'>'+esc(a)+'</option>'; }).join('');
+  var invRows = inv.length ? inv.map(function(r){
+      return '<tr style="border-bottom:1px solid '+C.line+'"><td style="padding:7px 10px;font-family:monospace;font-size:12px;color:'+C.inkSoft+'">'+esc(r.entry_date)+'</td>'
+        +'<td style="padding:7px 10px;font-size:13px;font-weight:600">'+esc(r.ref_no)+'</td>'
+        +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-size:13px;font-weight:600">'+fmt(r.amount)+'</td></tr>'; }).join('')
+    : '<tr><td colspan="3" style="padding:14px;text-align:center;color:'+C.inkSoft+';font-size:13px">No invoices this month.</td></tr>';
+  var chqRows = chq.length ? chq.map(function(r){
+      return '<tr style="border-bottom:1px solid '+C.line+'"><td style="padding:7px 10px;font-family:monospace;font-size:12px;color:'+C.inkSoft+'">'+esc(r.entry_date)+'</td>'
+        +'<td style="padding:7px 10px;font-size:13px;font-weight:600">Chq# '+esc(r.ref_no)+'</td></tr>'; }).join('')
+    : '<tr><td colspan="2" style="padding:14px;text-align:center;color:'+C.inkSoft+';font-size:13px">No cheques this month.</td></tr>';
+  var dnHtml = dn.map(function(r){
+      return '<div style="margin-top:10px;font-size:12px;color:'+C.rust+'">Debit note #'+esc(r.ref_no)+' on '+esc(r.entry_date)+' — '+fmt(r.amount)+' (reduces amount owed)</div>'; }).join('');
+  var box = 'background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,0.10)';
+  el.innerHTML =
+    '<div style="margin-top:32px;padding-top:24px;border-top:2px solid '+C.ink+'">'
+    +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:4px">Read-only · from the vendor ledger</div>'
+    +'<div style="font-family:Georgia,serif;font-size:19px;font-weight:600;margin-bottom:12px">Vendor history</div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">'
+      +'<div><label style="'+lbl+'">Vendor</label><select onchange="vhSet(\'agency\',this.value)" style="'+inp+';min-width:180px">'+opts+'</select></div>'
+      +'<div><label style="'+lbl+'">Month</label><input type="month" value="'+esc(VH.month)+'" onchange="if(this.value)vhSet(\'month\',this.value)" style="'+inp+'"></div>'
+    +'</div>'
+    +(VH.err ? '<div style="color:'+C.rust+';font-size:13px;margin-bottom:10px">Could not load history: '+esc(VH.err)+'</div>' : '')
+    +(VH.loading ? '<div style="color:'+C.inkSoft+';font-size:13px">Loading…</div>' :
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">'
+        +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:12px 14px"><div style="'+lbl+'">Invoices</div><div style="font-family:monospace;font-size:18px;font-weight:700">'+inv.length+'</div></div>'
+        +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:12px 14px"><div style="'+lbl+'">Invoice total</div><div style="font-family:monospace;font-size:18px;font-weight:700">'+fmt(sum(inv))+'</div></div>'
+        +'<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:12px 14px"><div style="'+lbl+'">Cheques</div><div style="font-family:monospace;font-size:18px;font-weight:700">'+chq.length+'</div></div>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start">'
+        +'<div style="'+box+'"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:'+C.ink+'"><th style="'+th+'">Date</th><th style="'+th+'">Invoice no.</th><th style="'+th+';text-align:right">Amount</th></tr></thead><tbody>'+invRows+'</tbody></table></div>'
+        +'<div style="'+box+'"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:'+C.ink+'"><th style="'+th+'">Date</th><th style="'+th+'">Cheque</th></tr></thead><tbody>'+chqRows+'</tbody></table></div>'
+      +'</div>'
+      +dnHtml
+      +'<div style="margin-top:10px;font-size:11px;color:'+C.inkSoft+'">History only. It is not counted in the totals, outstanding or cheque cards above. Cheque amounts were not in the ledger, so only numbers and dates are shown.</div>')
+       +'</div>'
+    +'<div id="vh-card"></div>';
+  vhInit();
+}
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
