@@ -4952,7 +4952,7 @@ function vhRender(){
   var rows = VH.rows || [];
   var inv = rows.filter(function(r){ return r.entry_type==='invoice'; });
   var chq = rows.filter(function(r){ return r.entry_type==='cheque'; });
-  var dn  = rows.filter(function(r){ return r.entry_type==='debit_note'; });
+  var dn  = rows.filter(function(r){ return r.entry_type==='debit_note' || r.entry_type==='cash_payment'; });
   var sum = function(a){ return a.reduce(function(s,r){ return s+(Number(r.amount)||0); },0); };
   var inp = 'padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;background:#fff';
   var stat = function(label,val){ return '<div style="flex:1;min-width:140px;background:#f9f5f2;border-radius:8px;padding:10px 14px"><div style="font-size:12px;color:#888">'+label+'</div><div style="font-size:18px;font-weight:700;color:#6B2400">'+val+'</div></div>'; };
