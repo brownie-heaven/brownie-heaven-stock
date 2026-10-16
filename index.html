@@ -4991,6 +4991,198 @@ function vhRender(){
       +'<div style="margin-top:10px;font-size:11px;color:#999">Cheque amounts were not in the ledger, so only cheque numbers and dates are shown.</div>')
     +'</div>';
 }
+  // ── VENDOR HISTORY v3: ledger history + new Purchase entries, date range, edit, credit note ──
+// (reads purchase_ledger, never changes it; edits are saved only in the vendor_history table)
+var VH = {agency:'Nutan Industries', from:'', to:'', rows:null, view:[], agencies:[], cutoff:'', loading:false, err:'', editI:null, adding:false};
+
+function vhToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function vhKey(s){ return String(s==null?'':s).trim().toUpperCase(); }
+
+async function vhInit(){
+  if(!VH.to){ VH.to = vhToday(); VH.from = VH.to.slice(0,8)+'01'; }
+  vhRender();
+  try{
+    if(!VH.agencies.length){
+      var a = await sbGetAll('vendor_history','?select=agency');
+      var b = await sbGetAll('purchase_ledger','?select=agency');
+      var seen = {};
+      a.concat(b).forEach(function(r){ if(r.agency) seen[r.agency]=true; });
+      VH.agencies = Object.keys(seen).sort();
+      if(VH.agencies.length && VH.agencies.indexOf(VH.agency)<0) VH.agency = VH.agencies[0];
+      // last date covered by the Excel import: live Purchase entries after this date are added to the history
+      var c = await sbGet('vendor_history','?select=entry_date&source=like.ledger-import*&order=entry_date.desc&limit=1');
+      VH.cutoff = c.length ? c[0].entry_date : '';
+    }
+    await vhLoad();
+  }catch(e){ VH.err = e.message||String(e); VH.rows = []; VH.view = []; vhRender(); }
+}
+
+async function vhLoad(){
+  VH.loading = true; VH.err = ''; VH.editI = null; vhRender();
+  try{
+    var ag = encodeURIComponent(VH.agency);
+    var hist = await sbGetAll('vendor_history',
+      '?agency=eq.'+ag+'&entry_date=gte.'+VH.from+'&entry_date=lte.'+VH.to+'&select=*&order=entry_date.asc,ref_no.asc');
+    var adopted = await sbGetAll('vendor_history','?agency=eq.'+ag+'&live_id=not.is.null&select=live_id');
+    var adoptedIds = {}; adopted.forEach(function(r){ adoptedIds[String(r.live_id)] = true; });
+    var histRefs = {}; hist.forEach(function(r){ if(r.entry_type==='invoice') histRefs[vhKey(r.ref_no)] = true; });
+    var liveFrom = (VH.cutoff && VH.from < VH.cutoff) ? VH.cutoff : VH.from;
+    var live = [];
+    if(VH.to >= liveFrom){
+      live = await sbGetAll('purchase_ledger','?agency=eq.'+ag+'&date=gte.'+liveFrom+'&date=lte.'+VH.to+'&select=id,invoice_number,date,amount&order=date.asc');
+    }
+    var view = [];
+    hist.forEach(function(r){
+      view.push({src:'h', id:r.id, type:r.entry_type, date:r.entry_date, ref:r.ref_no||'', amount:r.amount, credit:r.credit_note, note:r.note}); });
+    live.forEach(function(l){
+      var k = vhKey(l.invoice_number);
+      if(adoptedIds[String(l.id)]) return;
+      if(k && histRefs[k]) return;
+      var later = !VH.cutoff || l.date > VH.cutoff || (l.date === VH.cutoff && k);
+      if(!later) return;
+      view.push({src:'l', id:l.id, type:'invoice', date:l.date, ref:l.invoice_number||'', amount:l.amount, credit:0, note:null}); });
+    view.sort(function(x,y){ return x.date<y.date?-1:x.date>y.date?1:(x.ref<y.ref?-1:x.ref>y.ref?1:0); });
+    view.forEach(function(r,i){ r.i = i; });
+    VH.view = view; VH.rows = view;
+  }catch(e){ VH.err = e.message||String(e); VH.rows = []; VH.view = []; }
+  VH.loading = false; vhRender();
+}
+
+function vhSet(k, v){
+  VH[k] = v;
+  if(VH.from > VH.to){ if(k==='from') VH.to = VH.from; else VH.from = VH.to; }
+  vhLoad();
+}
+function vhPreset(p){
+  var t = vhToday(), y = Number(t.slice(0,4)), m = Number(t.slice(5,7));
+  var pad = function(n){ return String(n).padStart(2,'0'); };
+  if(p==='m'){ VH.from = t.slice(0,8)+'01'; VH.to = t; }
+  else if(p==='lm'){ var py = m===1?y-1:y, pm = m===1?12:m-1; VH.from = py+'-'+pad(pm)+'-01'; VH.to = py+'-'+pad(pm)+'-'+pad(new Date(py,pm,0).getDate()); }
+  else { VH.from = '2026-04-01'; VH.to = t; }
+  vhLoad();
+}
+function vhEdit(i){ VH.editI = i; VH.adding = false; vhRender(); }
+function vhCancel(){ VH.editI = null; VH.adding = false; vhRender(); }
+function vhAddToggle(){ VH.adding = !VH.adding; VH.editI = null; vhRender(); }
+
+function vhNum(s){ s = String(s==null?'':s).trim(); if(s==='') return null; var n = Number(s.replace(/,/g,'')); return isNaN(n) ? NaN : n; }
+
+async function vhSave(i){
+  var r = VH.view[i]; if(!r) return;
+  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  var date = g('vhe-date'), ref = g('vhe-ref').trim(), amt = vhNum(g('vhe-amt')), cr = vhNum(g('vhe-cr'));
+  if(!date){ alert('Please enter a date.'); return; }
+  if(!ref){ alert('Please enter the '+(r.type==='cheque'?'cheque':'invoice')+' number.'); return; }
+  if(isNaN(amt) || isNaN(cr)){ alert('Amount and credit note must be numbers.'); return; }
+  if(r.type==='invoice' && amt==null){ alert('Please enter the invoice amount.'); return; }
+  var body = {entry_date:date, ref_no:ref, amount:amt};
+  if(r.type==='invoice') body.credit_note = cr==null ? 0 : cr;
+  try{
+    if(r.src==='h'){
+      var res = await sbPatch('vendor_history','?id=eq.'+encodeURIComponent(r.id), body);
+      if(!res || !res.length) throw new Error('Not saved: the database blocked the change. Run the permissions SQL for vendor_history first.');
+    } else {
+      await sbPost('vendor_history',[{agency:VH.agency, entry_type:'invoice', entry_date:date, ref_no:ref, amount:amt,
+        credit_note:body.credit_note, note:'Edited copy of a live Purchase entry', live_id:String(r.id), source:'app-edit'}]);
+    }
+    await vhLoad();
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
+}
+
+async function vhAddSave(){
+  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  var type = g('vha-type')||'invoice', date = g('vha-date'), ref = g('vha-ref').trim(), amt = vhNum(g('vha-amt')), cr = vhNum(g('vha-cr'));
+  if(!date){ alert('Please enter a date.'); return; }
+  if(!ref){ alert('Please enter the '+(type==='cheque'?'cheque':'invoice')+' number.'); return; }
+  if(isNaN(amt) || isNaN(cr)){ alert('Amount and credit note must be numbers.'); return; }
+  if(type==='invoice' && amt==null){ alert('Please enter the invoice amount.'); return; }
+  var row = {agency:VH.agency, entry_type:type, entry_date:date, ref_no:ref, amount:amt, note:'Added in the app', source:'app-add'};
+  if(type==='invoice') row.credit_note = cr==null ? 0 : cr;
+  try{ await sbPost('vendor_history',[row]); VH.adding = false; await vhLoad(); }
+  catch(e){ alert('Could not add: '+(e.message||e)); }
+}
+
+function vhRender(){
+  var el = document.getElementById('vh-card'); if(!el) return;
+  var esc = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  var fmt = function(n){ return '₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2}); };
+  var rows = VH.view || [];
+  var inv = rows.filter(function(r){ return r.type==='invoice'; });
+  var chq = rows.filter(function(r){ return r.type==='cheque'; });
+  var oth = rows.filter(function(r){ return r.type==='debit_note' || r.type==='cash_payment'; });
+  var sum = function(a,k){ return a.reduce(function(s,r){ return s+(Number(r[k])||0); },0); };
+  var inp = 'padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;background:#fff';
+  var mini = 'padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;background:#fff;box-sizing:border-box';
+  var btn = 'border:1px solid #6B2400;background:#fff;color:#6B2400;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer';
+  var btnOn = 'border:none;background:#6B2400;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer';
+  var stat = function(label,val){ return '<div style="flex:1;min-width:130px;background:#f9f5f2;border-radius:8px;padding:10px 14px"><div style="font-size:12px;color:#888">'+label+'</div><div style="font-size:18px;font-weight:700;color:#6B2400">'+val+'</div></div>'; };
+  var th = 'padding:6px 10px;text-align:left;font-weight:600;white-space:nowrap';
+  var td = 'padding:6px 10px;border-bottom:1px solid #eee';
+  var pen = function(i){ return '<button onclick="vhEdit('+i+')" title="Edit" style="border:none;background:none;cursor:pointer;font-size:14px;color:#6B2400">✎</button>'; };
+  var save = function(i){ return '<button onclick="vhSave('+i+')" style="'+btnOn+';padding:4px 10px">Save</button> <button onclick="vhCancel()" style="'+btn+';padding:4px 10px">✕</button>'; };
+  var live = '<span title="Comes from a Purchase entry" style="font-size:9px;font-weight:700;color:#1a7f4b;border:1px solid #1a7f4b;border-radius:4px;padding:0 4px;margin-left:6px">LIVE</span>';
+  var opts = (VH.agencies.length ? VH.agencies : [VH.agency]).map(function(a){
+    return '<option value="'+esc(a)+'"'+(a===VH.agency?' selected':'')+'>'+esc(a)+'</option>'; }).join('');
+  var invRows = inv.length ? inv.map(function(r){
+      if(VH.editI===r.i){
+        return '<tr style="background:#fff8ee"><td style="'+td+'"><input id="vhe-date" type="date" value="'+esc(r.date)+'" style="'+mini+';width:128px"></td>'
+          +'<td style="'+td+'"><input id="vhe-ref" value="'+esc(r.ref)+'" style="'+mini+';width:120px"></td>'
+          +'<td style="'+td+'"><input id="vhe-amt" value="'+esc(r.amount)+'" inputmode="decimal" style="'+mini+';width:84px;text-align:right"></td>'
+          +'<td style="'+td+'"><input id="vhe-cr" value="'+esc(r.credit||'')+'" inputmode="decimal" placeholder="0" style="'+mini+';width:76px;text-align:right"></td>'
+          +'<td style="'+td+';white-space:nowrap">'+save(r.i)+'</td></tr>'; }
+      return '<tr><td style="'+td+';color:#888;white-space:nowrap">'+esc(r.date)+'</td><td style="'+td+';font-weight:600">'+(r.ref?esc(r.ref):'<span style="color:#aaa">(no invoice #)</span>')+(r.src==='l'?live:'')+'</td>'
+        +'<td style="'+td+';text-align:right;font-weight:600">'+fmt(r.amount)+'</td>'
+        +'<td style="'+td+';text-align:right;color:#B03020">'+(Number(r.credit)>0?fmt(r.credit):'–')+'</td>'
+        +'<td style="'+td+'">'+pen(r.i)+'</td></tr>'; }).join('')
+    : '<tr><td colspan="5" style="padding:14px;text-align:center;color:#999">No invoices in this period.</td></tr>';
+  var chqRows = chq.length ? chq.map(function(r){
+      if(VH.editI===r.i){
+        return '<tr style="background:#fff8ee"><td style="'+td+'"><input id="vhe-date" type="date" value="'+esc(r.date)+'" style="'+mini+';width:128px"></td>'
+          +'<td style="'+td+'"><input id="vhe-ref" value="'+esc(r.ref)+'" style="'+mini+';width:90px"></td>'
+          +'<td style="'+td+'"><input id="vhe-amt" value="'+esc(r.amount==null?'':r.amount)+'" inputmode="decimal" placeholder="amount" style="'+mini+';width:84px;text-align:right"></td>'
+          +'<td style="'+td+';white-space:nowrap">'+save(r.i)+'</td></tr>'; }
+      return '<tr><td style="'+td+';color:#888;white-space:nowrap">'+esc(r.date)+'</td><td style="'+td+';font-weight:600">Chq# '+esc(r.ref)+'</td>'
+        +'<td style="'+td+';text-align:right;font-weight:600">'+(r.amount==null?'<span style="color:#aaa">–</span>':fmt(r.amount))+'</td>'
+        +'<td style="'+td+'">'+pen(r.i)+'</td></tr>'; }).join('')
+    : '<tr><td colspan="4" style="padding:14px;text-align:center;color:#999">No cheques in this period.</td></tr>';
+  var othHtml = oth.map(function(r){
+      return '<div style="margin-top:10px;font-size:12px;color:#B03020">'+(r.type==='cash_payment'?'Cash payment #':'Debit note #')+esc(r.ref)+' on '+esc(r.date)+' — '+fmt(r.amount)+' (reduces amount owed)</div>'; }).join('');
+  var addForm = VH.adding ?
+    '<div style="background:#fff8ee;border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+    +'<div><div style="font-size:11px;color:#888">Type</div><select id="vha-type" style="'+mini+'"><option value="invoice">Invoice</option><option value="cheque">Cheque</option></select></div>'
+    +'<div><div style="font-size:11px;color:#888">Date</div><input id="vha-date" type="date" value="'+vhToday()+'" style="'+mini+'"></div>'
+    +'<div><div style="font-size:11px;color:#888">Invoice / Cheque no.</div><input id="vha-ref" style="'+mini+';width:130px"></div>'
+    +'<div><div style="font-size:11px;color:#888">Amount</div><input id="vha-amt" inputmode="decimal" style="'+mini+';width:90px"></div>'
+    +'<div><div style="font-size:11px;color:#888">Credit note</div><input id="vha-cr" inputmode="decimal" placeholder="0" style="'+mini+';width:80px"></div>'
+    +'<button onclick="vhAddSave()" style="'+btnOn+'">Add</button><button onclick="vhCancel()" style="'+btn+'">Cancel</button></div>' : '';
+  var box = 'border:1px solid #eee;border-radius:8px;overflow-x:auto';
+  var net = sum(inv,'amount') - sum(inv,'credit');
+  el.innerHTML =
+    '<div style="margin-top:28px;border-top:2px solid #6B2400;padding-top:18px">'
+    +'<h3 style="color:#6B2400;margin:0 0 4px">📚 Vendor History</h3>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:14px">Ledger history plus new Purchase entries (marked LIVE). Edits and credit notes are saved here only. They never change the Purchase entries or any totals.</div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end">'
+      +'<div><label style="font-size:12px;color:#888">Vendor</label><br><select onchange="vhSet(\'agency\',this.value)" style="'+inp+';min-width:180px">'+opts+'</select></div>'
+      +'<div><label style="font-size:12px;color:#888">From</label><br><input type="date" value="'+esc(VH.from)+'" onchange="if(this.value)vhSet(\'from\',this.value)" style="'+inp+'"></div>'
+      +'<div><label style="font-size:12px;color:#888">To</label><br><input type="date" value="'+esc(VH.to)+'" onchange="if(this.value)vhSet(\'to\',this.value)" style="'+inp+'"></div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'
+      +'<button onclick="vhPreset(\'m\')" style="'+btn+'">This month</button><button onclick="vhPreset(\'lm\')" style="'+btn+'">Last month</button><button onclick="vhPreset(\'all\')" style="'+btn+'">All (from 1 Apr)</button>'
+      +'<button onclick="vhAddToggle()" style="'+btnOn+';margin-left:auto">+ Add entry</button>'
+    +'</div>'
+    +addForm
+    +(VH.err ? '<div style="color:#B03020;font-size:13px;margin-bottom:10px">Could not load history: '+esc(VH.err)+'</div>' : '')
+    +(VH.loading ? '<p style="color:#999;font-size:13px">Loading…</p>' :
+      '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'
+        +stat('Invoices',inv.length)+stat('Invoice total',fmt(sum(inv,'amount')))+stat('Credit notes',fmt(sum(inv,'credit')))+stat('Net (after credit notes)',fmt(net))+stat('Cheques',chq.length)
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;align-items:start">'
+        +'<div style="'+box+'"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#fafafa"><th style="'+th+'">Date</th><th style="'+th+'">Invoice no.</th><th style="'+th+';text-align:right">Amount</th><th style="'+th+';text-align:right">Credit note</th><th style="'+th+'"></th></tr></thead><tbody>'+invRows+'</tbody></table></div>'
+        +'<div style="'+box+'"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#fafafa"><th style="'+th+'">Date</th><th style="'+th+'">Cheque</th><th style="'+th+';text-align:right">Amount</th><th style="'+th+'"></th></tr></thead><tbody>'+chqRows+'</tbody></table></div>'
+      +'</div>'
+      +othHtml)
+    +'</div>';
+}
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
