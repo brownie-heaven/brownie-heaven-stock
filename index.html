@@ -1891,6 +1891,7 @@ async function loadPurchaseHistory(){
           <span style="font-size:12px;color:#999;margin-left:10px">${g.date}</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px">
+        <button onclick="purEditBill('${g.date}','${g.agency.replace(/'/g,"\\'")}')" style="padding:5px 12px;background:#eef6ff;color:#1a56a0;border:1px solid #b6d4f5;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500">✏️ Edit bill</button>
           <button onclick="showAddItemForm('${g.agency.replace(/'/g,"\\'")}','${g.date}')" style="padding:5px 12px;background:#fff7eb;color:#a35c00;border:1px solid #f0c878;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500">+ Add Item</button>
           <span style="font-weight:700;color:#6B2400">₹${g.total.toFixed(2)}</span>
         </div>
@@ -5182,6 +5183,218 @@ function vhRender(){
       +'</div>'
       +othHtml)
     +'</div>';
+}
+  // ── PURCHASE: agency dropdown for every product + edit bill (agency / invoice no.) ──
+var PUR_EXTRA_AGENCIES = [];      // agencies typed in with "Other…" this session
+var PUR_LEDGER_AGENCIES = null;   // agency names already used in Purchase entries (loaded once)
+
+function purAgencyList(current){
+  var map = {};
+  var add = function(a){ a = String(a||'').trim(); if(a && !map[a.toLowerCase()]) map[a.toLowerCase()] = a; };
+  getAllPurchaseProducts().forEach(function(p){ add(p.agency); });
+  (PUR_LEDGER_AGENCIES||[]).forEach(add);
+  PUR_EXTRA_AGENCIES.forEach(add);
+  add(current);
+  return Object.keys(map).map(function(k){ return map[k]; }).sort(function(x,y){ return x.toLowerCase()<y.toLowerCase()?-1:1; });
+}
+async function purLoadAgencies(){
+  if(PUR_LEDGER_AGENCIES!==null) return;
+  PUR_LEDGER_AGENCIES = [];
+  try{
+    var rows = await sbGetAll('purchase_ledger','?select=agency');
+    var seen = {}; rows.forEach(function(r){ if(r.agency) seen[r.agency]=true; });
+    PUR_LEDGER_AGENCIES = Object.keys(seen);
+    renderPurchaseRows();
+  }catch(e){}
+}
+function purAgencyOptionsHtml(current){
+  var esc = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  var cur = String(current||'').trim().toLowerCase();
+  return (cur ? '' : '<option value="" selected>— choose agency —</option>')
+    + purAgencyList(current).map(function(a){ return '<option value="'+esc(a)+'"'+(a.toLowerCase()===cur?' selected':'')+'>'+esc(a)+'</option>'; }).join('')
+    + '<option value="__other__">➕ Other agency…</option>';
+}
+function purAgencySelectHtml(r){
+  purLoadAgencies();
+  return '<select onchange="purAgencyChange('+r.id+',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;background:#fff">'
+    + purAgencyOptionsHtml(r.agency) + '</select>';
+}
+function purAskNewAgency(){
+  var n = prompt('Type the agency name (as it should appear everywhere):');
+  n = n ? n.trim() : '';
+  if(n && PUR_EXTRA_AGENCIES.indexOf(n)<0) PUR_EXTRA_AGENCIES.push(n);
+  return n;
+}
+function purAgencyChange(id, val){
+  if(val==='__other__'){
+    var n = purAskNewAgency();
+    var r = purchaseRows.find(function(x){ return x.id===id; });
+    if(!n){ renderPurchaseRows(); return; }
+    val = n;
+  }
+  onPurchaseFieldChange(id, 'agency', val);
+}
+
+function renderPurchaseRows(){
+  const tbody = document.getElementById('pur-rows');
+  if(!tbody) return;
+  tbody.innerHTML = purchaseRows.map(r=>`
+    <tr id="purrow-${r.id}" style="border-bottom:1px solid #eee">
+    <td style="padding:6px;position:relative">
+        <input type="text" id="psearch-${r.id}" value="${r.product}" placeholder="Type to search product..." oninput="filterPP(${r.id},this.value)" onfocus="filterPP(${r.id},this.value)" onblur="setTimeout(()=>{const d=document.getElementById('pdd-${r.id}');if(d)d.style.display='none'},200)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px" autocomplete="off">
+<div id="pdd-${r.id}" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:180px;overflow-y:auto;background:white;border:1px solid #ddd;border-radius:4px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div>
+      </td>
+      <td style="padding:6px">${purAgencySelectHtml(r)}</td>
+      <td style="padding:6px"><input value="${r.category}" readonly style="width:100%;padding:6px;border:1px solid #eee;border-radius:4px;font-size:12px;background:#f9f9f9"></td>
+      <td style="padding:6px"><input value="${r.invoice||''}" placeholder="e.g. BF26G15103" onchange="onPurchaseFieldChange(${r.id},'invoice',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px"></td>
+      <td style="padding:6px"><input type="number" value="${r.qty}" min="0" onchange="onPurchaseFieldChange(${r.id},'qty',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
+      <td style="padding:6px"><select onchange="onPurchaseFieldChange(${r.id},'unit',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px"><option value="pcs" ${r.unit==='pcs'?'selected':''}>pcs</option><option value="kg" ${r.unit==='kg'?'selected':''}>kg</option></select></td>
+      <td style="padding:6px"><input type="number" value="${r.rate}" onchange="onPurchaseFieldChange(${r.id},'rate',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:center"></td>
+      <td style="padding:6px">
+        <select onchange="onPurchaseFieldChange(${r.id},'gst',this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px">
+          ${[0,5,12,18].map(g=>`<option value="${g}" ${r.gst==g?'selected':''}>${g}%</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:6px;text-align:center;font-weight:600;color:#6B2400">₹${(r.amount||0).toFixed(2)}</td>
+      <td style="padding:6px;text-align:center">
+        <button onclick="removePurchaseRow(${r.id})" style="background:#fee;border:1px solid #fcc;border-radius:4px;padding:4px 8px;cursor:pointer;color:#c00;font-size:12px">✕</button>
+      </td>
+    </tr>`).join('');
+  updatePurchaseTotal();
+}
+
+
+// ── Edit a whole bill: change its agency and/or invoice number(s) in one go ──
+var PUR_EB = null;
+function purVK(s){ return String(s==null?'':s).trim().toUpperCase(); }
+
+async function purEditBill(date, agency){
+  try{
+    var items = await sbGet('purchase_ledger','?date=eq.'+date+'&agency=eq.'+encodeURIComponent(agency)+'&select=id,product,invoice_number&order=product.asc');
+    if(!items.length){ alert('Bill not found.'); return; }
+    var invs = [];
+    items.forEach(function(i){ var v = i.invoice_number||''; if(invs.indexOf(v)<0) invs.push(v); });
+    PUR_EB = {date:date, agency:agency, items:items, invs:invs};
+    await purLoadAgencies();
+    var esc = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+    var old = document.getElementById('pueb-modal'); if(old) old.remove();
+    var o = document.createElement('div');
+    o.id = 'pueb-modal';
+    o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+    o.innerHTML =
+      '<div style="background:white;border-radius:8px;padding:22px;max-width:460px;width:92%;max-height:90vh;overflow-y:auto;color:#222">'
+      +'<h3 style="color:#6B2400;margin:0 0 4px">✏️ Edit bill</h3>'
+      +'<div style="font-size:12px;color:#888;margin-bottom:14px">'+esc(date)+' · '+items.length+' item'+(items.length>1?'s':'')+' · changes apply to every item in this bill</div>'
+      +'<label style="font-size:12px;color:#888">Agency</label>'
+      +'<select id="pueb-agency" onchange="purEbAgency(this)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px;margin-bottom:14px;background:#fff">'+purAgencyOptionsHtml(agency)+'</select>'
+      + invs.map(function(v,i){
+          var names = items.filter(function(x){ return (x.invoice_number||'')===v; }).map(function(x){ return x.product; });
+          return '<div style="margin-bottom:12px"><label style="font-size:12px;color:#888">Invoice number'+(invs.length>1?' (for '+esc(names.slice(0,2).join(', '))+(names.length>2?' +'+(names.length-2)+' more':'')+')':'')+'</label>'
+            +'<input id="pueb-inv-'+i+'" value="'+esc(v)+'" placeholder="Invoice number" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box"></div>'; }).join('')
+      +'<div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">'
+      +'<button onclick="document.getElementById(\'pueb-modal\').remove()" style="padding:8px 18px;background:#f0f0f0;border:1px solid #ddd;border-radius:6px;cursor:pointer">Cancel</button>'
+      +'<button onclick="purEditBillSave()" style="padding:8px 24px;background:#6B2400;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Save</button>'
+      +'</div></div>';
+    document.body.appendChild(o);
+  }catch(e){ alert('Could not open the bill: '+(e&&e.message||e)); }
+}
+function purEbAgency(sel){
+  if(sel.value!=='__other__') return;
+  var n = purAskNewAgency();
+  sel.innerHTML = purAgencyOptionsHtml(n || (PUR_EB && PUR_EB.agency));
+}
+
+// keeps cheque links in step when an invoice number is renamed (the app links cheques to bills by invoice number)
+async function purAfterInvoiceChange(oldInv, newInv){
+  if(!oldInv || purVK(oldInv)===purVK(newInv)) return;
+  var left = await sbGet('purchase_ledger','?invoice_number=eq.'+encodeURIComponent(oldInv)+'&select=id&limit=1');
+  if(left.length) return;                       // another bill still uses the old number: leave the cheque link alone
+  await sbPatch('cheque_invoices','?invoice_number=eq.'+encodeURIComponent(oldInv),{invoice_number:newInv});
+  var ch = await sbGetAll('cheques','?invoice_number=ilike.*'+encodeURIComponent(oldInv)+'*&select=id,invoice_number');
+  for(var i=0;i<ch.length;i++){
+    var parts = String(ch[i].invoice_number||'').split(',').map(function(x){ return x.trim(); });
+    if(parts.some(function(x){ return purVK(x)===purVK(oldInv); })){
+      var next = parts.map(function(x){ return purVK(x)===purVK(oldInv) ? newInv : x; }).join(', ');
+      await sbPatch('cheques','?id=eq.'+ch[i].id,{invoice_number:next});
+    }
+  }
+}
+function purRefreshCaches(){
+  try{ if(typeof CHQ!=='undefined') CHQ.outstanding = null; }catch(e){}
+  try{ if(typeof VH!=='undefined') VH.agencies = []; }catch(e){}
+}
+
+async function purEditBillSave(){
+  var b = PUR_EB; if(!b) return;
+  var agSel = document.getElementById('pueb-agency');
+  var newAgency = agSel ? String(agSel.value||'').trim() : b.agency;
+  if(!newAgency || newAgency==='__other__'){ alert('Please choose an agency.'); return; }
+  var newInvs = b.invs.map(function(v,i){ var e = document.getElementById('pueb-inv-'+i); return e ? String(e.value).trim() : v; });
+  for(var k=0;k<b.invs.length;k++){
+    if(newInvs[k]!==b.invs[k] && !newInvs[k]){ alert('Invoice number cannot be blank.'); return; }
+  }
+  var agencyChanged = newAgency!==b.agency;
+  var changed = newInvs.some(function(v,i){ return v!==b.invs[i]; });
+  if(!agencyChanged && !changed){ document.getElementById('pueb-modal').remove(); return; }
+  try{
+    // warn if a new invoice number already belongs to a different bill
+    for(var i=0;i<newInvs.length;i++){
+      if(newInvs[i]===b.invs[i]) continue;
+      var dup = await sbGet('purchase_ledger','?invoice_number=eq.'+encodeURIComponent(newInvs[i])+'&select=id,agency,date');
+      var mine = {}; b.items.forEach(function(x){ mine[String(x.id)] = true; });
+      var others = dup.filter(function(x){ return !mine[String(x.id)]; });
+      if(others.length && !confirm('Invoice "'+newInvs[i]+'" is already used on another bill ('+others[0].agency+', '+others[0].date+').\n\nSave anyway?')) return;
+    }
+    for(var j=0;j<b.invs.length;j++){
+      var ids = b.items.filter(function(x){ return (x.invoice_number||'')===b.invs[j]; }).map(function(x){ return x.id; });
+      var body = {};
+      if(agencyChanged) body.agency = newAgency;
+      if(newInvs[j]!==b.invs[j]) body.invoice_number = newInvs[j];
+      if(!Object.keys(body).length) continue;
+      var res = await sbPatch('purchase_ledger','?id=in.('+ids.join(',')+')', body);
+      if(!res || res.length!==ids.length) throw new Error('Only '+(res?res.length:0)+' of '+ids.length+' items were updated. Please check and try again.');
+      if(body.invoice_number) await purAfterInvoiceChange(b.invs[j], newInvs[j]);
+    }
+    purRefreshCaches();
+    document.getElementById('pueb-modal').remove();
+    toast('✅ Bill updated');
+    await loadPurchaseHistory();
+  }catch(e){ alert('Could not save: '+(e&&e.message||e)); }
+}
+
+// one item: now also lets you change the invoice number
+async function editPurchaseItem(id){
+  try {
+    const rows = await sbGet('purchase_ledger', `?id=eq.${id}&select=*`);
+    if(!rows.length){ alert('Item not found.'); return; }
+    const r = rows[0];
+    const newInv = prompt(`Invoice # for "${r.product}":`, r.invoice_number || '');
+    if(newInv === null) return;
+    const newQty = prompt(`Qty for "${r.product}":`, r.qty);
+    if(newQty === null) return;
+    const newRate = prompt(`Rate (₹) for "${r.product}":`, r.rate);
+    if(newRate === null) return;
+    const newGst = prompt(`GST % for "${r.product}":`, r.gst_percent || 0);
+    if(newGst === null) return;
+    const qty = parseFloat(newQty) || 0;
+    const rate = parseFloat(newRate) || 0;
+    const gstPct = parseFloat(newGst) || 0;
+    const subtotal = qty * rate;
+    const gstAmount = subtotal * (gstPct / 100);
+    const amount = subtotal + gstAmount;
+    const inv = newInv.trim();
+    const body = { qty, rate, gst_percent: gstPct, gst_amount: gstAmount, amount };
+    const invChanged = inv && inv !== (r.invoice_number||'');
+    if(invChanged) body.invoice_number = inv;
+    await sbPatch('purchase_ledger', `?id=eq.${id}`, body);
+    if(invChanged && r.invoice_number) await purAfterInvoiceChange(r.invoice_number, inv);
+    purRefreshCaches();
+    toast(`✅ Updated ${r.product}`);
+    await loadPurchaseHistory();
+  } catch(e){
+    console.error('Edit failed:', e);
+    alert('Could not update. Details: ' + (e?.message || JSON.stringify(e)));
+  }
 }
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
