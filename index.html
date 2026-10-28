@@ -5396,6 +5396,221 @@ async function editPurchaseItem(id){
     alert('Could not update. Details: ' + (e?.message || JSON.stringify(e)));
   }
 }
+  // ── EDIT LOG: asks "Who is this?" after the admin / dispatch PIN, then records every change ──
+var ACTOR = {name:''};
+try{ ACTOR.name = sessionStorage.getItem('bh_actor') || ''; }catch(e){}
+var WHO_LIST = [], WHO_CB = null;
+var LOG_TABLES = {
+  purchase_ledger:'Purchase', purchase_products:'Purchase', cheques:'Cheque Ledger', cheque_invoices:'Cheque Ledger',
+  cheque_suppliers:'Cheque Ledger', gpay_debits:'Cheque Ledger', cheque_bank_balance:'Cheque Ledger', vendor_history:'Vendor History'};
+
+// ---------- who is this? ----------
+function whoNames(){
+  var list = ['Sanjay','Gautham'];
+  try{ JSON.parse(localStorage.getItem('bh_actor_names')||'[]').forEach(function(n){ if(list.indexOf(n)<0) list.push(n); }); }catch(e){}
+  return list;
+}
+function whoModal(cb){
+  WHO_CB = cb; WHO_LIST = whoNames();
+  var old = document.getElementById('who-modal'); if(old) old.remove();
+  var esc = function(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  var o = document.createElement('div');
+  o.id = 'who-modal';
+  o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:10001';
+  o.innerHTML =
+    '<div style="background:white;border-radius:10px;padding:24px;max-width:380px;width:92%;color:#222">'
+    +'<h3 style="color:#6B2400;margin:0 0 4px">👤 Who is this?</h3>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:14px">Your name is saved with every change you make.</div>'
+    +'<div id="who-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'
+    + WHO_LIST.map(function(n,i){ return '<button onclick="whoPick('+i+')" style="padding:10px 18px;background:#fff7eb;color:#6B2400;border:1px solid #f0c878;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer">'+esc(n)+'</button>'; }).join('')
+    +'</div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:4px">Not in the list? Type your name</div>'
+    +'<div style="display:flex;gap:8px"><input id="who-input" maxlength="40" placeholder="Your name" style="flex:1;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:14px">'
+    +'<button onclick="whoSaveNew()" style="padding:9px 16px;background:#6B2400;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">Save</button></div>'
+    +'</div>';
+  document.body.appendChild(o);
+  // also offer names that already appear in the log
+  _sbGet0('edit_log','?select=actor&order=created_at.desc&limit=200').then(function(rows){
+    var cur = document.getElementById('who-chips'); if(!cur) return;
+    var seen = {}; rows.forEach(function(r){ if(r.actor && WHO_LIST.indexOf(r.actor)<0 && !/^Outlet:|^Unknown/.test(r.actor) && !seen[r.actor]){ seen[r.actor]=1; WHO_LIST.push(r.actor); } });
+    cur.innerHTML = WHO_LIST.map(function(n,i){ return '<button onclick="whoPick('+i+')" style="padding:10px 18px;background:#fff7eb;color:#6B2400;border:1px solid #f0c878;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer">'+esc(n)+'</button>'; }).join('');
+  }).catch(function(){});
+}
+function whoPick(i){ whoDone(WHO_LIST[i]); }
+function whoSaveNew(){
+  var e = document.getElementById('who-input'); var n = e ? e.value.trim() : '';
+  if(!n){ alert('Please type your name.'); return; }
+  n = n.charAt(0).toUpperCase() + n.slice(1);
+  try{ var l = JSON.parse(localStorage.getItem('bh_actor_names')||'[]'); if(l.indexOf(n)<0 && ['Sanjay','Gautham'].indexOf(n)<0){ l.push(n); localStorage.setItem('bh_actor_names', JSON.stringify(l)); } }catch(e){}
+  whoDone(n);
+}
+function whoDone(name){
+  ACTOR.name = name;
+  try{ sessionStorage.setItem('bh_actor', name); }catch(e){}
+  var m = document.getElementById('who-modal'); if(m) m.remove();
+  var cb = WHO_CB; WHO_CB = null; if(cb) cb();
+}
+
+// ---------- hook into login / logout / tabs ----------
+var _setTab0 = setTab;
+setTab = function(i, fromBack){
+  if((S.role==='admin' || S.role==='dispatch') && !ACTOR.name){ whoModal(function(){ setTab(i, fromBack); }); return; }
+  if(i===11){
+    if(S.role!=='admin') return;
+    if(!fromBack && typeof S.mainTab==='number' && S.mainTab!==11){ S.navHistory.push({type:'tab', mainTab:S.mainTab}); try{ history.pushState({nav:true},'',''); }catch(e){} }
+    S.mainTab = 11; setHdr('Dashboard', true); updateBackBtn(); renderEditLog(); return;
+  }
+  return _setTab0(i, fromBack);
+};
+var _goHome0 = goHome;
+goHome = function(){ ACTOR.name = ''; try{ sessionStorage.removeItem('bh_actor'); }catch(e){} return _goHome0.apply(this, arguments); };
+var _setHdr0 = setHdr;
+setHdr = function(sub, showTabs){
+  _setHdr0(sub, showTabs);
+  var tabs = document.getElementById('main-tabs');
+  if(tabs && !document.getElementById('mt11')){
+    var b = document.createElement('button'); b.className='mt'; b.id='mt11'; b.textContent='Edit Log'; b.onclick=function(){ setTab(11); }; tabs.appendChild(b);
+  }
+  var t = document.getElementById('mt11');
+  if(t){ t.style.display = (showTabs && S.role==='admin') ? '' : 'none'; t.classList.toggle('active', S.mainTab===11); }
+};
+
+// ---------- recording changes (wraps the app's database write helpers) ----------
+var _sbGet0 = sbGet, _sbPost0 = sbPost, _sbPatch0 = sbPatch, _sbDelete0 = sbDelete;
+function logWho(){ return ACTOR.name || (S && S.outletName ? 'Outlet: '+S.outletName : 'Unknown'); }
+function logLabel(table, r){
+  var m = function(n){ return '₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2}); };
+  if(table==='purchase_ledger') return (r.product||'item')+' · '+(r.agency||'')+' · inv '+(r.invoice_number||'—')+' · '+(r.date||'')+(r.amount!=null?' · '+m(r.amount):'');
+  if(table==='cheques') return 'Cheque to '+(r.supplier_name||'?')+(r.cheque_number?' #'+r.cheque_number:'')+' · '+m(r.amount)+' · '+(r.date_issued||'');
+  if(table==='cheque_invoices') return 'Invoice '+(r.invoice_number||'?')+(r.amount!=null?' · '+m(r.amount):'');
+  if(table==='vendor_history') return (r.agency||'')+' · '+(r.entry_type||'')+' '+(r.ref_no||'')+(r.entry_date?' · '+r.entry_date:'')+(r.amount!=null?' · '+m(r.amount):'');
+  if(table==='purchase_products') return (r.name||'product')+' · '+(r.agency||'');
+  if(table==='cheque_suppliers') return 'Supplier '+(r.name||'');
+  if(table==='gpay_debits') return 'GPay: '+(r.label||'')+(r.amount!=null?' · '+m(r.amount):'');
+  if(table==='cheque_bank_balance') return 'Bank balance';
+  return table;
+}
+function logDiff(before, body){
+  var out = [];
+  Object.keys(body||{}).forEach(function(k){
+    if(k==='updated_at') return;
+    var a = before ? before[k] : undefined, b = body[k];
+    if(String(a==null?'':a)!==String(b==null?'':b)) out.push(k+': '+(before?(a==null||a===''?'(blank)':a):'?')+' → '+(b==null||b===''?'(blank)':b));
+  });
+  return out;
+}
+async function logEdit(table, action, detail){
+  try{
+    if(!LOG_TABLES[table] || !detail) return;
+    await _sbPost0('edit_log',[{actor:logWho(), role:(S&&S.role)||null, area:LOG_TABLES[table], action:action, table_name:table, detail:String(detail).slice(0,4000)}]);
+  }catch(e){ console.warn('edit log failed', e); }
+}
+function logCap(lines){ return lines.length>15 ? lines.slice(0,15).concat(['…and '+(lines.length-15)+' more']) : lines; }
+
+sbPost = async function(table, body){
+  var res = await _sbPost0(table, body);
+  if(LOG_TABLES[table]){
+    var rows = Array.isArray(body) ? body : [body];
+    logEdit(table, 'Added', logCap(rows.map(function(r){ return logLabel(table, r); })).join('\n'));
+  }
+  return res;
+};
+sbPatch = async function(table, params, body){
+  var before = [];
+  if(LOG_TABLES[table]){ try{ before = await _sbGet0(table, params + (params.indexOf('select=')<0 ? '&select=*' : '')); }catch(e){} }
+  var res = await _sbPatch0(table, params, body);
+  if(LOG_TABLES[table]){
+    var lines = [];
+    var rows = before.length ? before : (Array.isArray(res) ? res : []);
+    rows.forEach(function(r){
+      var d = logDiff(before.length ? r : null, body);
+      if(before.length && !d.length) return;
+      lines.push(logLabel(table, r)+(d.length?'\n   '+d.join('; '):''));
+    });
+    if(lines.length) logEdit(table, 'Edited', logCap(lines).join('\n'));
+  }
+  return res;
+};
+sbDelete = async function(table, params){
+  var before = [];
+  if(LOG_TABLES[table]){ try{ before = await _sbGet0(table, params + (params.indexOf('select=')<0 ? '&select=*' : '')); }catch(e){} }
+  var res = await _sbDelete0(table, params);
+  if(LOG_TABLES[table] && before.length) logEdit(table, 'Deleted', logCap(before.map(function(r){ return logLabel(table, r); })).join('\n'));
+  return res;
+};
+// new Purchase bills are saved with a direct request, so log them here
+var _savePurchase0 = savePurchase;
+savePurchase = async function(){
+  var snap = purchaseRows.filter(function(r){ return r.product && r.qty>0; }).map(function(r){ return {product:r.product, agency:r.agency, invoice_number:r.invoice, date:(document.getElementById('pur-date')||{}).value, amount:r.amount}; });
+  await _savePurchase0.apply(this, arguments);
+  if(snap.length && purchaseRows.length===1 && !purchaseRows[0].product)
+    logEdit('purchase_ledger','Added', 'New bill: '+logCap(snap.map(function(r){ return logLabel('purchase_ledger', r); })).join('\n'));
+};
+
+// ---------- the Edit Log screen (admin only) ----------
+var ELOG = {from:'', to:'', who:'', area:'', q:'', rows:null, err:''};
+function elogIST(iso){
+  try{ return new Date(iso).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}); }catch(e){ return iso; }
+}
+function elogToday(){ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+function elogPlusDay(d, n){ var x = new Date(d+'T00:00:00+05:30'); x.setDate(x.getDate()+n); return x.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+async function renderEditLog(){
+  if(!ELOG.to){ ELOG.to = elogToday(); ELOG.from = elogPlusDay(ELOG.to, -6); }
+  elogDraw(true);
+  try{
+    var p = '?created_at=gte.'+encodeURIComponent(ELOG.from+'T00:00:00+05:30')+'&created_at=lt.'+encodeURIComponent(elogPlusDay(ELOG.to,1)+'T00:00:00+05:30')+'&select=*&order=created_at.desc';
+    if(ELOG.who) p += '&actor=eq.'+encodeURIComponent(ELOG.who);
+    if(ELOG.area) p += '&area=eq.'+encodeURIComponent(ELOG.area);
+    ELOG.rows = await sbGetAll('edit_log', p); ELOG.err = '';
+  }catch(e){ ELOG.rows = []; ELOG.err = e.message||String(e); }
+  elogDraw(false);
+}
+function elogSet(k, v){ ELOG[k] = v; if(ELOG.from > ELOG.to){ if(k==='from') ELOG.to = ELOG.from; else ELOG.from = ELOG.to; } renderEditLog(); }
+function elogSearch(v){ ELOG.q = v; elogDraw(false); }
+function elogVisible(){
+  var q = (ELOG.q||'').toLowerCase();
+  return (ELOG.rows||[]).filter(function(r){ return !q || (r.detail||'').toLowerCase().indexOf(q)>=0 || (r.actor||'').toLowerCase().indexOf(q)>=0; });
+}
+function elogDraw(loading){
+  var el = document.getElementById('screen'); if(!el) return;
+  var esc = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  var rows = elogVisible();
+  var names = {}; (ELOG.rows||[]).forEach(function(r){ names[r.actor]=1; }); if(ELOG.who) names[ELOG.who]=1;
+  var inp = 'padding:8px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:13px';
+  var tdS = 'padding:8px 10px;border-top:1px solid var(--border,#eee);vertical-align:top;font-size:12px';
+  var col = {Added:'#1a7f4b', Edited:'#a35c00', Deleted:'#B03020'};
+  el.innerHTML =
+    '<div style="max-width:1000px;margin:0 auto;padding:16px">'
+    +'<h2 style="color:var(--brown,#6B2400);margin:0 0 4px">📜 Edit Log</h2>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:14px">Every change to Purchase, Cheque Ledger and Vendor History, with who made it and when (India time). You are signed in as <b>'+esc(ACTOR.name||'?')+'</b> · <a href="#" onclick="whoModal(function(){renderEditLog()});return false" style="color:var(--brown,#6B2400)">change</a></div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end">'
+      +'<div><div style="font-size:11px;color:#888">From</div><input type="date" value="'+esc(ELOG.from)+'" onchange="if(this.value)elogSet(\'from\',this.value)" style="'+inp+'"></div>'
+      +'<div><div style="font-size:11px;color:#888">To</div><input type="date" value="'+esc(ELOG.to)+'" onchange="if(this.value)elogSet(\'to\',this.value)" style="'+inp+'"></div>'
+      +'<div><div style="font-size:11px;color:#888">Person</div><select onchange="elogSet(\'who\',this.value)" style="'+inp+'"><option value="">Everyone</option>'+Object.keys(names).sort().map(function(n){ return '<option value="'+esc(n)+'"'+(n===ELOG.who?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'</select></div>'
+      +'<div><div style="font-size:11px;color:#888">Area</div><select onchange="elogSet(\'area\',this.value)" style="'+inp+'">'+['','Purchase','Cheque Ledger','Vendor History'].map(function(a){ return '<option value="'+a+'"'+(a===ELOG.area?' selected':'')+'>'+(a||'All areas')+'</option>'; }).join('')+'</select></div>'
+      +'<div style="flex:1;min-width:140px"><div style="font-size:11px;color:#888">Search</div><input value="'+esc(ELOG.q)+'" oninput="elogSearch(this.value)" placeholder="invoice no., product, name…" style="'+inp+';width:100%;box-sizing:border-box"></div>'
+      +'<button onclick="elogCsv()" style="padding:8px 14px;background:#6B2400;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer">⬇ Download</button>'
+    +'</div>'
+    +(ELOG.err ? '<div style="color:#B03020;font-size:13px;margin-bottom:10px">Could not load the log: '+esc(ELOG.err)+'</div>' : '')
+    +(loading ? '<p style="color:#999;font-size:13px">Loading…</p>' :
+      '<div style="font-size:12px;color:#888;margin-bottom:6px">'+rows.length+' change'+(rows.length===1?'':'s')+'</div>'
+      +'<div style="overflow-x:auto;border:1px solid var(--border,#eee);border-radius:8px"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr style="background:rgba(107,36,0,0.06)">'
+      +['When (IST)','Who','Area','Action','Details'].map(function(h){ return '<th style="padding:8px 10px;text-align:left;font-size:12px">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
+      +(rows.length ? rows.map(function(r){
+          return '<tr><td style="'+tdS+';white-space:nowrap;color:#888">'+esc(elogIST(r.created_at))+'</td><td style="'+tdS+';font-weight:600">'+esc(r.actor)+'</td>'
+            +'<td style="'+tdS+'">'+esc(r.area)+'</td><td style="'+tdS+';font-weight:600;color:'+(col[r.action]||'inherit')+'">'+esc(r.action)+'</td>'
+            +'<td style="'+tdS+';white-space:pre-wrap">'+esc(r.detail)+'</td></tr>'; }).join('')
+        : '<tr><td colspan="5" style="padding:18px;text-align:center;color:#999">No changes in this period.</td></tr>')
+      +'</tbody></table></div>')
+    +'</div>';
+}
+function elogCsv(){
+  var q = function(s){ return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'; };
+  var lines = ['When (IST),Who,Area,Action,Details'].concat(elogVisible().map(function(r){ return [elogIST(r.created_at),r.actor,r.area,r.action,r.detail].map(q).join(','); }));
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv'}));
+  a.download = 'edit-log-'+ELOG.from+'-to-'+ELOG.to+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
