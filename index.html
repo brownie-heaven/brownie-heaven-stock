@@ -5719,6 +5719,45 @@ renderChequeLedger = async function(){
   try{ chqTabsApply(true); }catch(e){ console.warn('cheque tabs failed', e); }
   return r;
 };
+  // ── CHEQUE LEDGER: totals now follow Pending → Issued → Cleared ──
+// Replaces the three summary boxes with four: Total, Pending, Issued, Cleared (each with amount and count).
+// A cheque is counted in exactly one of Pending / Issued / Cleared, so amounts move across as its status changes.
+function chqSummaryFix(){
+  var screen = document.getElementById('screen');
+  if(!screen || screen.textContent.indexOf('Outstanding by Agency')<0) return;
+  var root = screen.firstElementChild; if(!root) return;
+  var box = null;
+  Array.prototype.slice.call(root.children).forEach(function(k){
+    if(k.id==='chq-summary' || /^Total (Issued|cheques)/i.test((k.textContent||'').replace(/\s+/g,' ').trim())) box = k;
+  });
+  if(!box) return;
+  var C = { paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F', brass:'#9C7A2E', rust:'#9B3A22' };
+  var money = function(n){ return '₹'+Math.round(Number(n)||0).toLocaleString('en-IN'); };
+  var g = { total:{a:0,n:0}, pending:{a:0,n:0}, issued:{a:0,n:0}, cleared:{a:0,n:0} };
+  (CHQ.rows||[]).forEach(function(c){
+    var a = Number(c.amount)||0, s = c.status==='cleared' ? 'cleared' : c.status==='issued' ? 'issued' : 'pending';
+    g.total.a += a; g.total.n++; g[s].a += a; g[s].n++;
+  });
+  var card = function(label, sub, o, col){
+    return '<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px">'
+      +'<div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">'+label+'</div>'
+      +'<div style="font-family:Georgia,serif;font-size:21px;font-weight:700;color:'+col+'">'+money(o.a)+'</div>'
+      +'<div style="font-size:11px;color:'+C.inkSoft+';margin-top:3px">'+o.n+' cheque'+(o.n===1?'':'s')+' · '+sub+'</div></div>';
+  };
+  box.id = 'chq-summary';
+  box.style.gridTemplateColumns = 'repeat(auto-fit,minmax(150px,1fr))';
+  box.innerHTML =
+    card('Total cheques','all',g.total,C.ink)
+    +card('Pending','written, not handed over',g.pending,C.rust)
+    +card('Issued','handed over, not cleared',g.issued,C.brass)
+    +card('Cleared','cleared at the bank',g.cleared,'#2E7D4F');
+}
+var _renderChequeLedger2 = renderChequeLedger;
+renderChequeLedger = async function(){
+  var r = await _renderChequeLedger2.apply(this, arguments);
+  try{ chqSummaryFix(); }catch(e){ console.warn('cheque summary failed', e); }
+  return r;
+};
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
