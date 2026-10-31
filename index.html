@@ -5611,6 +5611,57 @@ function elogCsv(){
   a.href = URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv'}));
   a.download = 'edit-log-'+ELOG.from+'-to-'+ELOG.to+'.csv'; document.body.appendChild(a); a.click(); a.remove();
 }
+  // ── CHEQUE LEDGER: "Issued, waiting to clear" list ──
+// Reads the cheques already loaded in the ledger. Writes nothing by itself.
+// "Mark cleared" uses the same status button the register already has.
+function chqIssuedCard(){
+  var screen = document.getElementById('screen');
+  if(!screen || screen.innerHTML.indexOf('Outstanding by Agency')<0) return;   // only on the Cheque Ledger screen
+  var old = document.getElementById('chq-issued-card'); if(old) old.remove();
+  var root = screen.firstElementChild; if(!root || !root.firstElementChild) return;
+  var C = { paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F', brass:'#9C7A2E', rust:'#9B3A22' };
+  var esc = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  var money = function(n){ return '₹'+Math.round(Number(n)||0).toLocaleString('en-IN'); };
+  var today = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+  var days = function(d){ return Math.max(0, Math.round((Date.parse(today+'T00:00:00') - Date.parse(String(d).slice(0,10)+'T00:00:00'))/86400000)); };
+  var rows = (CHQ.rows||[]).filter(function(c){ return c.status==='issued'; })
+    .sort(function(a,b){ return String(a.date_issued||'').localeCompare(String(b.date_issued||'')); });   // oldest first
+  var notYet = (CHQ.rows||[]).filter(function(c){ return c.status==='pending'; });
+  var total = rows.reduce(function(s,c){ return s+(Number(c.amount)||0); },0);
+  var mono = 'font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft;
+  var th = 'padding:6px 8px;text-align:left;'+mono+';font-weight:400';
+  var body = rows.length ? rows.map(function(c){
+      var n = days(c.date_issued);
+      var col = n>=75 ? C.rust : n>=15 ? C.brass : C.ink;
+      var badge = n>=75 ? ' <span style="font-family:monospace;font-size:9px;border:1px solid '+C.rust+';color:'+C.rust+';border-radius:3px;padding:1px 4px;white-space:nowrap">NEARING 3 MONTHS</span>' : '';
+      return '<tr style="border-top:1px solid '+C.line+'">'
+        +'<td style="padding:8px;font-weight:600">'+esc(c.supplier_name||'—')+(c.cheque_number?'<div style="font-family:monospace;font-size:11px;font-weight:400;color:'+C.inkSoft+'">Chq# '+esc(c.cheque_number)+'</div>':'')+'</td>'
+        +'<td style="padding:8px;white-space:nowrap;font-family:monospace;font-size:12px">'+esc(c.date_issued||'')+'</td>'
+        +'<td style="padding:8px;text-align:right;font-family:monospace;font-weight:600">'+money(c.amount)+'</td>'
+        +'<td style="padding:8px;text-align:right;white-space:nowrap;color:'+col+';font-weight:600">'+n+' day'+(n===1?'':'s')+badge+'</td>'
+        +'<td style="padding:8px;text-align:right"><button onclick="chqToggleStatus(\''+esc(c.id)+'\',\'issued\')" style="background:'+C.ink+';color:'+C.paper+';border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Mark cleared</button></td>'
+        +'</tr>'; }).join('')
+    : '<tr><td colspan="5" style="padding:16px;text-align:center;color:'+C.inkSoft+';font-size:13px">No cheques are waiting to clear.</td></tr>';
+  var html =
+    '<div id="chq-issued-card" style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:16px 18px;margin-bottom:22px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-bottom:10px">'
+      +'<div><div style="'+mono+'">Handed over · not yet cleared at the bank</div><div style="font-size:19px;font-weight:600">Issued, waiting to clear</div></div>'
+      +'<div style="text-align:right"><div style="'+mono+'">'+rows.length+' cheque'+(rows.length===1?'':'s')+'</div><div style="font-size:22px;font-weight:700;color:'+C.rust+'">'+money(total)+'</div></div>'
+    +'</div>'
+    +'<div style="overflow-x:auto;max-height:340px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px"><thead><tr>'
+      +'<th style="'+th+'">Supplier</th><th style="'+th+'">Issued on</th><th style="'+th+';text-align:right">Amount</th><th style="'+th+';text-align:right">Waiting</th><th style="'+th+'"></th>'
+    +'</tr></thead><tbody>'+body+'</tbody></table></div>'
+    +(notYet.length ? '<div style="margin-top:10px;font-size:12px;color:'+C.inkSoft+'">'+notYet.length+' more cheque'+(notYet.length===1?' is':'s are')+' still <b>Pending</b> (not handed over yet): '+money(notYet.reduce(function(s,c){ return s+(Number(c.amount)||0); },0))+'</div>' : '')
+    +'<div style="margin-top:6px;font-size:11px;color:'+C.inkSoft+'">Oldest first. A cheque is valid for 3 months from its date.</div>'
+    +'</div>';
+  root.firstElementChild.insertAdjacentHTML('afterend', html);
+}
+var _renderChequeLedger0 = renderChequeLedger;
+renderChequeLedger = async function(){
+  var r = await _renderChequeLedger0.apply(this, arguments);
+  try{ chqIssuedCard(); }catch(e){ console.warn('issued list failed', e); }
+  return r;
+};
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
