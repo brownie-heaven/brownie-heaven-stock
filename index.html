@@ -5784,8 +5784,8 @@ async function crLoad(){
   var s = function(v){ return v==null ? '' : String(v); };
   CR.data = {}; CR.prefilled = {};
   getOutletCats().forEach(function(c){ c.products.forEach(function(p){
-    var id = String(p.id), r = byP[id], d = {o:'',w:'',e:'',c:''};
-    if(r){ d = {o:s(r.opening), w:s(r.wastage), e:s(r.expiry), c:s(r.closing)}; }
+    var id = String(p.id), r = byP[id], d = {o:'',i:'',w:'',e:'',c:''};
+    if(r){ d = {o:s(r.opening), i:s(r.incoming), w:s(r.wastage), e:s(r.expiry), c:s(r.closing)}; }
     else if(id in last){ d.o = s(last[id]); CR.prefilled[id] = true; }
     CR.data[id] = d;
   }); });
@@ -5793,7 +5793,7 @@ async function crLoad(){
   CR.savedAt = times.length ? times[times.length-1] : '';
   if(saved.length && saved[0].staff_name) CR.staff = saved[0].staff_name;
 }
-function crSet(id, k, v){ if(!CR.data[id]) CR.data[id] = {o:'',w:'',e:'',c:''}; CR.data[id][k] = v; CR.dirty = true; if(k==='o') delete CR.prefilled[id]; crCounts(); }
+function crSet(id, k, v){ if(!CR.data[id]) CR.data[id] = {o:'',i:'',w:'',e:'',c:''}; CR.data[id][k] = v; CR.dirty = true; if(k==='o') delete CR.prefilled[id]; crCounts(); }
 function crCounts(){
   getOutletCats().forEach(function(c,i){
     var el = document.getElementById('cr-cnt-'+i); if(!el) return;
@@ -5817,12 +5817,12 @@ function crDraw(){
       return '<option id="cr-cnt-'+i+'" value="'+i+'" '+(i===CR.tab?'selected':'')+'>'+crEsc(c.label)+'  ('+n+'/'+c.products.length+' done)</option>'; }).join('')
     + '</select>';
   var rows = !cat ? '' : cat.products.map(function(p){
-    var id = String(p.id), d = CR.data[id] || {o:'',w:'',e:'',c:''};
+    var id = String(p.id), d = CR.data[id] || {o:'',i:'',w:'',e:'',c:''};
     var f = function(label, k, extra){ return '<div class="fg"><label>'+label+'</label><input type="number" inputmode="decimal" min="0" step="any" placeholder="0" value="'+crEsc(d[k])+'" oninput="crSet(\''+id+'\',\''+k+'\',this.value)" '+(extra||'')+'></div>'; };
     return '<div class="prod-row"><div class="prod-name"><span>'+crEsc(p.name)+'</span></div>'
-      +'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'
+      +'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">'
       + f('Opening','o', CR.prefilled[id] ? 'title="Filled from the last closing"' : '')
-      + f('Wastage','w') + f('Expiry','e') + f('Closing','c','style="font-weight:700"')
+      + f('Incoming','i') + f('Wastage','w') + f('Expiry','e') + f('Closing','c','style="font-weight:700"')
       +'</div></div>'; }).join('');
   var last = CR.savedAt ? '<span style="color:var(--green,#1a7f4b);font-weight:600">✅ Saved '+crEsc(crIST(CR.savedAt))+'</span>' : '<span style="color:#a35c00">Not saved yet</span>';
   el.innerHTML =
@@ -5832,7 +5832,7 @@ function crDraw(){
         +'<div class="field" style="margin:0"><label>Date</label><input type="date" value="'+crEsc(CR.date)+'" max="'+crToday()+'" onchange="crDate(this.value)"></div>'
         +'<div class="field" style="margin:0"><label>Your name</label><input type="text" value="'+crEsc(CR.staff)+'" placeholder="Your name" oninput="CR.staff=this.value"></div>'
       +'</div>'
-      +'<div style="font-size:12px;color:#888;margin-top:10px">Opening is filled from your last closing. Change it if it is wrong. Enter wastage and expiry in numbers, then the closing stock you counted. '+last+'</div>'
+      +'<div style="font-size:12px;color:#888;margin-top:10px">Opening is filled from your last closing. Change it if it is wrong. Enter what came in today, wastage and expiry in numbers, then the closing stock you counted. '+last+'</div>'
     +'</div>'
     +(CR.err ? '<div class="card" style="color:#B03020;font-size:13px">Could not load: '+crEsc(CR.err)+'</div>' : '')
     +(CR.loading ? '<div class="loading"><div class="spinner"></div></div>' :
@@ -5869,10 +5869,10 @@ async function crSave(){
   var rows = [], missing = 0, bad = false, now = new Date().toISOString();
   var n = function(v){ if(v===''||v==null) return null; var x = Number(v); if(isNaN(x)||x<0){ bad = true; return null; } return x; };
   getOutletCats().forEach(function(c){ c.products.forEach(function(p){
-    var d = CR.data[String(p.id)] || {o:'',w:'',e:'',c:''};
+    var d = CR.data[String(p.id)] || {o:'',i:'',w:'',e:'',c:''};
     if(d.c==='' || d.c==null) missing++;
     rows.push({outlet_id:S.outlet, outlet_name:S.outletName, report_date:CR.date, product_id:p.id, product_name:p.name, category:c.label,
-      opening:n(d.o), wastage:n(d.w), expiry:n(d.e), closing:n(d.c), staff_name:CR.staff.trim(), updated_at:now});
+      opening:n(d.o), incoming:n(d.i), wastage:n(d.w), expiry:n(d.e), closing:n(d.c), staff_name:CR.staff.trim(), updated_at:now});
   }); });
   if(bad){ alert('Please use numbers (0 or more) only.'); return; }
   if(missing && !confirm(missing+' product'+(missing>1?'s have':' has')+' no closing stock entered yet.\n\nSave anyway? You can come back and add the rest.')) return;
@@ -5915,7 +5915,7 @@ function craSummary(){
     o.total++; if(r.closing!=null) o.filled++;
     o.waste += Number(r.wastage)||0; o.exp += Number(r.expiry)||0;
     if(r.updated_at && r.updated_at>o.at) o.at = r.updated_at; if(r.staff_name) o.staff = r.staff_name;
-    if(r.opening!=null||r.wastage!=null||r.expiry!=null||r.closing!=null) o.rows.push(r);
+    if(r.opening!=null||r.incoming!=null||r.wastage!=null||r.expiry!=null||r.closing!=null) o.rows.push(r);
   });
   return by;
 }
@@ -5931,14 +5931,14 @@ function craDraw(loading){
       +'<td style="'+td+'">'+(ok?'<span style="color:#1a7f4b;font-weight:600">✅ Submitted</span><div style="font-size:11px;color:#888">'+crEsc(s.staff)+' · '+crEsc(crIST(s.at))+'</div>':'<span style="color:#B03020;font-weight:600">Not submitted</span>')+'</td>'
       +'<td style="'+td+';text-align:right">'+(ok?s.filled+'/'+s.total:'–')+'</td><td style="'+td+';text-align:right">'+(ok?num(s.waste):'–')+'</td><td style="'+td+';text-align:right">'+(ok?num(s.exp):'–')+'</td></tr>';
     var detail = (CRA.open===o.id && ok) ? '<tr><td colspan="5" style="padding:0 0 10px;border-top:1px solid var(--border,#eee)"><div style="overflow-x:auto;max-height:420px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;min-width:480px"><thead><tr style="background:rgba(107,36,0,0.06)">'
-      +['Product','Opening','Wastage','Expiry','Closing'].map(function(h,i){ return '<th style="padding:6px 10px;font-size:11px;text-align:'+(i?'right':'left')+'">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
-      + s.rows.map(function(r){ return '<tr><td style="'+td+'">'+crEsc(r.product_name)+'<div style="font-size:10px;color:#999">'+crEsc(r.category)+'</div></td><td style="'+td+';text-align:right">'+num(r.opening)+'</td><td style="'+td+';text-align:right">'+num(r.wastage)+'</td><td style="'+td+';text-align:right">'+num(r.expiry)+'</td><td style="'+td+';text-align:right;font-weight:600">'+num(r.closing)+'</td></tr>'; }).join('')
+      +['Product','Opening','Incoming','Wastage','Expiry','Closing'].map(function(h,i){ return '<th style="padding:6px 10px;font-size:11px;text-align:'+(i?'right':'left')+'">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
+      + s.rows.map(function(r){ return '<tr><td style="'+td+'">'+crEsc(r.product_name)+'<div style="font-size:10px;color:#999">'+crEsc(r.category)+'</div></td><td style="'+td+';text-align:right">'+num(r.opening)+'</td><td style="'+td+';text-align:right">'+num(r.incoming)+'</td><td style="'+td+';text-align:right">'+num(r.wastage)+'</td><td style="'+td+';text-align:right">'+num(r.expiry)+'</td><td style="'+td+';text-align:right;font-weight:600">'+num(r.closing)+'</td></tr>'; }).join('')
       +'</tbody></table></div></td></tr>' : '';
     return head + detail; }).join('');
   el.innerHTML =
     '<div style="max-width:1000px;margin:0 auto;padding:16px">'
     +'<h2 style="color:var(--brown,#6B2400);margin:0 0 4px">📋 Closing Reports</h2>'
-    +'<div style="font-size:12px;color:#888;margin-bottom:14px">What each outlet entered for the day: opening, wastage, expiry and closing.</div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:14px">What each outlet entered for the day: opening, incoming, wastage, expiry and closing.</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">'
       +'<button onclick="craDate(crShift(CRA.date,-1))" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer">←</button>'
       +'<input type="date" value="'+crEsc(CRA.date)+'" onchange="craDate(this.value)" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">'
@@ -5955,8 +5955,8 @@ function craDraw(loading){
 }
 function craCsv(){
   var q = function(s){ return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'; };
-  var lines = ['Date,Outlet,Category,Product,Opening,Wastage,Expiry,Closing,Staff'].concat((CRA.rows||[]).filter(function(r){ return r.opening!=null||r.wastage!=null||r.expiry!=null||r.closing!=null; })
-    .map(function(r){ return [r.report_date,r.outlet_name,r.category,r.product_name,r.opening,r.wastage,r.expiry,r.closing,r.staff_name].map(q).join(','); }));
+  var lines = ['Date,Outlet,Category,Product,Opening,Incoming,Wastage,Expiry,Closing,Staff'].concat((CRA.rows||[]).filter(function(r){ return r.opening!=null||r.incoming!=null||r.wastage!=null||r.expiry!=null||r.closing!=null; })
+    .map(function(r){ return [r.report_date,r.outlet_name,r.category,r.product_name,r.opening,r.incoming,r.wastage,r.expiry,r.closing,r.staff_name].map(q).join(','); }));
   var a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv'}));
   a.download = 'closing-reports-'+CRA.date+'.csv'; document.body.appendChild(a); a.click(); a.remove();
