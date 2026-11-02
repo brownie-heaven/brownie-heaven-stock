@@ -5758,6 +5758,209 @@ renderChequeLedger = async function(){
   try{ chqSummaryFix(); }catch(e){ console.warn('cheque summary failed', e); }
   return r;
 };
+  // ── DAILY CLOSING REPORT: outlets enter Opening, Wastage, Expiry, Closing (replaces the Excel sheet) ──
+// Saves to its own table (closing_reports). The old shift / stock entries and every live total are not touched.
+var CR = {date:'', staff:'', tab:0, data:{}, prefilled:{}, savedAt:'', loading:false, saving:false, err:'', dirty:false};
+function crToday(){ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+function crShift(d, n){ var x = new Date(d+'T00:00:00+05:30'); x.setDate(x.getDate()+n); return x.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+function crIST(iso){ try{ return new Date(iso).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true}); }catch(e){ return iso||''; } }
+function crEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+// ---------- outlet staff screen ----------
+async function renderClosingReport(){
+  if(!CR.date) CR.date = crToday();
+  try{ if(!CR.staff) CR.staff = localStorage.getItem('bh_cr_staff_'+S.outlet) || ''; }catch(e){}
+  setHdr(S.outletName+' — Closing report', false);
+  CR.loading = true; CR.err = ''; crDraw();
+  try{ await crLoad(); CR.dirty = false; }catch(e){ CR.err = e.message||String(e); }
+  CR.loading = false; crDraw();
+}
+async function crLoad(){
+  var oid = encodeURIComponent(S.outlet);
+  var saved = await sbGetAll('closing_reports','?outlet_id=eq.'+oid+'&report_date=eq.'+CR.date+'&select=*');
+  var prev = await sbGetAll('closing_reports','?outlet_id=eq.'+oid+'&report_date=gte.'+crShift(CR.date,-7)+'&report_date=lt.'+CR.date+'&closing=not.is.null&select=product_id,closing,report_date&order=report_date.desc');
+  var last = {}; prev.forEach(function(r){ if(!(String(r.product_id) in last)) last[String(r.product_id)] = r.closing; });
+  var byP = {}; saved.forEach(function(r){ byP[String(r.product_id)] = r; });
+  var s = function(v){ return v==null ? '' : String(v); };
+  CR.data = {}; CR.prefilled = {};
+  getOutletCats().forEach(function(c){ c.products.forEach(function(p){
+    var id = String(p.id), r = byP[id], d = {o:'',w:'',e:'',c:''};
+    if(r){ d = {o:s(r.opening), w:s(r.wastage), e:s(r.expiry), c:s(r.closing)}; }
+    else if(id in last){ d.o = s(last[id]); CR.prefilled[id] = true; }
+    CR.data[id] = d;
+  }); });
+  var times = saved.map(function(r){ return r.updated_at; }).filter(Boolean).sort();
+  CR.savedAt = times.length ? times[times.length-1] : '';
+  if(saved.length && saved[0].staff_name) CR.staff = saved[0].staff_name;
+}
+function crSet(id, k, v){ if(!CR.data[id]) CR.data[id] = {o:'',w:'',e:'',c:''}; CR.data[id][k] = v; CR.dirty = true; if(k==='o') delete CR.prefilled[id]; crCounts(); }
+function crCounts(){
+  getOutletCats().forEach(function(c,i){
+    var el = document.getElementById('cr-cnt-'+i); if(!el) return;
+    var n = c.products.filter(function(p){ var d = CR.data[String(p.id)]; return d && d.c!==''; }).length;
+    el.textContent = n+'/'+c.products.length;
+  });
+}
+function crTab(i){ CR.tab = i; crDraw(); window.scrollTo({top:0}); }
+function crDate(v){
+  if(!v) return; if(v>crToday()) v = crToday();
+  if(CR.dirty && !confirm('You have changes that are not saved yet.\n\nChange the date anyway? Those entries will be lost.')){ crDraw(); return; }
+  CR.date = v; renderClosingReport();
+}
+function crDraw(){
+  var el = document.getElementById('screen'); if(!el) return;
+  var cats = getOutletCats(); if(CR.tab>=cats.length) CR.tab = 0;
+  var cat = cats[CR.tab];
+  var tabs = cats.map(function(c,i){
+    var n = c.products.filter(function(p){ var d = CR.data[String(p.id)]; return d && d.c!==''; }).length;
+    return '<button class="tab '+(i===CR.tab?'active':'')+'" onclick="crTab('+i+')">'+crEsc(c.label)+' <span id="cr-cnt-'+i+'" style="opacity:.7;font-size:11px">'+n+'/'+c.products.length+'</span></button>'; }).join('');
+  var rows = !cat ? '' : cat.products.map(function(p){
+    var id = String(p.id), d = CR.data[id] || {o:'',w:'',e:'',c:''};
+    var f = function(label, k, extra){ return '<div class="fg"><label>'+label+'</label><input type="number" inputmode="decimal" min="0" step="any" placeholder="0" value="'+crEsc(d[k])+'" oninput="crSet(\''+id+'\',\''+k+'\',this.value)" '+(extra||'')+'></div>'; };
+    return '<div class="prod-row"><div class="prod-name"><span>'+crEsc(p.name)+'</span></div>'
+      +'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'
+      + f('Opening','o', CR.prefilled[id] ? 'title="Filled from the last closing"' : '')
+      + f('Wastage','w') + f('Expiry','e') + f('Closing','c','style="font-weight:700"')
+      +'</div></div>'; }).join('');
+  var last = CR.savedAt ? '<span style="color:var(--green,#1a7f4b);font-weight:600">✅ Saved '+crEsc(crIST(CR.savedAt))+'</span>' : '<span style="color:#a35c00">Not saved yet</span>';
+  el.innerHTML =
+    '<div style="margin-top:12px">'
+    +'<div class="card" style="margin-bottom:12px"><div class="card-title" style="margin-bottom:10px">Daily closing report</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        +'<div class="field" style="margin:0"><label>Date</label><input type="date" value="'+crEsc(CR.date)+'" max="'+crToday()+'" onchange="crDate(this.value)"></div>'
+        +'<div class="field" style="margin:0"><label>Your name</label><input type="text" value="'+crEsc(CR.staff)+'" placeholder="Your name" oninput="CR.staff=this.value"></div>'
+      +'</div>'
+      +'<div style="font-size:12px;color:#888;margin-top:10px">Opening is filled from your last closing. Change it if it is wrong. Enter wastage and expiry in numbers, then the closing stock you counted. '+last+'</div>'
+    +'</div>'
+    +(CR.err ? '<div class="card" style="color:#B03020;font-size:13px">Could not load: '+crEsc(CR.err)+'</div>' : '')
+    +(CR.loading ? '<div class="loading"><div class="spinner"></div></div>' :
+      '<div class="tabs">'+tabs+'</div>'
+      +'<div class="card"><div class="status-bar"><div class="card-title" style="margin:0">'+crEsc(cat?cat.label:'')+'</div><div class="prog">'+(CR.tab+1)+'/'+cats.length+'</div></div>'+rows
+        +'<div class="nav-row">'
+          +(CR.tab>0 ? '<button class="btn btn-s" onclick="crTab('+(CR.tab-1)+')">← Back</button>' : '<span></span>')
+          +'<button class="btn btn-p" '+(CR.saving?'disabled':'')+' onclick="crSave()">'+(CR.saving?'Saving…':'💾 Save report')+'</button>'
+          +(CR.tab<cats.length-1 ? '<button class="btn btn-s" onclick="crTab('+(CR.tab+1)+')">Next →</button>' : '<span></span>')
+        +'</div></div>')
+    +'</div>';
+}
+async function crSave(){
+  if(CR.saving) return;
+  if(!String(CR.staff||'').trim()){ alert('Please enter your name.'); return; }
+  var rows = [], missing = 0, bad = false, now = new Date().toISOString();
+  var n = function(v){ if(v===''||v==null) return null; var x = Number(v); if(isNaN(x)||x<0){ bad = true; return null; } return x; };
+  getOutletCats().forEach(function(c){ c.products.forEach(function(p){
+    var d = CR.data[String(p.id)] || {o:'',w:'',e:'',c:''};
+    if(d.c==='' || d.c==null) missing++;
+    rows.push({outlet_id:S.outlet, outlet_name:S.outletName, report_date:CR.date, product_id:p.id, product_name:p.name, category:c.label,
+      opening:n(d.o), wastage:n(d.w), expiry:n(d.e), closing:n(d.c), staff_name:CR.staff.trim(), updated_at:now});
+  }); });
+  if(bad){ alert('Please use numbers (0 or more) only.'); return; }
+  if(missing && !confirm(missing+' product'+(missing>1?'s have':' has')+' no closing stock entered yet.\n\nSave anyway? You can come back and add the rest.')) return;
+  CR.saving = true; crDraw();
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/closing_reports?on_conflict=outlet_id,report_date,product_id',{
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(rows)});
+    if(!r.ok) throw new Error(await r.text());
+    CR.savedAt = now; CR.dirty = false;
+    try{ localStorage.setItem('bh_cr_staff_'+S.outlet, CR.staff.trim()); }catch(e){}
+    toast('✅ Closing report saved');
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
+  CR.saving = false; crDraw();
+}
+
+// outlet users should land here (not the old shift screen) and the Home button should not open the admin overview
+var _renderShift0 = renderShift;
+renderShift = function(){ if(!S.role && S.outlet) return renderClosingReport(); return _renderShift0.apply(this, arguments); };
+var _confirmHome0 = confirmHome;
+confirmHome = function(){ if(!S.role && S.outlet){ CR.tab = 0; crDraw(); window.scrollTo({top:0}); return; } return _confirmHome0.apply(this, arguments); };   // never reloads, so typed entries are not lost
+
+// ---------- admin: "Closing Reports" tab ----------
+var CRA = {date:'', rows:null, open:'', err:''};
+async function renderClosingAdmin(){
+  if(!CRA.date) CRA.date = crToday();
+  craDraw(true);
+  try{ CRA.rows = await sbGetAll('closing_reports','?report_date=eq.'+CRA.date+'&select=*&order=category.asc,product_name.asc'); CRA.err=''; }
+  catch(e){ CRA.rows = []; CRA.err = e.message||String(e); }
+  craDraw(false);
+}
+function craDate(v){ if(!v) return; CRA.date = v; CRA.open = ''; renderClosingAdmin(); }
+function craOpen(id){ CRA.open = CRA.open===id ? '' : id; craDraw(false); }
+function craOutlets(){ var seen = {}, out = []; Object.keys(OUTLET_PINS).forEach(function(pin){ if(!seen[pin]){ seen[pin]=1; out.push({id:pin, name:OUTLET_PINS[pin]}); } }); return out; }
+function craSummary(){
+  var by = {};
+  (CRA.rows||[]).forEach(function(r){
+    var o = by[r.outlet_id] || (by[r.outlet_id] = {filled:0, total:0, waste:0, exp:0, at:'', staff:'', rows:[]});
+    o.total++; if(r.closing!=null) o.filled++;
+    o.waste += Number(r.wastage)||0; o.exp += Number(r.expiry)||0;
+    if(r.updated_at && r.updated_at>o.at) o.at = r.updated_at; if(r.staff_name) o.staff = r.staff_name;
+    if(r.opening!=null||r.wastage!=null||r.expiry!=null||r.closing!=null) o.rows.push(r);
+  });
+  return by;
+}
+function craDraw(loading){
+  var el = document.getElementById('screen'); if(!el) return;
+  var by = craSummary(), outs = craOutlets();
+  var num = function(v){ return v==null ? '–' : Number(v).toLocaleString('en-IN',{maximumFractionDigits:2}); };
+  var td = 'padding:8px 10px;border-top:1px solid var(--border,#eee);font-size:12px';
+  var done = outs.filter(function(o){ return by[o.id] && by[o.id].filled>0; }).length;
+  var list = outs.map(function(o){
+    var s = by[o.id], ok = s && s.filled>0;
+    var head = '<tr onclick="craOpen(\''+o.id+'\')" style="cursor:pointer"><td style="'+td+';font-weight:600">'+crEsc(o.name)+'</td>'
+      +'<td style="'+td+'">'+(ok?'<span style="color:#1a7f4b;font-weight:600">✅ Submitted</span><div style="font-size:11px;color:#888">'+crEsc(s.staff)+' · '+crEsc(crIST(s.at))+'</div>':'<span style="color:#B03020;font-weight:600">Not submitted</span>')+'</td>'
+      +'<td style="'+td+';text-align:right">'+(ok?s.filled+'/'+s.total:'–')+'</td><td style="'+td+';text-align:right">'+(ok?num(s.waste):'–')+'</td><td style="'+td+';text-align:right">'+(ok?num(s.exp):'–')+'</td></tr>';
+    var detail = (CRA.open===o.id && ok) ? '<tr><td colspan="5" style="padding:0 0 10px;border-top:1px solid var(--border,#eee)"><div style="overflow-x:auto;max-height:420px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;min-width:480px"><thead><tr style="background:rgba(107,36,0,0.06)">'
+      +['Product','Opening','Wastage','Expiry','Closing'].map(function(h,i){ return '<th style="padding:6px 10px;font-size:11px;text-align:'+(i?'right':'left')+'">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
+      + s.rows.map(function(r){ return '<tr><td style="'+td+'">'+crEsc(r.product_name)+'<div style="font-size:10px;color:#999">'+crEsc(r.category)+'</div></td><td style="'+td+';text-align:right">'+num(r.opening)+'</td><td style="'+td+';text-align:right">'+num(r.wastage)+'</td><td style="'+td+';text-align:right">'+num(r.expiry)+'</td><td style="'+td+';text-align:right;font-weight:600">'+num(r.closing)+'</td></tr>'; }).join('')
+      +'</tbody></table></div></td></tr>' : '';
+    return head + detail; }).join('');
+  el.innerHTML =
+    '<div style="max-width:1000px;margin:0 auto;padding:16px">'
+    +'<h2 style="color:var(--brown,#6B2400);margin:0 0 4px">📋 Closing Reports</h2>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:14px">What each outlet entered for the day: opening, wastage, expiry and closing.</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">'
+      +'<button onclick="craDate(crShift(CRA.date,-1))" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer">←</button>'
+      +'<input type="date" value="'+crEsc(CRA.date)+'" onchange="craDate(this.value)" style="padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px">'
+      +'<button onclick="craDate(crShift(CRA.date,1))" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer">→</button>'
+      +'<button onclick="craDate(crToday())" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;font-size:12px">Today</button>'
+      +'<button onclick="craCsv()" style="padding:8px 14px;background:#6B2400;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;margin-left:auto">⬇ Download</button>'
+    +'</div>'
+    +(CRA.err ? '<div style="color:#B03020;font-size:13px;margin-bottom:10px">Could not load: '+crEsc(CRA.err)+'</div>' : '')
+    +(loading ? '<p style="color:#999;font-size:13px">Loading…</p>' :
+      '<div style="font-size:13px;margin-bottom:8px"><b>'+done+' of '+outs.length+'</b> outlets have submitted. Tap an outlet to see its products.</div>'
+      +'<div style="overflow-x:auto;border:1px solid var(--border,#eee);border-radius:8px"><table style="width:100%;border-collapse:collapse;min-width:520px"><thead><tr style="background:rgba(107,36,0,0.06)">'
+      +['Outlet','Status','Closing entered','Wastage','Expiry'].map(function(h,i){ return '<th style="padding:8px 10px;font-size:12px;text-align:'+(i>1?'right':'left')+'">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'+list+'</tbody></table></div>')
+    +'</div>';
+}
+function craCsv(){
+  var q = function(s){ return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'; };
+  var lines = ['Date,Outlet,Category,Product,Opening,Wastage,Expiry,Closing,Staff'].concat((CRA.rows||[]).filter(function(r){ return r.opening!=null||r.wastage!=null||r.expiry!=null||r.closing!=null; })
+    .map(function(r){ return [r.report_date,r.outlet_name,r.category,r.product_name,r.opening,r.wastage,r.expiry,r.closing,r.staff_name].map(q).join(','); }));
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿'+lines.join('\n')],{type:'text/csv'}));
+  a.download = 'closing-reports-'+CRA.date+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// tab button + navigation for the admin view
+var _setTabCR = setTab;
+setTab = function(i, fromBack){
+  if(i!==12) return _setTabCR(i, fromBack);
+  if(S.role!=='admin') return;
+  if(typeof ACTOR!=='undefined' && !ACTOR.name && typeof whoModal==='function'){ whoModal(function(){ setTab(12, fromBack); }); return; }
+  if(!fromBack && typeof S.mainTab==='number' && S.mainTab!==12){ S.navHistory.push({type:'tab', mainTab:S.mainTab}); try{ history.pushState({nav:true},'',''); }catch(e){} }
+  S.mainTab = 12; setHdr('Dashboard', true); updateBackBtn(); renderClosingAdmin();
+};
+var _setHdrCR = setHdr;
+setHdr = function(sub, showTabs){
+  _setHdrCR(sub, showTabs);
+  var tabs = document.getElementById('main-tabs');
+  if(tabs && !document.getElementById('mt12')){
+    var b = document.createElement('button'); b.className='mt'; b.id='mt12'; b.textContent='Closing Reports'; b.onclick=function(){ setTab(12); }; tabs.appendChild(b);
+  }
+  var t = document.getElementById('mt12');
+  if(t){ t.style.display = (showTabs && S.role==='admin') ? '' : 'none'; t.classList.toggle('active', S.mainTab===12); }
+};
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
