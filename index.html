@@ -5758,7 +5758,7 @@ renderChequeLedger = async function(){
   try{ chqSummaryFix(); }catch(e){ console.warn('cheque summary failed', e); }
   return r;
 };
-  // ── DAILY CLOSING REPORT: outlets enter Opening, Wastage, Expiry, Closing (replaces the Excel sheet) ──
+// ── DAILY CLOSING REPORT: outlets enter Opening, Wastage, Expiry, Closing (replaces the Excel sheet) ──
 // Saves to its own table (closing_reports). The old shift / stock entries and every live total are not touched.
 var CR = {date:'', staff:'', tab:0, data:{}, prefilled:{}, savedAt:'', loading:false, saving:false, err:'', dirty:false};
 function crToday(){ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
@@ -5798,7 +5798,7 @@ function crCounts(){
   getOutletCats().forEach(function(c,i){
     var el = document.getElementById('cr-cnt-'+i); if(!el) return;
     var n = c.products.filter(function(p){ var d = CR.data[String(p.id)]; return d && d.c!==''; }).length;
-    el.textContent = n+'/'+c.products.length;
+    el.textContent = c.label+'  ('+n+'/'+c.products.length+' done)';
   });
 }
 function crTab(i){ CR.tab = i; crDraw(); window.scrollTo({top:0}); }
@@ -5811,9 +5811,11 @@ function crDraw(){
   var el = document.getElementById('screen'); if(!el) return;
   var cats = getOutletCats(); if(CR.tab>=cats.length) CR.tab = 0;
   var cat = cats[CR.tab];
-  var tabs = cats.map(function(c,i){
-    var n = c.products.filter(function(p){ var d = CR.data[String(p.id)]; return d && d.c!==''; }).length;
-    return '<button class="tab '+(i===CR.tab?'active':'')+'" onclick="crTab('+i+')">'+crEsc(c.label)+' <span id="cr-cnt-'+i+'" style="opacity:.7;font-size:11px">'+n+'/'+c.products.length+'</span></button>'; }).join('');
+  var tabs = '<select id="cr-cat" onchange="crTab(parseInt(this.value,10))" style="width:100%;padding:12px;font-size:15px;font-weight:600;border:1px solid #ddd;border-radius:10px;background:#fff;margin-bottom:12px">'
+    + cats.map(function(c,i){
+      var n = c.products.filter(function(p){ var d = CR.data[String(p.id)]; return d && d.c!==''; }).length;
+      return '<option id="cr-cnt-'+i+'" value="'+i+'" '+(i===CR.tab?'selected':'')+'>'+crEsc(c.label)+'  ('+n+'/'+c.products.length+' done)</option>'; }).join('')
+    + '</select>';
   var rows = !cat ? '' : cat.products.map(function(p){
     var id = String(p.id), d = CR.data[id] || {o:'',w:'',e:'',c:''};
     var f = function(label, k, extra){ return '<div class="fg"><label>'+label+'</label><input type="number" inputmode="decimal" min="0" step="any" placeholder="0" value="'+crEsc(d[k])+'" oninput="crSet(\''+id+'\',\''+k+'\',this.value)" '+(extra||'')+'></div>'; };
@@ -5834,14 +5836,32 @@ function crDraw(){
     +'</div>'
     +(CR.err ? '<div class="card" style="color:#B03020;font-size:13px">Could not load: '+crEsc(CR.err)+'</div>' : '')
     +(CR.loading ? '<div class="loading"><div class="spinner"></div></div>' :
-      '<div class="tabs">'+tabs+'</div>'
+      '<div style="font-size:12px;color:#888;margin-bottom:4px">Pick a section 👇</div>'+tabs
       +'<div class="card"><div class="status-bar"><div class="card-title" style="margin:0">'+crEsc(cat?cat.label:'')+'</div><div class="prog">'+(CR.tab+1)+'/'+cats.length+'</div></div>'+rows
         +'<div class="nav-row">'
           +(CR.tab>0 ? '<button class="btn btn-s" onclick="crTab('+(CR.tab-1)+')">← Back</button>' : '<span></span>')
           +'<button class="btn btn-p" '+(CR.saving?'disabled':'')+' onclick="crSave()">'+(CR.saving?'Saving…':'💾 Save report')+'</button>'
           +(CR.tab<cats.length-1 ? '<button class="btn btn-s" onclick="crTab('+(CR.tab+1)+')">Next →</button>' : '<span></span>')
-        +'</div></div>')
+        +'</div>'
+        +(CR.savedAt ? '<div style="text-align:center;margin-top:14px"><button class="btn btn-s" style="color:#B03020;border-color:#e8b4ac" onclick="crDelete()">🗑 Delete this day\'s report</button></div>' : '')
+        +'</div>')
     +'</div>';
+}
+async function crDelete(){
+  if(CR.saving) return;
+  if(!confirm('Delete the whole closing report for '+CR.date+'?\n\nEverything saved for this day will be removed. This cannot be undone.')) return;
+  CR.saving = true; crDraw();
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/closing_reports?outlet_id=eq.'+encodeURIComponent(S.outlet)+'&report_date=eq.'+encodeURIComponent(CR.date),{
+      method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'}});
+    if(!r.ok) throw new Error(await r.text());
+    var gone = await r.json();
+    if(!gone.length) throw new Error('Nothing was deleted (delete permission is not switched on yet)');
+    CR.saving = false; CR.savedAt = ''; CR.dirty = false;
+    toast('🗑 Report deleted');
+    await renderClosingReport(); return;
+  }catch(e){ alert('Could not delete: '+(e.message||e)); }
+  CR.saving = false; crDraw();
 }
 async function crSave(){
   if(CR.saving) return;
