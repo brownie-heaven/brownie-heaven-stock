@@ -5981,6 +5981,77 @@ setHdr = function(sub, showTabs){
   var t = document.getElementById('mt12');
   if(t){ t.style.display = (showTabs && S.role==='admin') ? '' : 'none'; t.classList.toggle('active', S.mainTab===12); }
 };
+  // ── VENDOR STATEMENT: printable / downloadable statement from Vendor History ──
+// Reads what Vendor History already shows (vendor + From–To). Changes nothing in the database.
+function vhStmtLines(){
+  var out = [], bal = 0;
+  (VH.view||[]).slice().sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; }).forEach(function(r){
+    var amt = Number(r.amount)||0, cr = Number(r.credit)||0;
+    if(r.type==='invoice'){
+      bal += amt; out.push({date:r.date, what:'Invoice '+(r.ref||'(no number)'), bill:amt, paid:null, bal:bal});
+      if(cr>0){ bal -= cr; out.push({date:r.date, what:'Credit note on '+(r.ref||'invoice'), bill:null, paid:cr, bal:bal}); }
+    } else if(r.type==='cheque'){
+      bal -= amt; out.push({date:r.date, what:'Cheque '+r.ref+(r.amount==null?' (amount not entered)':''), bill:null, paid:r.amount==null?null:amt, bal:bal});
+    } else {
+      bal -= amt; out.push({date:r.date, what:(r.type==='cash_payment'?'Cash payment ':'Debit note ')+(r.ref||''), bill:null, paid:amt, bal:bal});
+    }
+  });
+  return out;
+}
+function vhStmtTotals(L){
+  var b=0,p=0; L.forEach(function(x){ b+=x.bill||0; p+=x.paid||0; });
+  return {billed:b, paid:p, bal:b-p};
+}
+function vhStmtDMY(d){ return d ? d.slice(8,10)+'-'+d.slice(5,7)+'-'+d.slice(0,4) : ''; }
+function vhStmtHtml(){
+  var L = vhStmtLines(), T = vhStmtTotals(L);
+  var e = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
+  var f = function(n){ return n==null?'':Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var rows = L.length ? L.map(function(x){
+    return '<tr><td>'+vhStmtDMY(x.date)+'</td><td>'+e(x.what)+'</td><td class="n">'+f(x.bill)+'</td><td class="n">'+f(x.paid)+'</td><td class="n">'+f(x.bal)+'</td></tr>'; }).join('')
+    : '<tr><td colspan="5" style="text-align:center;color:#888;padding:20px">No entries in this period.</td></tr>';
+  var now = new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Statement - '+e(VH.agency)+'</title><style>'
+    +'body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:28px;font-size:13px}h1{font-size:20px;margin:0;color:#6B2400}'
+    +'.sub{color:#666;margin:4px 0 18px}table{width:100%;border-collapse:collapse}th{background:#f3ece7;text-align:left;padding:7px 8px;border-bottom:2px solid #6B2400;font-size:12px}'
+    +'td{padding:6px 8px;border-bottom:1px solid #e5e5e5}.n{text-align:right;white-space:nowrap}th.n{text-align:right}'
+    +'tfoot td{font-weight:700;border-top:2px solid #6B2400;border-bottom:none}.note{color:#777;font-size:11px;margin-top:14px}'
+    +'@media print{button{display:none}body{margin:12mm}}</style></head><body>'
+    +'<button onclick="window.print()" style="float:right;padding:8px 14px;background:#6B2400;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Print / Save as PDF</button>'
+    +'<h1>Brownie Heaven</h1><div class="sub"><b>Statement of account: '+e(VH.agency)+'</b><br>Period: '+vhStmtDMY(VH.from)+' to '+vhStmtDMY(VH.to)+' &nbsp;·&nbsp; Generated '+e(now)+'</div>'
+    +'<table><thead><tr><th>Date</th><th>Particulars</th><th class="n">Billed (₹)</th><th class="n">Paid / Credited (₹)</th><th class="n">Balance (₹)</th></tr></thead><tbody>'+rows+'</tbody>'
+    +'<tfoot><tr><td></td><td>Total for the period</td><td class="n">'+f(T.billed)+'</td><td class="n">'+f(T.paid)+'</td><td class="n">'+f(T.bal)+'</td></tr></tfoot></table>'
+    +'<div class="note">Balance is for this period only (it starts at zero on the From date). Payments are cheques, cash payments, debit notes and credit notes recorded in the stock app.</div>'
+    +'</body></html>';
+}
+function vhStmtPrint(){
+  var w = window.open('','_blank');
+  if(!w){ alert('Your browser blocked the pop-up. Allow pop-ups for this site and try again.'); return; }
+  w.document.open(); w.document.write(vhStmtHtml()); w.document.close();
+}
+function vhStmtCsv(){
+  var L = vhStmtLines(), T = vhStmtTotals(L);
+  var q = function(v){ v = v==null?'':String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  var lines = ['Statement of account,'+q(VH.agency),'Period,'+VH.from+' to '+VH.to,'','Date,Particulars,Billed,Paid / Credited,Balance']
+    .concat(L.map(function(x){ return [x.date,x.what,x.bill,x.paid,x.bal.toFixed(2)].map(q).join(','); }))
+    .concat(['Total for the period,,'+T.billed.toFixed(2)+','+T.paid.toFixed(2)+','+T.bal.toFixed(2)]);
+  var blob = new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'Statement_'+String(VH.agency).replace(/[^A-Za-z0-9]+/g,'_')+'_'+VH.from+'_to_'+VH.to+'.csv';
+  document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+var _vhRender0 = vhRender;
+vhRender = function(){
+  _vhRender0.apply(this, arguments);
+  var el = document.getElementById('vh-card'); if(!el || VH.loading) return;
+  var anchor = el.querySelector('button[onclick="vhAddToggle()"]'); if(!anchor || !anchor.parentNode) return;
+  var d = document.createElement('div');
+  d.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 14px;align-items:center';
+  d.innerHTML = '<span style="font-size:12px;color:#888">Statement for this vendor and period:</span>'
+    +'<button onclick="vhStmtPrint()" style="border:1px solid #6B2400;background:#fff;color:#6B2400;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">🖨 Print / PDF</button>'
+    +'<button onclick="vhStmtCsv()" style="border:1px solid #6B2400;background:#fff;color:#6B2400;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">⬇ Excel (CSV)</button>';
+  anchor.parentNode.parentNode.insertBefore(d, anchor.parentNode.nextSibling);
+};
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
