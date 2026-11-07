@@ -7172,15 +7172,15 @@ async function siIssue(ids, all){
   }catch(e){ alert('Could not finish: '+(e.message||e)); }
   SI.busy = false; await siLoad(); SI.tab = 'indent'; siDraw();
 }
-  // ── OUTLET MANAGERS: one login shows only that manager's outlets, then the normal Closing Report for the one picked ──
-// A manager types the PIN of any of their outlets (e.g. 1001) and gets a pick list of their outlets.
+ // ── OUTLET MANAGERS: one login shows only that manager's outlets, then the normal Closing Report for the one picked ──
+// Each manager has ONE PIN of their own and gets a pick list of their outlets. Outlet PINs (1001 etc.) still open just that one outlet.
 // Nothing else changes: reports are saved per outlet exactly as before, so the admin tab and all totals stay the same.
 var MANAGERS = [
-  {name:'Vishnu',  pins:['6666','1008','1005','1003','7777']},   // Velachery, Perumbakkam, Tambaram, Porur, Vadapalani
-  {name:'Stephen', pins:['1001','1002']},                          // Royapettah, Anna Nagar
-  {name:'Ahila',   pins:['1007','1004','8888','1006','4444']}     // Adyar, BSR Mall, Pallavaram, RA Puram, Besant Nagar
+  {name:'Vishnu',  pin:'5001', pins:['6666','1008','1005','1003','7777']},   // Velachery, Perumbakkam, Tambaram, Porur, Vadapalani
+  {name:'Stephen', pin:'5002', pins:['1001','1002']},                          // Royapettah, Anna Nagar
+  {name:'Ahila',   pin:'5003', pins:['1007','1004','8888','1006','4444']}     // Adyar, BSR Mall, Pallavaram, RA Puram, Besant Nagar
 ];
-function mgrFind(pin){ for(var i=0;i<MANAGERS.length;i++){ if(MANAGERS[i].pins.indexOf(pin)>-1) return MANAGERS[i]; } return null; }
+function mgrFind(pin){ for(var i=0;i<MANAGERS.length;i++){ if(MANAGERS[i].pin===pin) return MANAGERS[i]; } return null; }   // change a manager's PIN on the lines above
 function mgrEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 
 var _pressNumMG = pressNum;
