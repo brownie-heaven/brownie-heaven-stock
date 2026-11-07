@@ -6218,6 +6218,100 @@ elogDraw = function(loading){
     var cnt = el.querySelector('div[style*="margin-bottom:6px"]'); if(cnt) cnt.textContent = cnt.textContent.replace(/change(s?)$/,'entr$1').replace(/entrs$/,'entries').replace(/entr$/,'entry');
   }catch(e){ console.warn('activity log screen tweak failed', e); }
 };
+  // ── CHEQUE LEDGER: search box on the Overview tab ──
+// Search by supplier, cheque number, invoice number, amount, date or status. Read-only: nothing is saved or changed.
+var CHQS = {q:'', inv:{}, byInv:{}, timer:null, seq:0};   // inv: cheque id -> linked invoices; byInv: query -> cheque ids matching an invoice number
+
+function chqsDMY(d){ d = String(d||'').slice(0,10); return d.length===10 ? d.slice(8,10)+'-'+d.slice(5,7)+'-'+d.slice(0,4) : ''; }
+function chqsHay(c){
+  var a = Number(c.amount)||0;
+  return [c.supplier_name, c.cheque_number, c.invoice_number, c.status, c.notes, c.date_issued, chqsDMY(c.date_issued),
+          String(a), a.toLocaleString('en-IN'), a.toFixed(2)].join(' | ').toLowerCase().replace(/,/g,'');
+}
+function chqsMatch(q){
+  var toks = q.toLowerCase().replace(/,/g,'').split(/\s+/).filter(Boolean); if(!toks.length) return [];
+  var viaInv = CHQS.byInv[q.trim().toLowerCase()] || {};
+  return (CHQ.rows||[]).filter(function(c){
+    if(viaInv[String(c.id)]) return true;
+    var h = chqsHay(c); return toks.every(function(t){ return h.indexOf(t)>=0; });
+  });
+}
+function chqsOnInput(v){
+  CHQS.q = v; clearTimeout(CHQS.timer);
+  CHQS.timer = setTimeout(chqsRun, 250);
+  chqsResults();                     // instant results from what is already loaded
+}
+async function chqsRun(){
+  var q = (CHQS.q||'').trim(), mySeq = ++CHQS.seq; if(q.length<2) return;
+  try{
+    var key = q.toLowerCase();
+    if(!CHQS.byInv[key]){
+      var rows = await sbGet('cheque_invoices','?invoice_number=ilike.*'+encodeURIComponent(q)+'*&select=cheque_id,invoice_number&limit=100');
+      var m = {}; rows.forEach(function(r){ if(r.cheque_id!=null) m[String(r.cheque_id)] = true; });
+      CHQS.byInv[key] = m;
+    }
+    var hits = chqsMatch(q).slice(0,15), need = hits.filter(function(c){ return !CHQS.inv[String(c.id)]; }).map(function(c){ return c.id; });
+    if(need.length){
+      var inv = await sbGet('cheque_invoices','?cheque_id=in.('+need.join(',')+')&select=cheque_id,invoice_number,invoice_date,amount&order=invoice_date.asc');
+      need.forEach(function(id){ CHQS.inv[String(id)] = []; });
+      inv.forEach(function(r){ (CHQS.inv[String(r.cheque_id)] = CHQS.inv[String(r.cheque_id)]||[]).push(r); });
+    }
+    if(mySeq===CHQS.seq) chqsResults();
+  }catch(e){ console.warn('cheque search failed', e); }
+}
+function chqsResults(){
+  var box = document.getElementById('chqs-results'); if(!box) return;
+  var C = { paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F', brass:'#9C7A2E', rust:'#9B3A22', blue:'#2F5D8A', green:'#2E7D4F' };
+  var esc = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  var money = function(n){ return '₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2}); };
+  var today = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+  var q = (CHQS.q||'').trim();
+  if(!q){ box.innerHTML = ''; return; }
+  var res = chqsMatch(q), shown = res.slice(0,15);
+  if(!res.length){ box.innerHTML = '<div style="padding:12px 4px;font-size:13px;color:'+C.inkSoft+'">No cheque found for “'+esc(q)+'”. Try the supplier name, cheque number, invoice number or amount.</div>'; return; }
+  var total = res.reduce(function(s,c){ return s+(Number(c.amount)||0); },0);
+  box.innerHTML = '<div style="font-size:12px;color:'+C.inkSoft+';margin:10px 0 8px">'+res.length+' cheque'+(res.length===1?'':'s')+' found · '+money(total)+(res.length>15?' · showing the first 15, type more to narrow down':'')+'</div>'
+    + shown.map(function(c){
+      var st = c.status==='cleared' ? ['Cleared','Cleared at the bank',C.green] : c.status==='issued' ? ['Issued','Handed over, waiting to clear',C.blue] : ['Pending','Written, not handed over yet',C.rust];
+      var age = Math.max(0, Math.round((Date.parse(today+'T00:00:00') - Date.parse(String(c.date_issued||today).slice(0,10)+'T00:00:00'))/86400000));
+      var waiting = c.status==='issued' ? ' · waiting '+age+' day'+(age===1?'':'s')+(age>=75?' · ⚠ nearing 3 months':'') : '';
+      var inv = CHQS.inv[String(c.id)];
+      var invHtml = inv ? (inv.length ? inv.map(function(r){ return '<span style="display:inline-block;background:#fff;border:1px solid '+C.line+';border-radius:5px;padding:1px 7px;margin:2px 4px 2px 0;font-size:11px">'+esc(r.invoice_number||'?')+(r.amount!=null?' · '+money(r.amount):'')+'</span>'; }).join('')
+                          : (c.invoice_number ? esc(c.invoice_number) : '<span style="color:'+C.inkSoft+'">none linked</span>')) : '<span style="color:'+C.inkSoft+'">loading…</span>';
+      var photos = (c.photo_front_url ? '<a href="'+esc(c.photo_front_url)+'" target="_blank" rel="noopener" style="color:'+C.ink+';margin-right:12px">📷 Front</a>' : '')+(c.photo_back_url ? '<a href="'+esc(c.photo_back_url)+'" target="_blank" rel="noopener" style="color:'+C.ink+'">📷 Back</a>' : '');
+      return '<div style="background:#fff;border:1px solid '+C.line+';border-left:5px solid '+st[2]+';border-radius:8px;padding:11px 14px;margin-bottom:9px">'
+        +'<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">'
+          +'<div style="font-weight:700;font-size:15px">'+esc(c.supplier_name||'—')+(c.cheque_number?' <span style="font-family:monospace;font-weight:400;font-size:12px;color:'+C.inkSoft+'">Chq# '+esc(c.cheque_number)+'</span>':'')+'</div>'
+          +'<div style="font-weight:700;font-size:16px">'+money(c.amount)+'</div></div>'
+        +'<div style="margin-top:4px;font-size:12px"><b style="color:'+st[2]+'">● '+st[0]+'</b> <span style="color:'+C.inkSoft+'">'+st[1]+waiting+'</span></div>'
+        +'<div style="margin-top:4px;font-size:12px;color:'+C.inkSoft+'">Issued on '+esc(chqsDMY(c.date_issued)||'—')+'</div>'
+        +'<div style="margin-top:4px;font-size:12px"><span style="color:'+C.inkSoft+'">Invoices:</span> '+invHtml+'</div>'
+        +(c.notes?'<div style="margin-top:4px;font-size:12px;color:'+C.inkSoft+'">Note: '+esc(c.notes)+'</div>':'')
+        +(photos?'<div style="margin-top:6px;font-size:12px">'+photos+'</div>':'')
+        +'</div>'; }).join('');
+}
+function chqsInstall(){
+  var screen = document.getElementById('screen');
+  if(!screen || screen.textContent.indexOf('Outstanding by Agency')<0) return;
+  var root = screen.firstElementChild; if(!root || !root.firstElementChild) return;
+  var old = document.getElementById('chq-search'); if(old) old.remove();
+  var C = { paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F' };
+  var html = '<div id="chq-search" style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px;margin-bottom:20px">'
+    +'<div style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+';margin-bottom:6px">Find a cheque</div>'
+    +'<input id="chqs-input" type="search" value="'+String(CHQS.q).replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" oninput="chqsOnInput(this.value)" placeholder="Search supplier, cheque no., invoice no., amount or date…" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid '+C.line+';border-radius:8px;background:#fff;font-size:14px">'
+    +'<div id="chqs-results"></div></div>';
+  var bar = document.getElementById('chq-tabs'), anchor = bar || root.firstElementChild;
+  anchor.insertAdjacentHTML('afterend', html);
+  var el = document.getElementById('chq-search');
+  if(el && typeof CHQT!=='undefined' && CHQT.tab!=='overview') el.style.display = 'none';
+  chqsResults(); if(CHQS.q.trim().length>=2) chqsRun();
+}
+var _renderChequeLedger4 = renderChequeLedger;
+renderChequeLedger = async function(){
+  var r = await _renderChequeLedger4.apply(this, arguments);
+  try{ chqsInstall(); }catch(e){ console.warn('cheque search failed', e); }
+  return r;
+};
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
