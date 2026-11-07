@@ -7372,6 +7372,69 @@ confirmHome = function(){
   }
   return _confirmHomeMA.apply(this, arguments);
 };
+  // ── KITCHEN INDENTS (admin / Gautham): shows what is LEFT in the outlets (from the managers' Accessories tab) ──
+// Read-only. Adds (1) a small box at the top "x outlets reported today" with a details list and
+// (2) under each indent item a grey line like "🏪 Left in outlets: Porur 5 · Royapettah 3" when that item is in the accessories list.
+// Paste BELOW the managers_accessories block. Nothing is changed or deleted.
+var OL = {rows:[], loaded:false};
+function olKey(s){ return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,''); }
+function olDMY(d){ d = String(d||'').slice(0,10); return d.length===10 ? d.slice(8,10)+'-'+d.slice(5,7) : ''; }
+function olFmt(n){ var x = Number(n); return isNaN(x) ? '' : x.toLocaleString('en-IN',{maximumFractionDigits:3}); }
+
+var _siLoadOL = siLoad;
+siLoad = async function(){
+  var r = await _siLoadOL.apply(this, arguments);
+  try{
+    var since = new Date(Date.now()-3*86400000).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+    var all = await sbGetAll('accessory_stock','?report_date=gte.'+since+'&qty=not.is.null&select=outlet_id,outlet_name,report_date,item,qty,staff_name&order=report_date.desc');
+    var seen = {}, rows = [];
+    all.forEach(function(x){ var k = x.outlet_id+'|'+olKey(x.item); if(seen[k]) return; seen[k] = 1; rows.push(x); });   // latest per outlet + item
+    OL.rows = rows; OL.loaded = true;
+  }catch(e){ OL.rows = []; OL.loaded = false; }   // table not created yet: nothing is shown
+  siDraw();
+  return r;
+};
+
+var _siDrawOL = siDraw;
+siDraw = function(){
+  var r = _siDrawOL.apply(this, arguments);
+  try{ if(SI.tab==='indent' && OL.loaded) olDecorate(); }catch(e){}
+  return r;
+};
+
+function olDecorate(){
+  var el = document.getElementById('screen'); if(!el) return;
+  var today = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+  var byItem = {}, byOutlet = {}, todayOut = {};
+  OL.rows.forEach(function(x){
+    var k = olKey(x.item); (byItem[k] = byItem[k] || []).push(x);
+    var o = x.outlet_name || x.outlet_id; (byOutlet[o] = byOutlet[o] || []).push(x);
+    if(String(x.report_date).slice(0,10)===today) todayOut[o] = 1;
+  });
+  // line under each indent item
+  el.querySelectorAll('tr').forEach(function(tr){
+    var d = tr.querySelector('td > div[style*="font-weight:600"]'); if(!d || tr.querySelector('.ol-line')) return;
+    var list = byItem[olKey(d.textContent)]; if(!list || !list.length) return;
+    list = list.slice().sort(function(a,b){ return String(a.outlet_name).localeCompare(String(b.outlet_name)); });
+    var txt = list.map(function(x){ var old = String(x.report_date).slice(0,10)!==today; return (x.outlet_name||x.outlet_id)+' <b>'+olFmt(x.qty)+'</b>'+(old?' <span style="color:#aaa">('+olDMY(x.report_date)+')</span>':''); }).join(' · ');
+    d.insertAdjacentHTML('afterend','<div class="ol-line" style="font-size:11px;color:#6b6b6b;margin-top:3px">🏪 Left in outlets: '+txt+'</div>');
+  });
+  // box at the top
+  if(el.querySelector('#ol-box')) return;
+  var total = (typeof OUTLET_PINS!=='undefined') ? Object.keys(OUTLET_PINS).length : 0;
+  var n = Object.keys(todayOut).length;
+  var det = Object.keys(byOutlet).sort().map(function(o){
+    var rows = byOutlet[o].slice().sort(function(a,b){ return String(a.item).localeCompare(String(b.item)); });
+    var dt = String(rows[0].report_date).slice(0,10);
+    return '<div style="margin-top:8px"><b>'+o+'</b> <span style="color:#888">· '+olDMY(dt)+(rows[0].staff_name?' · '+rows[0].staff_name:'')+'</span><div style="color:#555">'+rows.map(function(x){ return x.item+' '+olFmt(x.qty); }).join(' · ')+'</div></div>';
+  }).join('');
+  var html = '<div id="ol-box" class="card" style="margin-bottom:12px;padding:10px 14px"><details><summary style="cursor:pointer;font-size:13px">🏪 <b>Outlet accessories</b> — '
+    + (n ? n+(total?' of '+total:'')+' outlet'+(n>1?'s':'')+' reported today' : '<span style="color:#a35c00">no outlet has reported today</span>')
+    + ' <span style="color:#888">(tap to see what is left)</span></summary><div style="font-size:12px;margin-top:6px">'
+    + (det || '<div style="color:#888">Nothing entered in the last 3 days.</div>') + '</div></details></div>';
+  var tabs = el.querySelector('.tabs');
+  if(tabs) tabs.insertAdjacentHTML('afterend', html);
+}
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
