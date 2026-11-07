@@ -7172,6 +7172,79 @@ async function siIssue(ids, all){
   }catch(e){ alert('Could not finish: '+(e.message||e)); }
   SI.busy = false; await siLoad(); SI.tab = 'indent'; siDraw();
 }
+  // ── OUTLET MANAGERS: one login shows only that manager's outlets, then the normal Closing Report for the one picked ──
+// A manager types the PIN of any of their outlets (e.g. 1001) and gets a pick list of their outlets.
+// Nothing else changes: reports are saved per outlet exactly as before, so the admin tab and all totals stay the same.
+var MANAGERS = [
+  {name:'Vishnu',  pins:['6666','1008','1005','1003','7777']},   // Velachery, Perumbakkam, Tambaram, Porur, Vadapalani
+  {name:'Stephen', pins:['1001','1002']},                          // Royapettah, Anna Nagar
+  {name:'Ahila',   pins:['1007','1004','8888','1006','4444']}     // Adyar, BSR Mall, Pallavaram, RA Puram, Besant Nagar
+];
+function mgrFind(pin){ for(var i=0;i<MANAGERS.length;i++){ if(MANAGERS[i].pins.indexOf(pin)>-1) return MANAGERS[i]; } return null; }
+function mgrEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+var _pressNumMG = pressNum;
+pressNum = function(n){
+  var typed = String(S.pin||'') + n;
+  if(typeof n==='string' && n!=='del' && typed.length===4){
+    var m = mgrFind(typed);
+    if(m){
+      S.pin = ''; S.pinError = false; S.role = null; S.outlet = null; S.outletName = null; S.mgr = m;
+      try{ if(typeof actLog==='function') actLog('Sign-in','Signed in', m.name+' (manager) signed in','Manager: '+m.name,'manager'); }catch(e){}
+      mgrPicker(); return;
+    }
+  }
+  return _pressNumMG.apply(this, arguments);
+};
+
+function mgrPicker(){
+  var m = S.mgr; if(!m) return;
+  S.outlet = null; S.outletName = null;
+  setHdr(m.name+' — your outlets', false);
+  var el = document.getElementById('screen'); if(!el) return;
+  el.innerHTML = '<div style="margin-top:14px"><div class="card"><div class="card-title">Hi '+mgrEsc(m.name)+' 👋 pick an outlet</div>'
+    + m.pins.map(function(p){ return '<button class="btn btn-p" style="margin-top:8px" onclick="mgrOpen(\''+p+'\')">🍫 '+mgrEsc(OUTLET_PINS[p]||p)+'</button>'; }).join('')
+    + '<button class="btn btn-s" style="margin-top:14px" onclick="goHome()">Sign out</button></div></div>';
+  window.scrollTo && window.scrollTo({top:0});
+}
+function mgrOpen(pin){
+  var m = S.mgr; if(!m || m.pins.indexOf(pin)<0) return;
+  if(typeof CR!=='undefined'){ CR.date = ''; CR.data = {}; CR.prefilled = {}; CR.tab = 0; CR.dirty = false; CR.err = ''; CR.savedAt = ''; CR.staff = m.name; }
+  S.outlet = pin; S.outletName = OUTLET_PINS[pin]; S.stockData = {}; S.demandData = {};
+  try{ if(typeof actLog==='function') actLog('Tabs','Opened outlet', m.name+' opened '+S.outletName,'Manager: '+m.name,'manager'); }catch(e){}
+  renderClosingReport();
+}
+
+// Home button = back to the outlet list (asks first if something typed is not saved)
+var _confirmHomeMG = confirmHome;
+confirmHome = function(){
+  if(S.mgr && !S.role){
+    if(S.outlet && typeof CR!=='undefined' && CR.dirty && !confirm('You have changes that are not saved. Leave without saving?')) return;
+    if(typeof CR!=='undefined') CR.dirty = false;
+    mgrPicker(); return;
+  }
+  return _confirmHomeMG.apply(this, arguments);
+};
+var _goHomeMG = goHome;
+goHome = function(){
+  try{ if(S && S.mgr && typeof actLog==='function') actLog('Sign-in','Signed out', S.mgr.name+' (manager) signed out','Manager: '+S.mgr.name,'manager'); }catch(e){}
+  S.mgr = null;
+  return _goHomeMG.apply(this, arguments);
+};
+if(typeof logWho==='function'){ var _logWhoMG = logWho; logWho = function(){ return (S && S.mgr && !S.role) ? 'Manager: '+S.mgr.name : _logWhoMG.apply(this, arguments); }; }
+
+// small "switch outlet" bar on top of the closing report
+if(typeof crDraw==='function'){
+  var _crDrawMG = crDraw;
+  crDraw = function(){
+    var r = _crDrawMG.apply(this, arguments);
+    try{
+      var el = document.getElementById('screen');
+      if(S.mgr && !S.role && S.outlet && el) el.insertAdjacentHTML('afterbegin','<div style="margin-top:10px"><button class="btn btn-s" style="width:auto;padding:7px 14px" onclick="confirmHome()">⇄ Switch outlet</button></div>');
+    }catch(e){}
+    return r;
+  };
+}
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
