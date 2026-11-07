@@ -6391,12 +6391,12 @@ renderChequeLedger = async function(){
   try{ chqsInstall(); }catch(e){ console.warn('cheque search failed', e); }
   return r;
 };
-  // ── STORE INVENTORY: what is in the store room ──────────────────────────────────────────────
+// ── STORE INVENTORY: what is in the store room ──────────────────────────────────────────────
 // Items come from the Purchase product list. Stock = last count + purchases since + manual "in" - manual "out".
 // Nothing is ever overwritten or deleted: every count / in / out is a line, edits are logged, "delete" = void with a reason.
 var SI = {tab:'stock', loading:false, err:'', items:{}, order:[], pur:{}, ent:[], byKey:{}, alias:{}, hidden:{},
           q:'', filter:'all', showHidden:false, typed:{}, cdate:'', view:[],
-          fkind:'', fq:'', fvoid:false, editId:null, up:null, upDate:'', busy:false};
+          fkind:'', fq:'', fvoid:false, editId:null, up:null, upDate:'', busy:false, detail:false};
 
 function siToday(){ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
 function siEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -6479,7 +6479,7 @@ function siExpected(key, date){
 
 // ───────── drawing ─────────
 function siTabs(){
-  var tabs = [['stock','📦 Stock'],['move','➕ Stock in / out'],['upload','⬆ Upload sheet'],['history','🕘 History'],['diff','⚠ Shortages']];
+  var tabs = [['stock','📦 Daily count'],['move','➕ Other in / out'],['upload','⬆ Upload sheet'],['history','🕘 History'],['diff','⚠ Shortages']];
   return '<div class="tabs" style="margin-bottom:12px">'+tabs.map(function(t){ return '<button class="tab '+(SI.tab===t[0]?'active':'')+'" onclick="siTab(\''+t[0]+'\')">'+t[1]+'</button>'; }).join('')+'</div>';
 }
 function siTab(t){ SI.tab = t; SI.editId = null; siDraw(); window.scrollTo && window.scrollTo({top:0}); }
@@ -6519,10 +6519,10 @@ function siStockHtml(){
     return '<tr style="'+(SI.hidden[k]?'opacity:.55':'')+'">'
       +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);min-width:170px"><div style="font-weight:600;font-size:13px">'+siEsc(it.name)+'</div><div style="font-size:11px;color:#999">'+siEsc([it.category,it.agency].filter(Boolean).join(' · '))+'</div></td>'
       +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);font-size:12px;color:#888">'+siEsc(it.unit||'')+'</td>'
-      +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);text-align:right;font-size:12px">'+(c?siFmt(c.qty)+'<div style="font-size:10px;color:#999">'+siEsc(siDMY(c.entry_date))+'</div>':'<span style="color:#B03020;font-size:11px">not counted</span>')+'</td>'
+      +(!SI.detail?'':'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);text-align:right;font-size:12px">'+(c?siFmt(c.qty)+'<div style="font-size:10px;color:#999">'+siEsc(siDMY(c.entry_date))+'</div>':'<span style="color:#B03020;font-size:11px">not counted</span>')+'</td>'
       +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);text-align:right;font-size:12px;color:#1a7f4b">'+(c?'+'+siFmt(st.bought+st.inn):'–')+'</td>'
-      +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);text-align:right;font-size:12px;color:#B03020">'+(c&&st.out?'−'+siFmt(st.out):'–')+'</td>'
-      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);text-align:right;font-weight:700;font-size:14px;'+(neg?'color:#B03020':'')+'">'+(bal==null?'–':siFmt(bal))+(neg?'<div style="font-size:10px;font-weight:600">below zero</div>':'')+'</td>'
+      +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);text-align:right;font-size:12px;color:#B03020">'+(c&&st.out?'−'+siFmt(st.out):'–')+'</td>')
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);text-align:right;font-weight:700;font-size:14px;'+(neg?'color:#B03020':'')+'">'+(bal==null?(SI.detail?'–':'<span style="color:#B03020;font-size:11px;font-weight:400">not counted yet</span>'):siFmt(bal))+(neg?'<div style="font-size:10px;font-weight:600">below zero</div>':'')+'</td>'
       +'<td style="padding:6px 6px;border-top:1px solid var(--border,#eee);white-space:nowrap">'
         +(SI.hidden[k] ? '<button class="btn btn-s" style="padding:5px 9px;font-size:11px" onclick="siUnhide('+idx+')">Show again</button>'
           : '<input type="number" inputmode="decimal" min="0" step="any" placeholder="count" value="'+siEsc(SI.typed[k]==null?'':SI.typed[k])+'" oninput="siType('+idx+',this.value)" style="width:78px;padding:7px;border:1px solid var(--border,#ccc);border-radius:6px;font-size:13px;text-align:right">'
@@ -6532,25 +6532,26 @@ function siStockHtml(){
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
       +'<div style="flex:1;min-width:160px"><div style="font-size:11px;color:#888">Search item</div><input value="'+siEsc(SI.q)+'" oninput="siSearch(this)" placeholder="e.g. egg, butter, box…" style="'+inp+';width:100%;box-sizing:border-box"></div>'
       +'<div><div style="font-size:11px;color:#888">Show</div><select onchange="SI.filter=this.value;siDraw()" style="'+inp+'"><option value="all"'+(SI.filter==='all'?' selected':'')+'>All items</option><option value="nocount"'+(SI.filter==='nocount'?' selected':'')+'>Not counted yet ('+nNo+')</option><option value="counted"'+(SI.filter==='counted'?' selected':'')+'>Counted</option></select></div>'
+      +'<label style="font-size:12px;color:#888;display:flex;gap:5px;align-items:center;padding-bottom:9px"><input type="checkbox" '+(SI.detail?'checked':'')+' onchange="SI.detail=this.checked;siDraw()"> More columns</label>'
       +'<label style="font-size:12px;color:#888;display:flex;gap:5px;align-items:center;padding-bottom:9px"><input type="checkbox" '+(SI.showHidden?'checked':'')+' onchange="SI.showHidden=this.checked;siDraw()"> Hidden items</label>'
     +'</div></div>'
     +'<div class="card" style="margin-bottom:12px;background:#fff8ee;border:1px solid #f0c878">'
       +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
-        +'<div><div style="font-size:11px;color:#888">Count date</div><input type="date" max="'+siToday()+'" value="'+siEsc(SI.cdate)+'" onchange="SI.cdate=this.value||SI.cdate" style="'+inp+'"></div>'
-        +'<button class="btn btn-p" '+(SI.busy?'disabled':'')+' onclick="siSaveCounts()" style="flex:0 0 auto;width:auto;padding:10px 18px">💾 Save counts'+(nTyped?' ('+nTyped+')':'')+'</button>'
+        +'<div><div style="font-size:11px;color:#888">Closing date</div><input type="date" max="'+siToday()+'" value="'+siEsc(SI.cdate)+'" onchange="SI.cdate=this.value||SI.cdate" style="'+inp+'"></div>'
+        +'<button class="btn btn-p" '+(SI.busy?'disabled':'')+' onclick="siSaveCounts()" style="flex:0 0 auto;width:auto;padding:10px 18px">💾 Save today\'s closing'+(nTyped?' ('+nTyped+')':'')+'</button>'
       +'</div>'
-      +'<div style="font-size:12px;color:#8a6a2a;margin-top:8px">Type the real quantity in the Count box for each item you counted, then press Save. The count is fixed on the date above (end of that day). Purchases and stock out after that date are added and subtracted automatically. If the count is lower than the system expected, the difference is recorded as a shortage.</div>'
+      +'<div style="font-size:12px;color:#8a6a2a;margin-top:8px">Type what is really in the store in the Count box for each item, then press Save. That is the store closing for the date above. Purchases are added automatically. If a count is lower than the system expected, the difference is recorded as a shortage.</div>'
     +'</div>'
     +'<div id="si-rows-wrap" style="overflow-x:auto;border:1px solid var(--border,#eee);border-radius:8px;background:#fff"><table style="width:100%;border-collapse:collapse;min-width:620px"><thead><tr style="background:rgba(107,36,0,0.06)">'
-      +['Item','Unit','Last count','Bought / in since','Out since','In store now','Count'].map(function(h,i){ return '<th style="padding:8px 8px;font-size:11px;text-align:'+(i<2||i===6?'left':'right')+'">'+h+'</th>'; }).join('')+'</tr></thead><tbody id="si-rows">'
-      +(rows || '<tr><td colspan="7" style="padding:18px;text-align:center;color:#999">No items match.</td></tr>')+'</tbody></table></div>'
+      +(SI.detail?['Item','Unit','Last count','Bought / in since','Out since','In store now','Count']:['Item','Unit','System shows','Count today']).map(function(h,i,a){ return '<th style="padding:8px 8px;font-size:11px;text-align:'+(i<2||i===a.length-1?'left':'right')+'">'+h+'</th>'; }).join('')+'</tr></thead><tbody id="si-rows">'
+      +(rows || '<tr><td colspan="'+(SI.detail?7:4)+'" style="padding:18px;text-align:center;color:#999">No items match.</td></tr>')+'</tbody></table></div>'
     +'<div style="font-size:11px;color:#999;margin-top:8px">'+SI.view.length+' item'+(SI.view.length===1?'':'s')+' shown. “In store now” shows – until the first count is entered for an item. The ✕ hides an item that is no longer used (it can be shown again).</div>';
 }
 function siSearch(inp){
   SI.q = inp.value; var pos = inp.selectionStart; siDraw();
   var n = document.querySelector('input[oninput*="siSearch"]'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} }
 }
-function siType(idx, v){ var k = SI.view[idx]; if(k!==undefined) SI.typed[k] = v; var b = document.querySelector('button[onclick="siSaveCounts()"]'); if(b){ var n = Object.keys(SI.typed).filter(function(x){ return String(SI.typed[x]).trim()!==''; }).length; b.textContent = '💾 Save counts'+(n?' ('+n+')':''); } }
+function siType(idx, v){ var k = SI.view[idx]; if(k!==undefined) SI.typed[k] = v; var b = document.querySelector('button[onclick="siSaveCounts()"]'); if(b){ var n = Object.keys(SI.typed).filter(function(x){ return String(SI.typed[x]).trim()!==''; }).length; b.textContent = '💾 Save today\'s closing'+(n?' ('+n+')':''); } }
 
 async function siHide(idx){
   var k = SI.view[idx]; if(!k) return; var it = SI.items[k];
@@ -6602,8 +6603,8 @@ function siMoveHtml(){
   var inp = 'padding:9px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:14px;background:#fff;width:100%;box-sizing:border-box';
   var lab = 'font-size:11px;color:#888;margin-bottom:3px';
   var opts = SI.order.filter(function(k){ return !SI.hidden[k]; }).map(function(k){ return '<option value="'+siEsc(SI.items[k].name)+'">'; }).join('');
-  return '<div class="card"><div class="card-title" style="margin-bottom:6px">Add a stock in or stock out</div>'
-    +'<div style="font-size:12px;color:#888;margin-bottom:12px">Bills entered in Purchase are added to the store automatically, so use <b>Stock in</b> only for stock that did not come through Purchase. Use <b>Stock out</b> for anything given out of the store.</div>'
+  return '<div class="card"><div class="card-title" style="margin-bottom:6px">Other stock in / out (only if needed)</div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:12px">Purchases entered in the Purchase tab are added to the store automatically, so you do not need this for them. Use it only for stock that did not come through Purchase (Stock in) or for things given out of the store (Stock out). The kitchen and outlet orders will be connected later.</div>'
     +'<datalist id="si-items">'+opts+'</datalist>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">'
       +'<div><div style="'+lab+'">Item</div><input id="sim-item" list="si-items" placeholder="Start typing the item name" style="'+inp+'" autocomplete="off"></div>'
