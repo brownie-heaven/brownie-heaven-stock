@@ -6391,6 +6391,535 @@ renderChequeLedger = async function(){
   try{ chqsInstall(); }catch(e){ console.warn('cheque search failed', e); }
   return r;
 };
+  // ── STORE INVENTORY: what is in the store room ──────────────────────────────────────────────
+// Items come from the Purchase product list. Stock = last count + purchases since + manual "in" - manual "out".
+// Nothing is ever overwritten or deleted: every count / in / out is a line, edits are logged, "delete" = void with a reason.
+var SI = {tab:'stock', loading:false, err:'', items:{}, order:[], pur:{}, ent:[], byKey:{}, alias:{}, hidden:{},
+          q:'', filter:'all', showHidden:false, typed:{}, cdate:'', view:[],
+          fkind:'', fq:'', fvoid:false, editId:null, up:null, upDate:'', busy:false};
+
+function siToday(){ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+function siEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function siNorm(s){ return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function siFmt(n){ if(n==null||n==='') return '–'; var x = Number(n); if(isNaN(x)) return '–'; return x.toLocaleString('en-IN',{maximumFractionDigits:3}); }
+function siIST(iso){ try{ return new Date(iso).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true}); }catch(e){ return iso||''; } }
+function siDMY(d){ d = String(d||'').slice(0,10); return d.length===10 ? d.slice(8,10)+'-'+d.slice(5,7)+'-'+d.slice(0,4) : ''; }
+function siWho(){ return (typeof ACTOR!=='undefined' && ACTOR.name) ? ACTOR.name : 'Admin'; }
+function siNum(v){ var s = String(v==null?'':v).trim().replace(/,/g,''); if(s==='') return null; var n = Number(s); return isNaN(n) ? NaN : n; }
+
+// ───────── loading ─────────
+async function renderStoreInventory(){
+  setHdr('Dashboard', true);
+  if(!SI.cdate) SI.cdate = siToday();
+  if(!SI.upDate) SI.upDate = siToday();
+  await siLoad();
+}
+async function siLoad(){
+  SI.loading = true; SI.err = ''; siDraw();
+  try{
+    if(typeof loadCustomPurchaseProducts==='function' && typeof CUSTOM_PURCHASE_PRODUCTS!=='undefined' && !CUSTOM_PURCHASE_PRODUCTS.length){ try{ await loadCustomPurchaseProducts(); }catch(e){} }
+    var prods = (typeof getAllPurchaseProducts==='function') ? getAllPurchaseProducts() : [];
+    var res = await Promise.all([
+      sbGetAll('store_entries','?select=*&order=entry_date.desc,created_at.desc'),
+      sbGetAll('purchase_ledger','?select=product,qty,unit,date'),
+      sbGetAll('store_aliases','?select=*'),
+      sbGetAll('store_hidden','?select=*') ]);
+    var items = {}, order = [];
+    var addItem = function(name, unit, cat, agency){
+      var k = siNorm(name); if(!k) return;
+      if(!items[k]){ items[k] = {key:k, name:String(name).trim(), unit:unit||'', category:cat||'', agency:agency||''}; order.push(k); }
+      else { if(!items[k].unit && unit) items[k].unit = unit; if(!items[k].category && cat) items[k].category = cat; }
+    };
+    prods.forEach(function(p){ addItem(p.name, p.unit, p.category, p.agency); });
+    var pur = {};
+    res[1].forEach(function(r){ var k = siNorm(r.product); if(!k) return; addItem(r.product, r.unit); (pur[k] = pur[k]||[]).push({d:String(r.date||'').slice(0,10), q:Number(r.qty)||0}); });
+    var byKey = {};
+    res[0].forEach(function(e){ var k = siNorm(e.item); addItem(e.item, e.unit); (byKey[k] = byKey[k]||[]).push(e); });
+    var alias = {}; res[2].forEach(function(a){ alias[siNorm(a.alias)] = a.item; });
+    var hidden = {}; res[3].forEach(function(h){ hidden[siNorm(h.item)] = h; });
+    order.sort(function(a,b){ return items[a].name.localeCompare(items[b].name); });
+    SI.items = items; SI.order = order; SI.pur = pur; SI.ent = res[0]; SI.byKey = byKey; SI.alias = alias; SI.hidden = hidden;
+  }catch(e){
+    SI.err = e.message || String(e);
+  }
+  SI.loading = false; siDraw();
+}
+
+// ───────── the maths ─────────
+// latest live count for an item (on or before a date, or strictly before it)
+function siLastCount(key, date, strict){
+  var best = null;
+  (SI.byKey[key]||[]).forEach(function(e){
+    if(e.kind!=='count' || e.voided) return;
+    if(date){ if(strict ? e.entry_date>=date : e.entry_date>date) return; }
+    if(!best || e.entry_date>best.entry_date || (e.entry_date===best.entry_date && String(e.created_at)>String(best.created_at))) best = e;
+  });
+  return best;
+}
+// purchases and manual in/out after a date (exclusive) up to a date (inclusive)
+function siMoves(key, after, upto){
+  var m = {bought:0, inn:0, out:0};
+  (SI.pur[key]||[]).forEach(function(p){ if((!after || p.d>after) && (!upto || p.d<=upto)) m.bought += p.q; });
+  (SI.byKey[key]||[]).forEach(function(e){
+    if(e.voided || e.kind==='count') return;
+    if((after && e.entry_date<=after) || (upto && e.entry_date>upto)) return;
+    if(e.kind==='in') m.inn += Number(e.qty)||0; else if(e.kind==='out') m.out += Number(e.qty)||0;
+  });
+  return m;
+}
+function siStock(key){
+  var c = siLastCount(key), m = siMoves(key, c ? c.entry_date : null, null);
+  return {count:c, bought:m.bought, inn:m.inn, out:m.out, balance: c ? (Number(c.qty)||0)+m.bought+m.inn-m.out : null};
+}
+function siExpected(key, date){
+  var c = siLastCount(key, date, true); if(!c) return null;
+  var m = siMoves(key, c.entry_date, date);
+  return (Number(c.qty)||0)+m.bought+m.inn-m.out;
+}
+
+// ───────── drawing ─────────
+function siTabs(){
+  var tabs = [['stock','📦 Stock'],['move','➕ Stock in / out'],['upload','⬆ Upload sheet'],['history','🕘 History'],['diff','⚠ Shortages']];
+  return '<div class="tabs" style="margin-bottom:12px">'+tabs.map(function(t){ return '<button class="tab '+(SI.tab===t[0]?'active':'')+'" onclick="siTab(\''+t[0]+'\')">'+t[1]+'</button>'; }).join('')+'</div>';
+}
+function siTab(t){ SI.tab = t; SI.editId = null; siDraw(); window.scrollTo && window.scrollTo({top:0}); }
+function siDraw(){
+  var el = document.getElementById('screen'); if(!el) return;
+  var body = '';
+  if(SI.loading) body = '<div class="loading"><div class="spinner"></div></div>';
+  else if(SI.err) body = '<div class="card" style="color:#B03020;font-size:13px">Could not load Store Inventory: '+siEsc(SI.err)+(/store_entries|relation|schema/i.test(SI.err)?'<br><br>Run <b>store_inventory_setup.sql</b> in Supabase first.':'')+'</div>';
+  else body = SI.tab==='stock' ? siStockHtml() : SI.tab==='move' ? siMoveHtml() : SI.tab==='upload' ? siUploadHtml() : SI.tab==='history' ? siHistoryHtml() : siDiffHtml();
+  el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px">'
+    +'<h2 style="color:var(--brown,#6B2400);margin:0 0 4px">🏬 Store Inventory</h2>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:12px">What is in the store room. Items come from the Purchase list. Stock = last count + purchases since + stock in − stock out. Nothing is overwritten or deleted. Everything is recorded with who and when.</div>'
+    + siTabs() + body + '</div>';
+}
+
+// ---- Stock tab ----
+function siViewList(){
+  var q = siNorm(SI.q);
+  return SI.order.filter(function(k){
+    var h = !!SI.hidden[k]; if(SI.showHidden ? !h : h) return false;   // "Hidden items" ticked = show only the hidden ones
+    var it = SI.items[k]; if(q && siNorm(it.name+' '+it.category+' '+it.agency).indexOf(q)<0) return false;
+    var st = siStock(k);
+    if(SI.filter==='nocount' && st.count) return false;
+    if(SI.filter==='counted' && !st.count) return false;
+    return true;
+  });
+}
+function siStockHtml(){
+  SI.view = siViewList();
+  var inp = 'padding:8px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:13px;background:#fff';
+  var nTyped = Object.keys(SI.typed).filter(function(k){ return String(SI.typed[k]).trim()!==''; }).length;
+  var nNo = SI.order.filter(function(k){ return !SI.hidden[k] && !siLastCount(k); }).length;
+  var rows = SI.view.map(function(k, idx){
+    var it = SI.items[k], st = siStock(k), c = st.count;
+    var bal = st.balance;
+    var neg = bal!=null && bal<0;
+    return '<tr style="'+(SI.hidden[k]?'opacity:.55':'')+'">'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);min-width:170px"><div style="font-weight:600;font-size:13px">'+siEsc(it.name)+'</div><div style="font-size:11px;color:#999">'+siEsc([it.category,it.agency].filter(Boolean).join(' · '))+'</div></td>'
+      +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);font-size:12px;color:#888">'+siEsc(it.unit||'')+'</td>'
+      +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);text-align:right;font-size:12px">'+(c?siFmt(c.qty)+'<div style="font-size:10px;color:#999">'+siEsc(siDMY(c.entry_date))+'</div>':'<span style="color:#B03020;font-size:11px">not counted</span>')+'</td>'
+      +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);text-align:right;font-size:12px;color:#1a7f4b">'+(c?'+'+siFmt(st.bought+st.inn):'–')+'</td>'
+      +'<td style="padding:8px 6px;border-top:1px solid var(--border,#eee);text-align:right;font-size:12px;color:#B03020">'+(c&&st.out?'−'+siFmt(st.out):'–')+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);text-align:right;font-weight:700;font-size:14px;'+(neg?'color:#B03020':'')+'">'+(bal==null?'–':siFmt(bal))+(neg?'<div style="font-size:10px;font-weight:600">below zero</div>':'')+'</td>'
+      +'<td style="padding:6px 6px;border-top:1px solid var(--border,#eee);white-space:nowrap">'
+        +(SI.hidden[k] ? '<button class="btn btn-s" style="padding:5px 9px;font-size:11px" onclick="siUnhide('+idx+')">Show again</button>'
+          : '<input type="number" inputmode="decimal" min="0" step="any" placeholder="count" value="'+siEsc(SI.typed[k]==null?'':SI.typed[k])+'" oninput="siType('+idx+',this.value)" style="width:78px;padding:7px;border:1px solid var(--border,#ccc);border-radius:6px;font-size:13px;text-align:right">'
+            +' <button title="Hide this item from the list" onclick="siHide('+idx+')" style="border:none;background:none;cursor:pointer;color:#aaa;font-size:14px">✕</button>')
+      +'</td></tr>'; }).join('');
+  return '<div class="card" style="margin-bottom:12px">'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+      +'<div style="flex:1;min-width:160px"><div style="font-size:11px;color:#888">Search item</div><input value="'+siEsc(SI.q)+'" oninput="siSearch(this)" placeholder="e.g. egg, butter, box…" style="'+inp+';width:100%;box-sizing:border-box"></div>'
+      +'<div><div style="font-size:11px;color:#888">Show</div><select onchange="SI.filter=this.value;siDraw()" style="'+inp+'"><option value="all"'+(SI.filter==='all'?' selected':'')+'>All items</option><option value="nocount"'+(SI.filter==='nocount'?' selected':'')+'>Not counted yet ('+nNo+')</option><option value="counted"'+(SI.filter==='counted'?' selected':'')+'>Counted</option></select></div>'
+      +'<label style="font-size:12px;color:#888;display:flex;gap:5px;align-items:center;padding-bottom:9px"><input type="checkbox" '+(SI.showHidden?'checked':'')+' onchange="SI.showHidden=this.checked;siDraw()"> Hidden items</label>'
+    +'</div></div>'
+    +'<div class="card" style="margin-bottom:12px;background:#fff8ee;border:1px solid #f0c878">'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+        +'<div><div style="font-size:11px;color:#888">Count date</div><input type="date" max="'+siToday()+'" value="'+siEsc(SI.cdate)+'" onchange="SI.cdate=this.value||SI.cdate" style="'+inp+'"></div>'
+        +'<button class="btn btn-p" '+(SI.busy?'disabled':'')+' onclick="siSaveCounts()" style="flex:0 0 auto;width:auto;padding:10px 18px">💾 Save counts'+(nTyped?' ('+nTyped+')':'')+'</button>'
+      +'</div>'
+      +'<div style="font-size:12px;color:#8a6a2a;margin-top:8px">Type the real quantity in the Count box for each item you counted, then press Save. The count is fixed on the date above (end of that day). Purchases and stock out after that date are added and subtracted automatically. If the count is lower than the system expected, the difference is recorded as a shortage.</div>'
+    +'</div>'
+    +'<div id="si-rows-wrap" style="overflow-x:auto;border:1px solid var(--border,#eee);border-radius:8px;background:#fff"><table style="width:100%;border-collapse:collapse;min-width:620px"><thead><tr style="background:rgba(107,36,0,0.06)">'
+      +['Item','Unit','Last count','Bought / in since','Out since','In store now','Count'].map(function(h,i){ return '<th style="padding:8px 8px;font-size:11px;text-align:'+(i<2||i===6?'left':'right')+'">'+h+'</th>'; }).join('')+'</tr></thead><tbody id="si-rows">'
+      +(rows || '<tr><td colspan="7" style="padding:18px;text-align:center;color:#999">No items match.</td></tr>')+'</tbody></table></div>'
+    +'<div style="font-size:11px;color:#999;margin-top:8px">'+SI.view.length+' item'+(SI.view.length===1?'':'s')+' shown. “In store now” shows – until the first count is entered for an item. The ✕ hides an item that is no longer used (it can be shown again).</div>';
+}
+function siSearch(inp){
+  SI.q = inp.value; var pos = inp.selectionStart; siDraw();
+  var n = document.querySelector('input[oninput*="siSearch"]'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} }
+}
+function siType(idx, v){ var k = SI.view[idx]; if(k!==undefined) SI.typed[k] = v; var b = document.querySelector('button[onclick="siSaveCounts()"]'); if(b){ var n = Object.keys(SI.typed).filter(function(x){ return String(SI.typed[x]).trim()!==''; }).length; b.textContent = '💾 Save counts'+(n?' ('+n+')':''); } }
+
+async function siHide(idx){
+  var k = SI.view[idx]; if(!k) return; var it = SI.items[k];
+  var why = prompt('Hide “'+it.name+'” from the Store Inventory list?\n\nWhy? (e.g. no longer used)'); if(why===null) return; why = why.trim();
+  if(!why){ alert('Please give a reason.'); return; }
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/store_hidden?on_conflict=item',{method:'POST',headers:siHdr('resolution=merge-duplicates,return=minimal'),body:JSON.stringify([{item:it.name, reason:why, actor:siWho()}])});
+    if(!r.ok) throw new Error(await r.text());
+    if(typeof logEdit==='function') logEdit('store_hidden','Added','Hid item: '+it.name+' — '+why);
+    toast('Item hidden'); await siLoad();
+  }catch(e){ alert('Could not hide: '+(e.message||e)); }
+}
+async function siUnhide(idx){
+  var k = SI.view[idx]; if(!k) return; var it = SI.items[k];
+  try{ await sbDelete('store_hidden','?item=eq.'+encodeURIComponent((SI.hidden[k]||{}).item||it.name)); toast('Item shown again'); await siLoad(); }
+  catch(e){ alert('Could not show: '+(e.message||e)); }
+}
+function siHdr(prefer){ return {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':prefer||'return=minimal'}; }
+
+// ---- saving counts ----
+async function siSaveCounts(){
+  if(SI.busy) return;
+  var date = SI.cdate || siToday(); if(date>siToday()){ alert('The count date cannot be in the future.'); return; }
+  var rows = [], bad = [], short = 0, big = [];
+  Object.keys(SI.typed).forEach(function(k){
+    var n = siNum(SI.typed[k]); if(n===null) return;
+    var it = SI.items[k]; if(!it) return;
+    if(isNaN(n) || n<0){ bad.push(it.name); return; }
+    var exp = siExpected(k, date);
+    if(exp!=null && n<exp-0.0005) short++;
+    if(exp!=null && exp>0 && n>exp*3+5) big.push(it.name);
+    rows.push({entry_date:date, item:it.name, unit:it.unit||null, kind:'count', qty:n, expected:exp, note:null, actor:siWho(), source:'screen'});
+  });
+  if(bad.length){ alert('These counts are not valid numbers (0 or more): '+bad.slice(0,5).join(', ')); return; }
+  if(!rows.length){ alert('Type a count for at least one item first.'); return; }
+  var msg = 'Save '+rows.length+' count'+(rows.length>1?'s':'')+' for '+siDMY(date)+'?'+(short?'\n\n⚠ '+short+' item'+(short>1?'s are':' is')+' lower than the system expected. These will be recorded as shortages.':'')+(big.length?'\n\nCheck these, they are much higher than expected: '+big.slice(0,4).join(', '):'');
+  if(!confirm(msg)) return;
+  SI.busy = true; siDraw();
+  try{
+    await sbPost('store_entries', rows);
+    SI.typed = {}; toast('✅ '+rows.length+' count'+(rows.length>1?'s':'')+' saved');
+    SI.busy = false; await siLoad(); return;
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
+  SI.busy = false; siDraw();
+}
+
+// ---- Stock in / out tab ----
+function siMoveHtml(){
+  var inp = 'padding:9px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:14px;background:#fff;width:100%;box-sizing:border-box';
+  var lab = 'font-size:11px;color:#888;margin-bottom:3px';
+  var opts = SI.order.filter(function(k){ return !SI.hidden[k]; }).map(function(k){ return '<option value="'+siEsc(SI.items[k].name)+'">'; }).join('');
+  return '<div class="card"><div class="card-title" style="margin-bottom:6px">Add a stock in or stock out</div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:12px">Bills entered in Purchase are added to the store automatically, so use <b>Stock in</b> only for stock that did not come through Purchase. Use <b>Stock out</b> for anything given out of the store.</div>'
+    +'<datalist id="si-items">'+opts+'</datalist>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">'
+      +'<div><div style="'+lab+'">Item</div><input id="sim-item" list="si-items" placeholder="Start typing the item name" style="'+inp+'" autocomplete="off"></div>'
+      +'<div><div style="'+lab+'">Type</div><select id="sim-kind" style="'+inp+'"><option value="out">Stock OUT (given out)</option><option value="in">Stock IN (received)</option></select></div>'
+      +'<div><div style="'+lab+'">Quantity</div><input id="sim-qty" type="number" inputmode="decimal" min="0" step="any" style="'+inp+'"></div>'
+      +'<div><div style="'+lab+'">Date</div><input id="sim-date" type="date" max="'+siToday()+'" value="'+siToday()+'" style="'+inp+'"></div>'
+    +'</div>'
+    +'<div style="margin-top:12px"><div style="'+lab+'">Reason / given to (required)</div><input id="sim-note" placeholder="e.g. Kitchen – brownie batch, Royapettah outlet, damaged…" style="'+inp+'"></div>'
+    +'<div style="margin-top:14px"><button class="btn btn-p" '+(SI.busy?'disabled':'')+' onclick="siSaveMove()" style="width:auto;padding:11px 22px">Save entry</button></div></div>';
+}
+async function siSaveMove(){
+  if(SI.busy) return;
+  var g = function(id){ return (document.getElementById(id)||{}).value||''; };
+  var name = g('sim-item').trim(), k = siNorm(name), kind = g('sim-kind'), qty = siNum(g('sim-qty')), date = g('sim-date'), note = g('sim-note').trim();
+  var it = SI.items[k] || (SI.alias[k] && SI.items[siNorm(SI.alias[k])]);
+  if(!it){ alert('Pick an item from the list. Type a few letters and choose one of the suggestions.'); return; }
+  if(qty==null || isNaN(qty) || qty<=0){ alert('Enter a quantity greater than 0.'); return; }
+  if(!date || date>siToday()){ alert('Pick a date that is today or earlier.'); return; }
+  if(!note){ alert('Please add a reason or who it was given to.'); return; }
+  if(kind==='out'){
+    var st = siStock(it.key);
+    if(st.balance!=null && qty>st.balance && !confirm('Only '+siFmt(st.balance)+' '+(it.unit||'')+' of “'+it.name+'” is in the store, but you are taking out '+siFmt(qty)+'.\n\nSave anyway?')) return;
+    if(st.balance==null && !confirm('“'+it.name+'” has not been counted yet, so the stock is unknown.\n\nSave the stock out anyway?')) return;
+  }
+  SI.busy = true;
+  try{
+    await sbPost('store_entries',[{entry_date:date, item:it.name, unit:it.unit||null, kind:kind, qty:qty, expected:null, note:note, actor:siWho(), source:'screen'}]);
+    toast('✅ Saved'); SI.busy = false; await siLoad(); SI.tab = 'move'; siDraw(); return;
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
+  SI.busy = false;
+}
+
+// ---- Upload tab ----
+function siCsvParse(text){
+  var rows = [], row = [], cur = '', q = false;
+  text = String(text).replace(/^﻿/,'');
+  for(var i=0;i<text.length;i++){
+    var ch = text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){ cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if(ch==='"') q = true;
+    else if(ch===','||ch==='\t'||ch===';'){ row.push(cur); cur = ''; }
+    else if(ch==='\n'||ch==='\r'){ if(ch==='\r'&&text[i+1]==='\n') i++; row.push(cur); cur = ''; rows.push(row); row = []; }
+    else cur += ch;
+  }
+  if(cur!==''||row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+function siTemplate(){
+  var lines = ['Item,Count'].concat(SI.order.filter(function(k){ return !SI.hidden[k]; }).map(function(k){ var n = SI.items[k].name; return '"'+n.replace(/"/g,'""')+'",'; }));
+  var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));
+  a.download = 'store-count-sheet.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+function siLoadXlsxLib(){
+  return new Promise(function(res, rej){
+    if(window.XLSX) return res(window.XLSX);
+    var s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = function(){ res(window.XLSX); }; s.onerror = function(){ rej(new Error('Could not load the Excel reader. Save the sheet as CSV and upload that instead.')); };
+    document.head.appendChild(s);
+  });
+}
+async function siFileChosen(inp){
+  var f = inp.files && inp.files[0]; if(!f) return;
+  try{
+    var rows;
+    if(/\.(xlsx|xls)$/i.test(f.name)){
+      var X = await siLoadXlsxLib(), wb = X.read(await f.arrayBuffer(), {type:'array'});
+      rows = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:true, defval:''});
+    } else rows = siCsvParse(await f.text());
+    siBuildUpload(rows, f.name);
+  }catch(e){ alert('Could not read the file: '+(e.message||e)); }
+  inp.value = '';
+}
+function siSuggest(name){
+  var t = siNorm(name).split(' ').filter(Boolean); if(!t.length) return [];
+  var out = [];
+  SI.order.forEach(function(k){
+    if(SI.hidden[k]) return;
+    var h = ' '+k+' ', score = 0;
+    t.forEach(function(w){ if(h.indexOf(' '+w+' ')>=0) score += 2; else if(w.length>2 && h.indexOf(w)>=0) score += 1; });
+    if(score>0) out.push({k:k, s:score/ (t.length*2) - Math.abs(k.length-siNorm(name).length)/1000});
+  });
+  return out.sort(function(a,b){ return b.s-a.s; }).slice(0,6).map(function(x){ return x.k; });
+}
+function siBuildUpload(rows, fname){
+  rows = rows.filter(function(r){ return r && r.some(function(c){ return String(c==null?'':c).trim()!==''; }); });
+  var ci = 1, ii = 0, start = 0;
+  if(rows.length){
+    var h = rows[0].map(function(c){ return siNorm(c); });
+    var isHead = h.some(function(c){ return /^(item|product|name|particulars|description)/.test(c); }) || h.some(function(c){ return /(count|qty|quantity|stock|closing|balance)/.test(c); });
+    if(isHead){
+      start = 1;
+      h.forEach(function(c,i){ if(/(count|qty|quantity|stock|closing|balance)/.test(c)) ci = i; else if(/^(item|product|name|particulars|description)/.test(c)) ii = i; });
+      if(ci===ii) ci = ii===0 ? 1 : 0;
+    }
+  }
+  var list = [];
+  for(var r=start;r<rows.length;r++){
+    var name = String(rows[r][ii]==null?'':rows[r][ii]).trim(), raw = rows[r][ci];
+    if(!name) continue;
+    var rawS = String(raw==null?'':raw).trim();
+    var n = rawS==='' ? null : siNum(raw);
+    var k = siNorm(name), match = null;
+    if(SI.items[k]) match = SI.items[k].name;
+    else if(SI.alias[k]) match = SI.alias[k];
+    list.push({name:name, raw:rawS, count:n, match:match, pick:match||'', sugg: match ? [] : siSuggest(name), skip:false});
+  }
+  SI.up = {fname:fname, rows:list}; SI.tab = 'upload'; siDraw();
+}
+function siUploadHtml(){
+  var inp = 'padding:8px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:13px;background:#fff';
+  var head = '<div class="card" style="margin-bottom:12px"><div class="card-title" style="margin-bottom:6px">Upload the store count sheet</div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:12px">Two columns: <b>Item</b> and <b>Count</b> (how much is in the store). Download the sheet below, it already has every item name from Purchase. Fill in the Count column, then upload it (CSV or Excel).</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+      +'<button class="btn btn-s" onclick="siTemplate()" style="width:auto;padding:10px 16px">⬇ Download sheet (all items)</button>'
+      +'<div><div style="font-size:11px;color:#888">Count date</div><input type="date" max="'+siToday()+'" value="'+siEsc(SI.upDate)+'" onchange="SI.upDate=this.value||SI.upDate" style="'+inp+'"></div>'
+      +'<label class="btn btn-p" style="width:auto;padding:10px 16px;cursor:pointer;display:inline-block">⬆ Choose file<input type="file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="siFileChosen(this)"></label>'
+    +'</div></div>';
+  if(!SI.up) return head;
+  var rows = SI.up.rows;
+  var bad = rows.filter(function(r){ return r.count!=null && (isNaN(r.count)||r.count<0); }).length;
+  var unm = rows.filter(function(r){ return !r.pick && !r.skip && r.count!=null && !isNaN(r.count); }).length;
+  var okN = rows.filter(function(r){ return r.pick && !r.skip && r.count!=null && !isNaN(r.count) && r.count>=0; }).length;
+  var optsFor = function(r){
+    var seen = {}, o = '<option value="">— choose the matching item —</option>';
+    var add = function(k){ if(!k||seen[k]||!SI.items[k]) return; seen[k]=1; o += '<option value="'+siEsc(SI.items[k].name)+'"'+(r.pick===SI.items[k].name?' selected':'')+'>'+siEsc(SI.items[k].name)+'</option>'; };
+    r.sugg.forEach(add);
+    o += '<optgroup label="All items">'; SI.order.forEach(function(k){ if(!seen[k]) add(k); }); o += '</optgroup>';
+    return o;
+  };
+  var body = rows.map(function(r, i){
+    var invalid = r.count!=null && (isNaN(r.count) || r.count<0), blank = r.count==null;
+    var status = r.skip ? '<span style="color:#999">Skipped</span>' : blank ? '<span style="color:#999">No count, ignored</span>' : invalid ? '<span style="color:#B03020">Not a valid number</span>' : r.pick ? '<span style="color:#1a7f4b">✓ '+(r.match?'Matched':'Chosen')+'</span>' : '<span style="color:#B03020">Needs an item</span>';
+    return '<tr style="'+(r.skip?'opacity:.5':'')+'"><td style="padding:7px 10px;border-top:1px solid var(--border,#eee);font-size:13px">'+siEsc(r.name)+'</td>'
+      +'<td style="padding:7px 8px;border-top:1px solid var(--border,#eee);text-align:right;font-weight:600">'+siEsc(r.raw)+'</td>'
+      +'<td style="padding:7px 8px;border-top:1px solid var(--border,#eee);min-width:210px">'
+        +(r.match ? '<span style="font-size:12px">'+siEsc(r.match)+'</span>' : '<select onchange="siPick('+i+',this.value)" style="'+inp+';width:100%;font-size:12px">'+optsFor(r)+'</select>')
+      +'</td><td style="padding:7px 8px;border-top:1px solid var(--border,#eee);font-size:12px;white-space:nowrap">'+status
+      +(r.match?'':' <button onclick="siSkip('+i+')" style="border:none;background:none;color:#888;cursor:pointer;font-size:11px;text-decoration:underline">'+(r.skip?'use':'skip')+'</button>')+'</td></tr>'; }).join('');
+  return head
+    +'<div class="card"><div style="font-size:13px;margin-bottom:8px"><b>'+siEsc(SI.up.fname)+'</b>: '+rows.length+' rows · <span style="color:#1a7f4b">'+okN+' ready</span>'+(unm?' · <span style="color:#B03020">'+unm+' need an item</span>':'')+(bad?' · <span style="color:#B03020">'+bad+' invalid</span>':'')+'</div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:10px">Names that did not match a Purchase item exactly are shown with suggestions. Pick the right one once and it is remembered for the next upload.</div>'
+    +'<div style="overflow-x:auto;max-height:480px;overflow-y:auto;border:1px solid var(--border,#eee);border-radius:8px"><table style="width:100%;border-collapse:collapse;min-width:560px"><thead><tr style="background:rgba(107,36,0,0.06)"><th style="padding:8px 10px;text-align:left;font-size:11px">In your sheet</th><th style="padding:8px;text-align:right;font-size:11px">Count</th><th style="padding:8px;text-align:left;font-size:11px">Store item</th><th style="padding:8px;text-align:left;font-size:11px">Status</th></tr></thead><tbody>'+body+'</tbody></table></div>'
+    +'<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-p" '+(SI.busy||!okN?'disabled':'')+' onclick="siConfirmUpload()" style="width:auto;padding:11px 20px">Save '+okN+' count'+(okN===1?'':'s')+' for '+siEsc(siDMY(SI.upDate))+'</button><button class="btn btn-s" onclick="SI.up=null;siDraw()" style="width:auto;padding:11px 18px">Cancel</button></div></div>';
+}
+function siPick(i, v){ var r = SI.up.rows[i]; r.pick = v; siDraw(); }
+function siSkip(i){ var r = SI.up.rows[i]; r.skip = !r.skip; siDraw(); }
+async function siConfirmUpload(){
+  if(SI.busy || !SI.up) return;
+  var date = SI.upDate || siToday(); if(date>siToday()){ alert('The count date cannot be in the future.'); return; }
+  var rows = [], aliasRows = [], seen = {}, dup = [], short = 0;
+  SI.up.rows.forEach(function(r){
+    if(r.skip || !r.pick || r.count==null || isNaN(r.count) || r.count<0) return;
+    var k = siNorm(r.pick), it = SI.items[k]; if(!it) return;
+    if(seen[k]){ dup.push(it.name); return; } seen[k] = true;
+    var exp = siExpected(k, date); if(exp!=null && r.count<exp-0.0005) short++;
+    rows.push({entry_date:date, item:it.name, unit:it.unit||null, kind:'count', qty:r.count, expected:exp, note:null, actor:siWho(), source:'upload'});
+    if(!r.match && siNorm(r.name)!==k) aliasRows.push({alias:siNorm(r.name), item:it.name, actor:siWho()});
+  });
+  if(dup.length){ alert('The same item appears twice in the sheet: '+dup.slice(0,4).join(', ')+'.\nKeep one row for each item.'); return; }
+  if(!rows.length) return;
+  if(!confirm('Save '+rows.length+' count'+(rows.length>1?'s':'')+' for '+siDMY(date)+'?'+(short?'\n\n⚠ '+short+' item'+(short>1?'s are':' is')+' lower than the system expected. These will be recorded as shortages.':''))) return;
+  SI.busy = true; siDraw();
+  try{
+    await sbPost('store_entries', rows);
+    if(aliasRows.length){ try{ await fetch(SB_URL+'/rest/v1/store_aliases?on_conflict=alias',{method:'POST',headers:siHdr('resolution=merge-duplicates,return=minimal'),body:JSON.stringify(aliasRows)}); }catch(e){} }
+    SI.up = null; toast('✅ '+rows.length+' counts saved'); SI.busy = false; SI.tab = 'stock'; await siLoad(); return;
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
+  SI.busy = false; siDraw();
+}
+
+// ---- History tab ----
+function siHistoryList(){
+  var q = siNorm(SI.fq);
+  return SI.ent.filter(function(e){
+    if(!SI.fvoid && e.voided) return false;
+    if(SI.fkind && e.kind!==SI.fkind) return false;
+    if(q && siNorm(e.item+' '+(e.note||'')+' '+e.actor).indexOf(q)<0) return false;
+    return true;
+  });
+}
+function siKindLabel(k){ return k==='count' ? 'Count' : k==='in' ? 'Stock in' : 'Stock out'; }
+function siHistoryHtml(){
+  var inp = 'padding:8px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:13px;background:#fff';
+  var all = siHistoryList(), list = all.slice(0,300), col = {count:'#2F5D8A','in':'#1a7f4b',out:'#B03020'};
+  var rows = list.map(function(e){
+    var diff = (e.kind==='count' && e.expected!=null) ? Number(e.qty)-Number(e.expected) : null;
+    if(SI.editId===e.id){
+      return '<tr style="background:#fff8ee"><td colspan="6" style="padding:10px 12px;border-top:1px solid var(--border,#eee)">'
+        +'<div style="font-weight:600;margin-bottom:6px">Editing: '+siKindLabel(e.kind)+' · '+siEsc(e.item)+'</div>'
+        +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+        +'<div><div style="font-size:11px;color:#888">Quantity</div><input id="sie-qty" type="number" step="any" min="0" value="'+siEsc(e.qty)+'" style="'+inp+';width:100px"></div>'
+        +'<div><div style="font-size:11px;color:#888">Date</div><input id="sie-date" type="date" max="'+siToday()+'" value="'+siEsc(e.entry_date)+'" style="'+inp+'"></div>'
+        +'<div style="flex:1;min-width:160px"><div style="font-size:11px;color:#888">Reason / note</div><input id="sie-note" value="'+siEsc(e.note||'')+'" style="'+inp+';width:100%;box-sizing:border-box"></div>'
+        +'<div style="flex:1;min-width:160px"><div style="font-size:11px;color:#B03020">Why are you changing it? (required)</div><input id="sie-why" placeholder="e.g. typed wrong quantity" style="'+inp+';width:100%;box-sizing:border-box"></div>'
+        +'<button class="btn btn-p" onclick="siSaveEdit(\''+siEsc(e.id)+'\')" style="width:auto;padding:9px 16px">Save</button><button class="btn btn-s" onclick="SI.editId=null;siDraw()" style="width:auto;padding:9px 14px">Cancel</button></div></td></tr>';
+    }
+    return '<tr style="'+(e.voided?'opacity:.5;text-decoration:line-through':'')+'">'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);white-space:nowrap;font-size:12px">'+siEsc(siDMY(e.entry_date))+'<div style="font-size:10px;color:#999;text-decoration:none">entered '+siEsc(siIST(e.created_at))+'</div></td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);font-size:13px;font-weight:600">'+siEsc(e.item)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);font-size:12px;font-weight:700;color:'+col[e.kind]+';white-space:nowrap">'+siKindLabel(e.kind)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);text-align:right;white-space:nowrap;font-weight:700">'+siFmt(e.qty)+' <span style="font-weight:400;color:#999;font-size:11px">'+siEsc(e.unit||'')+'</span>'
+        +(diff!=null && Math.abs(diff)>0.0005 ? '<div style="font-size:10px;font-weight:600;color:'+(diff<0?'#B03020':'#1a7f4b')+'">expected '+siFmt(e.expected)+' · '+(diff<0?'short '+siFmt(-diff):'extra '+siFmt(diff))+'</div>' : '')+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);font-size:12px;color:#666">'+siEsc(e.note||'')+(e.voided?'<div style="color:#B03020;text-decoration:none">Cancelled by '+siEsc(e.voided_by||'?')+': '+siEsc(e.void_reason||'')+'</div>':'')+'<div style="font-size:10px;color:#999;text-decoration:none">by '+siEsc(e.actor)+(e.source==='upload'?' · uploaded':'')+'</div></td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);white-space:nowrap;text-decoration:none">'+(e.voided?'':'<button onclick="siEdit(\''+siEsc(e.id)+'\')" title="Edit" style="border:none;background:none;cursor:pointer;color:#6B2400;font-size:14px">✎</button> <button onclick="siVoid(\''+siEsc(e.id)+'\')" title="Cancel this entry" style="border:none;background:none;cursor:pointer;color:#B03020;font-size:13px">🗑</button>')+'</td></tr>'; }).join('');
+  return '<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+      +'<div style="flex:1;min-width:150px"><div style="font-size:11px;color:#888">Search</div><input value="'+siEsc(SI.fq)+'" oninput="SI.fq=this.value;siHistSearch(this)" placeholder="item, person or note" style="'+inp+';width:100%;box-sizing:border-box"></div>'
+      +'<div><div style="font-size:11px;color:#888">Type</div><select onchange="SI.fkind=this.value;siDraw()" style="'+inp+'"><option value="">All</option><option value="count"'+(SI.fkind==='count'?' selected':'')+'>Counts</option><option value="in"'+(SI.fkind==='in'?' selected':'')+'>Stock in</option><option value="out"'+(SI.fkind==='out'?' selected':'')+'>Stock out</option></select></div>'
+      +'<label style="font-size:12px;color:#888;display:flex;gap:5px;align-items:center;padding-bottom:9px"><input type="checkbox" '+(SI.fvoid?'checked':'')+' onchange="SI.fvoid=this.checked;siDraw()"> Show cancelled</label>'
+      +'<button onclick="siCsv()" class="btn btn-s" style="width:auto;padding:9px 14px">⬇ Download</button></div>'
+    +'<div style="font-size:11px;color:#888;margin-top:8px">Purchases are not listed here, they are in the Purchase tab. “Cancel” (🗑) keeps the line but removes it from the stock, with your name and reason.</div></div>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:6px">'+all.length+' entr'+(all.length===1?'y':'ies')+(all.length>300?' (showing the latest 300)':'')+'</div>'
+    +'<div style="overflow-x:auto;border:1px solid var(--border,#eee);border-radius:8px;background:#fff"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr style="background:rgba(107,36,0,0.06)">'
+    +['Date','Item','Type','Quantity','Note','' ].map(function(h,i){ return '<th style="padding:8px 10px;text-align:'+(i===3?'right':'left')+';font-size:11px">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
+    +(rows||'<tr><td colspan="6" style="padding:18px;text-align:center;color:#999">Nothing here yet.</td></tr>')+'</tbody></table></div>';
+}
+function siHistSearch(inp){
+  var pos = inp.selectionStart; siDraw();
+  var n = document.querySelector('input[oninput*="siHistSearch"]'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} }
+}
+function siEdit(id){ SI.editId = id; siDraw(); }
+async function siSaveEdit(id){
+  var e = SI.ent.filter(function(x){ return String(x.id)===String(id); })[0]; if(!e) return;
+  var g = function(k){ return (document.getElementById(k)||{}).value||''; };
+  var qty = siNum(g('sie-qty')), date = g('sie-date'), note = g('sie-note').trim(), why = g('sie-why').trim();
+  if(qty==null || isNaN(qty) || qty<0){ alert('Enter a valid quantity.'); return; }
+  if(!date || date>siToday()){ alert('Pick a date that is today or earlier.'); return; }
+  if(!why){ alert('Please say why you are changing it.'); return; }
+  if(String(qty)===String(e.qty) && date===e.entry_date && note===(e.note||'')){ alert('Nothing was changed.'); return; }
+  var newNote = note + (note?' ':'') + '[edited by '+siWho()+': '+why+']';
+  try{
+    var res = await sbPatch('store_entries','?id=eq.'+encodeURIComponent(id), {qty:qty, entry_date:date, note:newNote, updated_at:new Date().toISOString()});
+    if(Array.isArray(res) && !res.length) throw new Error('The change was not saved (permission is not switched on).');
+    SI.editId = null; toast('✅ Changed'); await siLoad(); SI.tab = 'history'; siDraw();
+  }catch(err){ alert('Could not save: '+(err.message||err)); }
+}
+async function siVoid(id){
+  var e = SI.ent.filter(function(x){ return String(x.id)===String(id); })[0]; if(!e) return;
+  var why = prompt('Cancel this entry?\n\n'+siKindLabel(e.kind)+' · '+e.item+' · '+siFmt(e.qty)+'\n\nIt stays in the history but no longer counts. Why?'); if(why===null) return; why = why.trim();
+  if(!why){ alert('Please give a reason.'); return; }
+  try{
+    var res = await sbPatch('store_entries','?id=eq.'+encodeURIComponent(id), {voided:true, void_reason:why, voided_by:siWho(), voided_at:new Date().toISOString(), updated_at:new Date().toISOString()});
+    if(Array.isArray(res) && !res.length) throw new Error('The change was not saved (permission is not switched on).');
+    toast('Entry cancelled'); await siLoad(); SI.tab = 'history'; siDraw();
+  }catch(err){ alert('Could not cancel: '+(err.message||err)); }
+}
+function siCsv(){
+  var q = function(s){ return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'; };
+  var lines = ['Date,Item,Type,Quantity,Unit,Expected,Note,By,Entered (IST),Cancelled,Cancel reason'].concat(siHistoryList().map(function(e){
+    return [e.entry_date,e.item,siKindLabel(e.kind),e.qty,e.unit,e.expected,e.note,e.actor,siIST(e.created_at),e.voided?'yes':'',e.void_reason].map(q).join(','); }));
+  var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));
+  a.download = 'store-history.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+
+// ---- Shortages tab ----
+function siDiffHtml(){
+  var list = SI.ent.filter(function(e){ return e.kind==='count' && !e.voided && e.expected!=null && Math.abs(Number(e.qty)-Number(e.expected))>0.0005; });
+  var short = list.filter(function(e){ return Number(e.qty)<Number(e.expected); }), extra = list.length-short.length;
+  var rows = list.map(function(e){
+    var d = Number(e.qty)-Number(e.expected);
+    return '<tr><td style="padding:8px 10px;border-top:1px solid var(--border,#eee);font-size:12px;white-space:nowrap">'+siEsc(siDMY(e.entry_date))+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);font-weight:600;font-size:13px">'+siEsc(e.item)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);text-align:right">'+siFmt(e.expected)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);text-align:right">'+siFmt(e.qty)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);text-align:right;font-weight:700;color:'+(d<0?'#B03020':'#1a7f4b')+'">'+(d<0?'Short '+siFmt(-d):'Extra '+siFmt(d))+' <span style="font-weight:400;color:#999;font-size:11px">'+siEsc(e.unit||'')+'</span></td>'
+      +'<td style="padding:8px 10px;border-top:1px solid var(--border,#eee);font-size:11px;color:#888">'+siEsc(e.actor)+'</td></tr>'; }).join('');
+  return '<div class="card" style="margin-bottom:12px"><div class="card-title" style="margin-bottom:4px">Recount differences</div>'
+    +'<div style="font-size:12px;color:#888">Every time an item is counted again, the count is compared with what the system expected (last count + purchases + stock in − stock out). Any gap shows here. The first count of an item has nothing to compare with.</div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px"><div style="flex:1;min-width:120px;background:#fdecea;border-radius:8px;padding:10px 14px"><div style="font-size:12px;color:#888">Shortages</div><div style="font-size:20px;font-weight:700;color:#B03020">'+short.length+'</div></div>'
+    +'<div style="flex:1;min-width:120px;background:#eaf6ee;border-radius:8px;padding:10px 14px"><div style="font-size:12px;color:#888">Extra stock found</div><div style="font-size:20px;font-weight:700;color:#1a7f4b">'+extra+'</div></div></div></div>'
+    +'<div style="overflow-x:auto;border:1px solid var(--border,#eee);border-radius:8px;background:#fff"><table style="width:100%;border-collapse:collapse;min-width:560px"><thead><tr style="background:rgba(107,36,0,0.06)">'
+    +['Count date','Item','Expected','Counted','Difference','Counted by'].map(function(h,i){ return '<th style="padding:8px 10px;text-align:'+(i>=2&&i<=4?'right':'left')+';font-size:11px">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
+    +(rows||'<tr><td colspan="6" style="padding:18px;text-align:center;color:#999">No differences recorded yet.</td></tr>')+'</tbody></table></div>';
+}
+
+// ───────── tab button, navigation, Monthly removed for admin, Edit Log wiring ─────────
+var _setTabSI = setTab;
+setTab = function(i, fromBack){
+  if(i!==13) return _setTabSI(i, fromBack);
+  if(S.role!=='admin') return;
+  if(typeof ACTOR!=='undefined' && !ACTOR.name && typeof whoModal==='function'){ whoModal(function(){ setTab(13, fromBack); }); return; }
+  if(!fromBack && typeof S.mainTab==='number' && S.mainTab!==13){ S.navHistory.push({type:'tab', mainTab:S.mainTab}); try{ history.pushState({nav:true},'',''); }catch(e){} }
+  S.mainTab = 13; setHdr('Dashboard', true); updateBackBtn(); renderStoreInventory();
+};
+var _setHdrSI = setHdr;
+setHdr = function(sub, showTabs){
+  _setHdrSI(sub, showTabs);
+  var tabs = document.getElementById('main-tabs');
+  if(tabs && !document.getElementById('mt13')){
+    var b = document.createElement('button'); b.className='mt'; b.id='mt13'; b.textContent='Store Inventory'; b.onclick=function(){ setTab(13); };
+    var before = document.getElementById('mt3'); if(before) tabs.insertBefore(b, before); else tabs.appendChild(b);
+  }
+  var t = document.getElementById('mt13');
+  if(t){ t.style.display = (showTabs && S.role==='admin') ? '' : 'none'; t.classList.toggle('active', S.mainTab===13); }
+  // the Monthly tab is replaced by Store Inventory for admin (the Dispatch login keeps its own tab in that slot)
+  var m = document.getElementById('mt2'); if(m && S.role==='admin') m.style.display = 'none';
+};
+if(typeof LOG_TABLES!=='undefined'){ LOG_TABLES.store_entries = 'Store Inventory'; LOG_TABLES.store_hidden = 'Store Inventory'; LOG_TABLES.store_aliases = 'Store Inventory'; }
+if(typeof logLabel==='function'){
+  var _logLabelSI = logLabel;
+  logLabel = function(table, r){
+    if(table==='store_entries'){ var k = r.kind==='count' ? 'Count' : r.kind==='in' ? 'Stock in' : r.kind==='out' ? 'Stock out' : 'Entry'; return k+': '+(r.item||'?')+' · '+(r.qty!=null?r.qty:'')+' · '+(r.entry_date||''); }
+    if(table==='store_hidden') return 'Hidden item: '+(r.item||'');
+    if(table==='store_aliases') return 'Name match: '+(r.alias||'')+' → '+(r.item||'');
+    return _logLabelSI.apply(this, arguments);
+  };
+}
+if(typeof elogDraw==='function'){
+  var _elogDrawSI = elogDraw;
+  elogDraw = function(){
+    _elogDrawSI.apply(this, arguments);
+    try{
+      var sel = document.querySelector('#screen select[onchange*="\'area\'"]');
+      if(sel && !Array.prototype.some.call(sel.options, function(o){ return o.value==='Store Inventory'; })){ var o = document.createElement('option'); o.value = 'Store Inventory'; o.textContent = 'Store Inventory'; o.selected = (typeof ELOG!=='undefined' && ELOG.area==='Store Inventory'); sel.appendChild(o); }
+    }catch(e){}
+  };
+}
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
