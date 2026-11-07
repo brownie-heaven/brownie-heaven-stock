@@ -7435,6 +7435,58 @@ function olDecorate(){
   var tabs = el.querySelector('.tabs');
   if(tabs) tabs.insertAdjacentHTML('afterend', html);
 }
+  // ── KITCHEN INDENTS (admin / Gautham): shows what is ALREADY IN THE KITCHEN (Pastry / Brownie / Tub stock in hand) ──
+// Read-only. Needs kitchen_stock_setup.sql run once. Paste BELOW the kitchen_outlet_left block.
+// Adds a grey line under each indent item ("🍳 In kitchen now: Pastry 61 kg · Brownie 60 pcs") and a details box at the top.
+var KS = {rows:[], loaded:false};
+function ksKey(s){ return String(s==null?'':s).toLowerCase().replace(/\b(pcs|pc|nos)\b\s*$/,'').replace(/^blue\s+/,'').replace(/[^a-z0-9]+/g,''); }
+function ksDMY(d){ d = String(d||'').slice(0,10); return d.length===10 ? d.slice(8,10)+'-'+d.slice(5,7) : ''; }
+function ksFmt(n){ var x = Number(n); return isNaN(x) ? '' : x.toLocaleString('en-IN',{maximumFractionDigits:3}); }
+var KS_LABEL = {pastry:'Pastry', brownie:'Brownie', tub:'Tub'};
+
+var _siLoadKS = siLoad;
+siLoad = async function(){
+  var r = await _siLoadKS.apply(this, arguments);
+  try{
+    var all = await sbGetAll('kitchen_stock','?select=as_of,section,item,qty,unit,note&order=as_of.desc');
+    var seen = {}, rows = [];
+    all.forEach(function(x){ var k = x.section+'|'+ksKey(x.item)+'|'+x.unit; if(seen[k]) return; seen[k] = 1; rows.push(x); });   // newest list wins
+    KS.rows = rows; KS.loaded = true;
+  }catch(e){ KS.rows = []; KS.loaded = false; }   // table not created yet: nothing is shown
+  siDraw();
+  return r;
+};
+var _siDrawKS = siDraw;
+siDraw = function(){
+  var r = _siDrawKS.apply(this, arguments);
+  try{ if(SI.tab==='indent' && KS.loaded) ksDecorate(); }catch(e){}
+  return r;
+};
+function ksDecorate(){
+  var el = document.getElementById('screen'); if(!el) return;
+  var byItem = {}, latest = '';
+  KS.rows.forEach(function(x){ var k = ksKey(x.item); (byItem[k] = byItem[k] || []).push(x); if(String(x.as_of)>latest) latest = String(x.as_of).slice(0,10); });
+  el.querySelectorAll('tr').forEach(function(tr){
+    var d = tr.querySelector('td > div[style*="font-weight:600"]'); if(!d || tr.querySelector('.ks-line')) return;
+    var list = byItem[ksKey(d.textContent)]; if(!list || !list.length) return;
+    var order = {pastry:0, brownie:1, tub:2};
+    list = list.slice().sort(function(a,b){ return order[a.section]-order[b.section]; });
+    var txt = list.map(function(x){ return KS_LABEL[x.section]+' <b>'+ksFmt(x.qty)+' '+(x.unit||'')+'</b>'; }).join(' · ');
+    var anchor = tr.querySelector('.ol-line') || d;
+    anchor.insertAdjacentHTML('afterend','<div class="ks-line" style="font-size:11px;color:#6b6b6b;margin-top:3px">🍳 In kitchen now: '+txt+' <span style="color:#aaa">('+ksDMY(list[0].as_of)+')</span></div>');
+  });
+  if(el.querySelector('#ks-box')) return;
+  var secs = {pastry:[], brownie:[], tub:[]};
+  KS.rows.forEach(function(x){ if(secs[x.section]) secs[x.section].push(x); });
+  var det = ['pastry','brownie','tub'].map(function(s){
+    var rows = secs[s].slice().sort(function(a,b){ return String(a.item).localeCompare(String(b.item)); });
+    if(!rows.length) return '';
+    return '<div style="margin-top:8px"><b>'+KS_LABEL[s]+'</b><div style="color:#555">'+rows.map(function(x){ return x.item+' '+ksFmt(x.qty)+' '+(x.unit||''); }).join(' · ')+'</div></div>';
+  }).join('');
+  var html = '<div id="ks-box" class="card" style="margin-bottom:12px;padding:10px 14px"><details><summary style="cursor:pointer;font-size:13px">🍳 <b>Kitchen stock in hand</b> <span style="color:#888">— list of '+ksDMY(latest)+' (tap to see everything)</span></summary><div style="font-size:12px;margin-top:6px">'+(det||'<div style="color:#888">Nothing yet.</div>')+'</div></details></div>';
+  var anchor = el.querySelector('#ol-box') || el.querySelector('.tabs');
+  if(anchor) anchor.insertAdjacentHTML('afterend', html);
+}
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
