@@ -6396,7 +6396,7 @@ renderChequeLedger = async function(){
 // Nothing is ever overwritten or deleted: every count / in / out is a line, edits are logged, "delete" = void with a reason.
 var SI = {tab:'stock', loading:false, err:'', items:{}, order:[], pur:{}, ent:[], byKey:{}, alias:{}, hidden:{},
           q:'', filter:'all', showHidden:false, typed:{}, cdate:'', view:[],
-          fkind:'', fq:'', fvoid:false, editId:null, up:null, upDate:'', busy:false, detail:false};
+          fkind:'', fq:'', fvoid:false, editId:null, up:null, upDate:'', busy:false, detail:false, req:[], issue:{}, map:{}, rqstat:'waiting', rqcat:''};
 
 function siToday(){ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
 function siEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -6424,6 +6424,10 @@ async function siLoad(){
       sbGetAll('purchase_ledger','?select=product,qty,unit,date'),
       sbGetAll('store_aliases','?select=*'),
       sbGetAll('store_hidden','?select=*') ]);
+    try{
+      var since = new Date(Date.now()-45*86400000).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+      SI.req = await sbGetAll('kitchen_requests','?req_date=gte.'+since+'&select=*&order=req_date.desc,created_at.asc');
+    }catch(e){ SI.req = []; }   // table not created yet: the indent tab just stays empty
     var items = {}, order = [];
     var addItem = function(name, unit, cat, agency){
       var k = siNorm(name); if(!k) return;
@@ -6479,7 +6483,8 @@ function siExpected(key, date){
 
 // ───────── drawing ─────────
 function siTabs(){
-  var tabs = [['stock','📦 Daily count'],['move','➕ Other in / out'],['upload','⬆ Upload sheet'],['history','🕘 History'],['diff','⚠ Shortages']];
+  var waiting = (SI.req||[]).filter(function(r){ return r.status==='requested'; }).length;
+  var tabs = [['stock','📦 Daily count'],['indent','📥 Kitchen indents'+(waiting?' ('+waiting+')':'')],['move','➕ Other in / out'],['upload','⬆ Upload sheet'],['history','🕘 History'],['diff','⚠ Shortages']];
   return '<div class="tabs" style="margin-bottom:12px">'+tabs.map(function(t){ return '<button class="tab '+(SI.tab===t[0]?'active':'')+'" onclick="siTab(\''+t[0]+'\')">'+t[1]+'</button>'; }).join('')+'</div>';
 }
 function siTab(t){ SI.tab = t; SI.editId = null; siDraw(); window.scrollTo && window.scrollTo({top:0}); }
@@ -6488,7 +6493,7 @@ function siDraw(){
   var body = '';
   if(SI.loading) body = '<div class="loading"><div class="spinner"></div></div>';
   else if(SI.err) body = '<div class="card" style="color:#B03020;font-size:13px">Could not load Store Inventory: '+siEsc(SI.err)+(/store_entries|relation|schema/i.test(SI.err)?'<br><br>Run <b>store_inventory_setup.sql</b> in Supabase first.':'')+'</div>';
-  else body = SI.tab==='stock' ? siStockHtml() : SI.tab==='move' ? siMoveHtml() : SI.tab==='upload' ? siUploadHtml() : SI.tab==='history' ? siHistoryHtml() : siDiffHtml();
+  else body = SI.tab==='stock' ? siStockHtml() : SI.tab==='indent' ? (typeof siIndentHtml==='function' ? siIndentHtml() : '<div class="card">Kitchen indents are not switched on yet.</div>') : SI.tab==='move' ? siMoveHtml() : SI.tab==='upload' ? siUploadHtml() : SI.tab==='history' ? siHistoryHtml() : siDiffHtml();
   el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px">'
     +'<h2 style="color:var(--brown,#6B2400);margin:0 0 4px">🏬 Store Inventory</h2>'
     +'<div style="font-size:12px;color:#888;margin-bottom:12px">What is in the store room. Items come from the Purchase list. Stock = last count + purchases since + stock in − stock out. Nothing is overwritten or deleted. Everything is recorded with who and when.</div>'
@@ -6920,6 +6925,252 @@ if(typeof elogDraw==='function'){
       if(sel && !Array.prototype.some.call(sel.options, function(o){ return o.value==='Store Inventory'; })){ var o = document.createElement('option'); o.value = 'Store Inventory'; o.textContent = 'Store Inventory'; o.selected = (typeof ELOG!=='undefined' && ELOG.area==='Store Inventory'); sel.appendChild(o); }
     }catch(e){}
   };
+}
+  // ── KITCHEN INDENT FOR CHEFS: a separate PIN login + the store's "Issue" screen ──────────────────
+// Chefs (Pastry / Brownie, one shared PIN) send their indent from the app instead of WhatsApp.
+// Gautham sees it in Store Inventory → "Kitchen indents", enters what he actually gives, and that is subtracted from the store.
+var CHEF_PIN = '0000';   // change this one line to change the chefs' PIN
+var CK = {cat:'pastry', date:'', name:'', draft:[], rows:[], names:{}, alias:{}, loading:false, busy:false, err:'', q:'', qty:'', unit:''};
+
+function ckEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function ckToday(){ return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+function ckNorm(s){ return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function ckDMY(d){ d = String(d||'').slice(0,10); return d.length===10 ? d.slice(8,10)+'-'+d.slice(5,7)+'-'+d.slice(0,4) : ''; }
+function ckFmt(n){ var x = Number(n); return isNaN(x) ? '' : x.toLocaleString('en-IN',{maximumFractionDigits:3}); }
+
+// ───────── chef sign-in (PIN) ─────────
+var _pressNumCK = pressNum;
+pressNum = function(n){
+  var typed = String(S.pin||'') + n;
+  if(typeof n==='string' && n!=='del' && typed===CHEF_PIN){
+    S.pin = ''; S.role = 'chef'; S.outlet = null; S.outletName = null; S.pinError = false;
+    try{ if(typeof actLog==='function') actLog('Sign-in','Signed in','Kitchen chef signed in','Chef','chef'); }catch(e){}
+    ckStart(); return;
+  }
+  return _pressNumCK.apply(this, arguments);
+};
+var _confirmHomeCK = confirmHome;
+confirmHome = function(){ if(S.role==='chef'){ ckDraw(); window.scrollTo && window.scrollTo({top:0}); return; } return _confirmHomeCK.apply(this, arguments); };
+var _goHomeCK = goHome;
+goHome = function(){
+  try{ if(S && S.role==='chef' && typeof actLog==='function') actLog('Sign-in','Signed out', (CK.name||'Chef')+' signed out','Chef: '+(CK.name||'?'),'chef'); }catch(e){}
+  return _goHomeCK.apply(this, arguments);
+};
+if(typeof logWho==='function'){ var _logWhoCK = logWho; logWho = function(){ return (S && S.role==='chef') ? 'Chef: '+(CK.name||'?') : _logWhoCK.apply(this, arguments); }; }
+if(typeof LOG_TABLES!=='undefined') LOG_TABLES.kitchen_requests = 'Kitchen Indent';
+if(typeof logLabel==='function'){
+  var _logLabelCK = logLabel;
+  logLabel = function(table, r){
+    if(table==='kitchen_requests') return (r.category==='brownie'?'Brownie':'Pastry')+' indent: '+(r.item||'?')+' · '+(r.qty!=null?r.qty:'')+(r.unit_note?' '+r.unit_note:'')+' · '+(r.req_date||'');
+    return _logLabelCK.apply(this, arguments);
+  };
+}
+
+// ───────── chef screens ─────────
+async function ckStart(){
+  setHdr('Kitchen Indent', false);
+  CK.date = ckToday(); CK.draft = []; CK.q = ''; CK.qty = ''; CK.unit = '';
+  try{ CK.name = localStorage.getItem('bh_chef_name') || ''; }catch(e){}
+  await ckLoad();
+}
+async function ckLoad(){
+  CK.loading = true; CK.err = ''; ckDraw();
+  try{
+    if(typeof loadCustomPurchaseProducts==='function' && typeof CUSTOM_PURCHASE_PRODUCTS!=='undefined' && !CUSTOM_PURCHASE_PRODUCTS.length){ try{ await loadCustomPurchaseProducts(); }catch(e){} }
+    var names = {};
+    (typeof getAllPurchaseProducts==='function' ? getAllPurchaseProducts() : []).forEach(function(p){ var k = ckNorm(p.name); if(k && !names[k]) names[k] = String(p.name).trim().replace(/\s+/g,' '); });
+    CK.names = names;
+    try{ var al = await sbGetAll('store_aliases','?select=*'); CK.alias = {}; al.forEach(function(a){ CK.alias[ckNorm(a.alias)] = a.item; }); }catch(e){ CK.alias = {}; }
+    CK.rows = await sbGetAll('kitchen_requests','?req_date=eq.'+CK.date+'&category=eq.'+CK.cat+'&select=*&order=created_at.asc');
+  }catch(e){ CK.err = e.message || String(e); CK.rows = []; }
+  CK.loading = false; ckDraw();
+}
+function ckCat(c){ if(CK.cat===c) return; if(CK.draft.length && !confirm('Switching will clear the items you have added but not sent yet. Continue?')) { ckDraw(); return; } CK.cat = c; CK.draft = []; ckLoad(); }
+function ckDate(v){ if(!v) return; if(v>ckToday()) v = ckToday(); CK.date = v; ckLoad(); }
+function ckMatch(text){
+  var k = ckNorm(text); if(!k) return null;
+  if(CK.names[k]) return CK.names[k];
+  if(CK.alias[k]) return CK.alias[k];
+  return null;
+}
+function ckAdd(){
+  var item = String((document.getElementById('ck-item')||{}).value||'').trim().replace(/\s+/g,' ');
+  var qty = Number(String((document.getElementById('ck-qty')||{}).value||'').replace(/,/g,''));
+  var unit = String((document.getElementById('ck-unit')||{}).value||'').trim();
+  if(!item){ alert('Type or pick the item.'); return; }
+  if(!(qty>0)){ alert('Enter how many you need.'); return; }
+  var m = ckMatch(item), name = m || item;
+  var ex = CK.draft.filter(function(d){ return ckNorm(d.item)===ckNorm(name); })[0];
+  if(ex){ ex.qty += qty; if(unit) ex.unit = unit; } else CK.draft.push({item:name, in_list:!!m, qty:qty, unit:unit});
+  CK.q = ''; CK.qty = ''; CK.unit = ''; ckDraw();
+  var i = document.getElementById('ck-item'); if(i) i.focus();
+}
+function ckRemove(i){ CK.draft.splice(i,1); ckDraw(); }
+function ckName(v){ CK.name = v; }
+async function ckSend(){
+  if(CK.busy) return;
+  if(!CK.draft.length){ alert('Add at least one item first.'); return; }
+  var nm = String(CK.name||'').trim(); if(!nm){ alert('Please type your name.'); return; }
+  if(!confirm('Send this '+(CK.cat==='brownie'?'Brownie':'Pastry')+' indent for '+ckDMY(CK.date)+' ('+CK.draft.length+' item'+(CK.draft.length>1?'s':'')+')?')) return;
+  CK.busy = true; ckDraw();
+  try{
+    var rows = CK.draft.map(function(d){ return {req_date:CK.date, category:CK.cat, item:d.item, in_list:!!d.in_list, qty:d.qty, unit_note:d.unit||null, requested_by:nm, status:'requested'}; });
+    await sbPost('kitchen_requests', rows);
+    try{ localStorage.setItem('bh_chef_name', nm); }catch(e){}
+    CK.draft = []; toast('✅ Indent sent to the store');
+    CK.busy = false; await ckLoad(); return;
+  }catch(e){ alert('Could not send: '+(e.message||e)); }
+  CK.busy = false; ckDraw();
+}
+async function ckCancel(id){
+  if(!confirm('Cancel this request?')) return;
+  try{
+    var res = await sbPatch('kitchen_requests','?id=eq.'+encodeURIComponent(id)+'&status=eq.requested',{status:'cancelled', issue_note:'Cancelled by '+(CK.name||'chef')});
+    if(Array.isArray(res) && !res.length){ alert('The store has already handled this one, so it cannot be cancelled.'); }
+    await ckLoad();
+  }catch(e){ alert('Could not cancel: '+(e.message||e)); }
+}
+function ckDraw(){
+  var el = document.getElementById('screen'); if(!el || S.role!=='chef') return;
+  var C = {brown:'#6B2400'};
+  var inp = 'padding:12px;border:1px solid #ddd;border-radius:8px;font-size:15px;background:#fff;box-sizing:border-box;width:100%';
+  var catBtn = function(c, label){ var on = CK.cat===c; return '<button onclick="ckCat(\''+c+'\')" style="flex:1;padding:14px 8px;font-size:16px;font-weight:700;border-radius:10px;cursor:pointer;border:2px solid '+C.brown+';background:'+(on?C.brown:'#fff')+';color:'+(on?'#fff':C.brown)+'">'+label+'</button>'; };
+  var opts = Object.keys(CK.names).map(function(k){ return '<option value="'+ckEsc(CK.names[k])+'">'; }).join('');
+  var draft = CK.draft.length ? CK.draft.map(function(d,i){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 4px;border-top:1px solid #eee"><div><div style="font-weight:600;font-size:14px">'+ckEsc(d.item)+'</div>'+(d.in_list?'':'<div style="font-size:11px;color:#a35c00">not in the product list: the store will match it</div>')+'</div>'
+      +'<div style="white-space:nowrap;font-weight:700">'+ckFmt(d.qty)+' '+ckEsc(d.unit||'')+' <button onclick="ckRemove('+i+')" style="border:none;background:none;color:#B03020;font-size:18px;cursor:pointer">✕</button></div></div>'; }).join('')
+    : '<div style="padding:12px 4px;color:#999;font-size:13px">Nothing added yet. Add the items you need above.</div>';
+  var stCol = {requested:['Waiting','#a35c00'], issued:['Given','#1a7f4b'], rejected:['Not given','#B03020'], cancelled:['Cancelled','#999']};
+  var mine = CK.rows.length ? CK.rows.map(function(r){
+    var s = stCol[r.status]||['',''];
+    var extra = r.status==='issued' ? ' · '+ckFmt(r.qty_issued)+' given' : r.status==='rejected' ? (r.issue_note?' · '+ckEsc(r.issue_note):'') : '';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 4px;border-top:1px solid #eee;'+(r.status==='cancelled'?'opacity:.5':'')+'"><div><div style="font-size:14px;font-weight:600">'+ckEsc(r.item)+'</div><div style="font-size:12px;color:#888">asked '+ckFmt(r.qty)+' '+ckEsc(r.unit_note||'')+' · by '+ckEsc(r.requested_by||'')+'</div></div>'
+      +'<div style="text-align:right;white-space:nowrap"><div style="font-weight:700;font-size:13px;color:'+s[1]+'">'+s[0]+extra+'</div>'+(r.status==='requested'?'<button onclick="ckCancel(\''+ckEsc(r.id)+'\')" style="border:none;background:none;color:#B03020;font-size:11px;text-decoration:underline;cursor:pointer">cancel</button>':'')+'</div></div>'; }).join('')
+    : '<div style="padding:12px 4px;color:#999;font-size:13px">No indent sent for this day yet.</div>';
+  el.innerHTML = '<div style="max-width:560px;margin:0 auto;padding:14px">'
+    +'<div style="display:flex;gap:10px;margin-bottom:12px">'+catBtn('pastry','🍰 Pastry')+catBtn('brownie','🍫 Brownie')+'</div>'
+    +'<div class="card" style="margin-bottom:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+      +'<div><div style="font-size:11px;color:#888;margin-bottom:3px">Date</div><input type="date" max="'+ckToday()+'" value="'+ckEsc(CK.date)+'" onchange="ckDate(this.value)" style="'+inp+'"></div>'
+      +'<div><div style="font-size:11px;color:#888;margin-bottom:3px">Your name</div><input value="'+ckEsc(CK.name)+'" oninput="ckName(this.value)" placeholder="Your name" style="'+inp+'"></div></div></div>'
+    +(CK.err?'<div class="card" style="color:#B03020;font-size:13px">Could not load: '+ckEsc(CK.err)+'</div>':'')
+    +(CK.loading?'<div class="loading"><div class="spinner"></div></div>':
+      '<div class="card" style="margin-bottom:12px"><div class="card-title" style="margin-bottom:8px">Add what you need</div>'
+        +'<datalist id="ck-items">'+opts+'</datalist>'
+        +'<input id="ck-item" list="ck-items" placeholder="Item: start typing, then pick" autocomplete="off" style="'+inp+';margin-bottom:8px" onkeydown="if(event.key===\'Enter\'){document.getElementById(\'ck-qty\').focus()}">'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px"><input id="ck-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="How many" style="'+inp+'" onkeydown="if(event.key===\'Enter\')ckAdd()">'
+        +'<input id="ck-unit" placeholder="bag / pkt / box…" style="'+inp+'" onkeydown="if(event.key===\'Enter\')ckAdd()"><button class="btn btn-p" onclick="ckAdd()" style="width:auto;padding:0 20px;font-size:15px">＋ Add</button></div>'
+        +'<div style="margin-top:12px;font-weight:700;font-size:13px;color:#555">Your indent ('+CK.draft.length+')</div>'+draft
+        +'<button class="btn btn-p" '+(CK.busy||!CK.draft.length?'disabled':'')+' onclick="ckSend()" style="width:100%;margin-top:12px;padding:15px;font-size:16px">'+(CK.busy?'Sending…':'📨 Send indent to store')+'</button></div>'
+      +'<div class="card"><div class="card-title" style="margin-bottom:4px">Sent for '+ckEsc(ckDMY(CK.date))+' · '+(CK.cat==='brownie'?'Brownie':'Pastry')+'</div>'+mine+'</div>')
+    +'</div>';
+}
+
+// ───────── the store's side: Store Inventory → Kitchen indents ─────────
+function siStoreItemFor(r){
+  var k = siNorm(r.item);
+  if(SI.items[k]) return SI.items[k].name;
+  if(SI.map[r.id]) return SI.map[r.id];
+  if(SI.alias[k] && SI.items[siNorm(SI.alias[k])]) return SI.items[siNorm(SI.alias[k])].name;
+  return '';
+}
+function siIndentHtml(){
+  var inp = 'padding:7px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:13px;background:#fff';
+  var list = (SI.req||[]).filter(function(r){
+    if(SI.rqcat && r.category!==SI.rqcat) return false;
+    if(SI.rqstat==='waiting') return r.status==='requested';
+    if(SI.rqstat==='done') return r.status==='issued';
+    if(SI.rqstat==='other') return r.status==='rejected' || r.status==='cancelled';
+    return true;
+  });
+  var groups = {}, order = [];
+  list.forEach(function(r){ var g = r.req_date+'|'+r.category+'|'+(r.requested_by||''); if(!groups[g]){ groups[g] = {date:r.req_date, cat:r.category, by:r.requested_by, rows:[]}; order.push(g); } groups[g].rows.push(r); });
+  var head = '<div class="card" style="margin-bottom:12px"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+    +'<div><div style="font-size:11px;color:#888">Show</div><select onchange="SI.rqstat=this.value;siDraw()" style="'+inp+'"><option value="waiting"'+(SI.rqstat==='waiting'?' selected':'')+'>Waiting to be given</option><option value="done"'+(SI.rqstat==='done'?' selected':'')+'>Given</option><option value="other"'+(SI.rqstat==='other'?' selected':'')+'>Not given / cancelled</option><option value="all"'+(SI.rqstat==='all'?' selected':'')+'>Everything</option></select></div>'
+    +'<div><div style="font-size:11px;color:#888">Kitchen</div><select onchange="SI.rqcat=this.value;siDraw()" style="'+inp+'"><option value="">Both</option><option value="pastry"'+(SI.rqcat==='pastry'?' selected':'')+'>Pastry</option><option value="brownie"'+(SI.rqcat==='brownie'?' selected':'')+'>Brownie</option></select></div>'
+    +'</div><div style="font-size:12px;color:#888;margin-top:8px">The chefs send their indent from their own login. For each line, type how much you are really giving, in the store’s unit, and press <b>Issue</b>. That quantity is subtracted from the store and recorded with your name. “= asked” copies the number the chef asked for. Showing the last 45 days.</div></div>';
+  if(!order.length) return head+'<div class="card" style="text-align:center;color:#999;padding:24px">Nothing here.</div>';
+  return head + order.map(function(g){
+    var G = groups[g];
+    var rowsHtml = G.rows.map(function(r){
+      var store = siStoreItemFor(r), inList = !!SI.items[siNorm(r.item)];
+      var st = store ? siStock(siNorm(store)) : null;
+      var bal = st ? (st.balance==null ? '<span style="color:#B03020;font-size:11px">not counted</span>' : siFmt(st.balance)) : '–';
+      var tdb = 'padding:8px 8px;border-top:1px solid var(--border,#eee);vertical-align:middle';
+      var itemCell = '<div style="font-weight:600;font-size:13px">'+siEsc(r.item)+'</div>'
+        + (inList ? '' : '<select onchange="siMapReq(\''+siEsc(r.id)+'\',this.value)" style="'+inp+';font-size:12px;margin-top:4px;max-width:230px"><option value="">— match to a store item —</option>'
+            + (function(){ var seen = {}, o = ''; var add = function(k){ if(!k||seen[k]||!SI.items[k]) return; seen[k]=1; o += '<option value="'+siEsc(SI.items[k].name)+'"'+(store===SI.items[k].name?' selected':'')+'>'+siEsc(SI.items[k].name)+'</option>'; }; siSuggest(r.item).forEach(add); o += '<optgroup label="All items">'; SI.order.forEach(function(k){ add(k); }); return o+'</optgroup>'; })()
+            + '</select>')
+        + (store && !inList ? '<div style="font-size:11px;color:#1a7f4b">→ '+siEsc(store)+'</div>' : '');
+      if(r.status==='requested'){
+        return '<tr><td style="'+tdb+'">'+itemCell+'</td><td style="'+tdb+';text-align:right;white-space:nowrap;font-weight:600">'+siFmt(r.qty)+' <span style="color:#888;font-weight:400;font-size:12px">'+siEsc(r.unit_note||'')+'</span></td>'
+          +'<td style="'+tdb+';text-align:right">'+bal+'</td>'
+          +'<td style="'+tdb+';white-space:nowrap"><input type="number" inputmode="decimal" min="0" step="any" value="'+siEsc(SI.issue[r.id]==null?'':SI.issue[r.id])+'" oninput="SI.issue[\''+siEsc(r.id)+'\']=this.value" placeholder="give" style="width:76px;padding:7px;border:1px solid var(--border,#ccc);border-radius:6px;text-align:right"> '
+            +'<button onclick="siAsked(\''+siEsc(r.id)+'\')" style="border:none;background:none;color:#6B2400;font-size:11px;text-decoration:underline;cursor:pointer">= asked</button></td>'
+          +'<td style="'+tdb+';white-space:nowrap"><button class="btn btn-p" onclick="siIssue([\''+siEsc(r.id)+'\'])" style="width:auto;padding:7px 12px;font-size:12px">Issue</button> <button onclick="siRejectReq(\''+siEsc(r.id)+'\')" title="Not giving this" style="border:none;background:none;color:#B03020;cursor:pointer;font-size:15px">✕</button></td></tr>';
+      }
+      var s = r.status==='issued' ? '<span style="color:#1a7f4b;font-weight:700">Given '+siFmt(r.qty_issued)+'</span><div style="font-size:11px;color:#888">'+siEsc(r.issued_by||'')+'</div>' : r.status==='rejected' ? '<span style="color:#B03020;font-weight:700">Not given</span><div style="font-size:11px;color:#888">'+siEsc(r.issue_note||'')+'</div>' : '<span style="color:#999">Cancelled</span>';
+      return '<tr><td style="'+tdb+'">'+itemCell+'</td><td style="'+tdb+';text-align:right;white-space:nowrap">'+siFmt(r.qty)+' <span style="color:#888;font-size:12px">'+siEsc(r.unit_note||'')+'</span></td><td style="'+tdb+'"></td><td style="'+tdb+'" colspan="2">'+s+'</td></tr>';
+    }).join('');
+    var waiting = G.rows.filter(function(r){ return r.status==='requested'; }).map(function(r){ return "'"+siEsc(r.id)+"'"; });
+    return '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;background:rgba(107,36,0,0.06)">'
+      +'<div><b>'+(G.cat==='brownie'?'🍫 Brownie':'🍰 Pastry')+'</b> · '+siEsc(siDMY(G.date))+' <span style="color:#888;font-size:12px">· by '+siEsc(G.by||'?')+'</span></div>'
+      +(waiting.length?'<button class="btn btn-s" onclick="siIssue(['+waiting.join(',')+'],true)" style="width:auto;padding:7px 12px;font-size:12px">Issue all lines I filled in</button>':'')+'</div>'
+      +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:560px"><thead><tr><th style="padding:6px 8px;text-align:left;font-size:11px;color:#888">Item</th><th style="padding:6px 8px;text-align:right;font-size:11px;color:#888">Asked</th><th style="padding:6px 8px;text-align:right;font-size:11px;color:#888">In store</th><th style="padding:6px 8px;text-align:left;font-size:11px;color:#888">Give</th><th></th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div></div>';
+  }).join('');
+}
+function siMapReq(id, v){ SI.map[id] = v; siDraw(); }
+function siAsked(id){ var r = SI.req.filter(function(x){ return String(x.id)===String(id); })[0]; if(r){ SI.issue[id] = r.qty; siDraw(); } }
+async function siRejectReq(id){
+  var r = SI.req.filter(function(x){ return String(x.id)===String(id); })[0]; if(!r) return;
+  var why = prompt('Not giving “'+r.item+'”?\n\nReason (the chef will see it):'); if(why===null) return; why = why.trim();
+  if(!why){ alert('Please give a reason.'); return; }
+  try{
+    var res = await sbPatch('kitchen_requests','?id=eq.'+encodeURIComponent(id),{status:'rejected', issue_note:why, issued_by:siWho(), issued_at:new Date().toISOString()});
+    if(Array.isArray(res) && !res.length) throw new Error('The change was not saved.');
+    toast('Marked as not given'); await siLoad(); SI.tab = 'indent'; siDraw();
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
+}
+async function siIssue(ids, all){
+  if(SI.busy) return;
+  var entries = [], reqs = [], problems = [], warn = [], seen = {};
+  ids.forEach(function(id){
+    var r = SI.req.filter(function(x){ return String(x.id)===String(id); })[0]; if(!r || r.status!=='requested') return;
+    var raw = SI.issue[id], q = siNum(raw);
+    if(raw==null || String(raw).trim()===''){ if(!all) problems.push('Type how much you are giving for “'+r.item+'”.'); return; }
+    if(isNaN(q) || q<=0){ problems.push('“'+r.item+'”: give a number above 0.'); return; }
+    var store = siStoreItemFor(r);
+    if(!store){ problems.push('“'+r.item+'” is not matched to a store item yet. Pick it from the list on that row.'); return; }
+    var k = siNorm(store), st = siStock(k);
+    seen[k] = (seen[k]||0) + q;
+    if(st.balance==null) warn.push(store+' has not been counted yet');
+    else if(seen[k]>st.balance) warn.push('only '+siFmt(st.balance)+' of '+store+' is in the store');
+    var it = SI.items[k];
+    entries.push({entry_date:siToday(), item:it.name, unit:it.unit||null, kind:'out', qty:q,
+      note:'Kitchen indent · '+(r.category==='brownie'?'Brownie':'Pastry')+' · '+siDMY(r.req_date)+' · asked '+siFmt(r.qty)+' '+(r.unit_note||'')+' · for '+(r.requested_by||'chef'),
+      actor:siWho(), source:'indent', request_id:r.id});
+    reqs.push({r:r, q:q});
+  });
+  if(problems.length){ alert(problems.slice(0,4).join('\n')); return; }
+  if(!entries.length){ alert(all ? 'Fill in the “give” quantity on at least one line first.' : 'Nothing to issue.'); return; }
+  var msg = 'Issue '+entries.length+' line'+(entries.length>1?'s':'')+'? This subtracts them from the store.'+(warn.length?'\n\n⚠ '+warn.slice(0,4).join('\n⚠ ')+'\n\nIssue anyway?':'');
+  if(!confirm(msg)) return;
+  SI.busy = true; siDraw();
+  try{
+    var made = await sbPost('store_entries', entries);
+    for(var i=0;i<reqs.length;i++){
+      var body = {status:'issued', qty_issued:reqs[i].q, issued_by:siWho(), issued_at:new Date().toISOString(), issue_note:null};
+      if(Array.isArray(made) && made[i] && made[i].id) body.entry_id = made[i].id;
+      var res = await sbPatch('kitchen_requests','?id=eq.'+encodeURIComponent(reqs[i].r.id), body);
+      if(Array.isArray(res) && !res.length) throw new Error('A request could not be updated. Check the history before issuing again.');
+      delete SI.issue[reqs[i].r.id];
+    }
+    // remember name matches made on this screen
+    var al = []; reqs.forEach(function(x){ var k = siNorm(x.r.item); if(!SI.items[k] && SI.map[x.r.id]) al.push({alias:k, item:SI.map[x.r.id], actor:siWho()}); });
+    if(al.length){ try{ await fetch(SB_URL+'/rest/v1/store_aliases?on_conflict=alias',{method:'POST',headers:siHdr('resolution=merge-duplicates,return=minimal'),body:JSON.stringify(al)}); }catch(e){} }
+    toast('✅ Issued '+entries.length+' line'+(entries.length>1?'s':'')+', subtracted from the store');
+    SI.busy = false; await siLoad(); SI.tab = 'indent'; siDraw(); return;
+  }catch(e){ alert('Could not finish: '+(e.message||e)); }
+  SI.busy = false; await siLoad(); SI.tab = 'indent'; siDraw();
 }
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
