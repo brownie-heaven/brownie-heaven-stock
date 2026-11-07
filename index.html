@@ -6078,20 +6078,21 @@ function chqRunwayFix(){
     if(String(c.date_issued||'').slice(0,7)!==ym) return;
     var d = Number(String(c.date_issued).slice(8,10));
     var s = c.status==='cleared' ? 'cleared' : c.status==='issued' ? 'issued' : 'pending', a = Number(c.amount)||0;
-    if(!byDay[d]) byDay[d] = {amount:0, count:0, pending:0, issued:0, cleared:0};
-    byDay[d].amount += a; byDay[d].count++; byDay[d][s]++; tot[s] += a;
+    if(!byDay[d]) byDay[d] = {amount:0, count:0, pending:0, issued:0, cleared:0, amt:{pending:0, issued:0, cleared:0}};
+    byDay[d].amount += a; byDay[d].count++; byDay[d][s]++; byDay[d].amt[s] += a; tot[s] += a;
   });
   var wk = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var html = '';
   for(var d=1; d<=daysIn; d++){
     var i = byDay[d], isToday = isNow && d===todayN, st = null;
-    if(i){ st = i.pending ? ['Pending',C.rust] : i.issued ? ['Issued',C.blue] : ['Cleared',C.green]; }
+    var cols = {pending:C.rust, issued:C.blue, cleared:C.green};
+    if(i){ st = ['pending','issued','cleared'].filter(function(k){ return i[k]>0; }).map(function(k){ return '<span style="font-family:monospace;font-size:8px;white-space:nowrap;padding:2px 3px;border-radius:3px;border:1px solid currentColor;color:'+cols[k]+'"><span style="text-transform:uppercase;letter-spacing:.3px">'+k+'</span> '+money(i.amt[k])+'</span>'; }).join(''); }
     var dow = wk[new Date(y, mo-1, d).getDay()];
     html += '<div data-day="'+d+'" style="flex:0 0 96px;box-sizing:border-box;position:relative;padding:10px 6px 12px;border-right:1px dashed '+C.line+';text-align:center;display:flex;flex-direction:column;gap:5px;min-height:98px;'+(isToday?'background:rgba(156,122,46,0.14)':'')+'">'
       +'<span style="font-family:monospace;font-size:9px;color:'+(isToday?C.brass:C.inkSoft)+';font-weight:'+(isToday?'700':'400')+'">'+dow+' '+d+(isToday?' · today':'')+'</span>'
       +'<span style="font-family:monospace;font-size:11px;font-weight:600;color:'+(i?C.ink:C.line)+'">'+(i?money(i.amount):'—')+'</span>'
       +(i?'<span style="font-size:9px;color:'+C.inkSoft+'">'+i.count+' cheque'+(i.count===1?'':'s')+'</span>':'')
-      +(st?'<span style="margin-top:auto;font-family:monospace;font-size:7.5px;letter-spacing:.5px;text-transform:uppercase;padding:2px 4px;border-radius:3px;border:1px solid currentColor;color:'+st[1]+';align-self:center">'+st[0]+'</span>':'')
+      +(st?'<div style="margin-top:auto;display:flex;flex-direction:column;gap:3px;align-items:center">'+st+'</div>':'')
       +'</div>';
   }
   grid.id = 'chq-runway-grid';
@@ -6115,11 +6116,55 @@ function chqRunwayFix(){
   var chip = function(l,a,col){ return '<span style="white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+col+';margin-right:5px"></span>'+l+' <b>'+money(a)+'</b></span>'; };
   grid.insertAdjacentHTML('afterend','<div id="chq-runway-legend" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:'+C.inkSoft+'">'
     +chip('Pending',tot.pending,C.rust)+chip('Issued',tot.issued,C.blue)+chip('Cleared',tot.cleared,C.green)
-    +'<span style="opacity:.7">· totals for '+monthName+' · a day shows Pending if any cheque that day is still pending, else Issued if any is waiting to clear</span></div>');
+    +'<span style="opacity:.7">· totals for '+monthName+' · a day with cheques in different stages shows each stage with its amount</span></div>');
   // scroll to today (this month) or the first day that has cheques (other months)
   var firstDay = isNow ? todayN : (Object.keys(byDay).map(Number).sort(function(a,b){ return a-b; })[0] || 1);
   var target = grid.querySelector('[data-day="'+Math.max(1, firstDay-2)+'"]');
   if(target) grid.scrollLeft = target.offsetLeft - grid.offsetLeft;
+}
+
+var CHQSM = {month:''};   // month shown in the Total / Pending / Issued / Cleared boxes ("YYYY-MM"); empty = all months
+function chqSumPick(v){ CHQSM.month = v||''; chqSumMonthFix(); }
+function chqSumMonthFix(){
+  var screen = document.getElementById('screen');
+  if(!screen || screen.textContent.indexOf('Outstanding by Agency')<0) return;
+  var root = screen.firstElementChild; if(!root) return;
+  var box = null;
+  Array.prototype.slice.call(root.children).forEach(function(k){ if(k.id==='chq-summary' || /^Total (Issued|cheques)/i.test((k.textContent||'').replace(/\s+/g,' ').trim())) box = k; });
+  if(!box) return;
+  var C = { paper:'#ECE2C8', card:'#F7F0DC', line:'#C7B989', ink:'#21362B', inkSoft:'#59705F', brass:'#9C7A2E', rust:'#9B3A22' };
+  var money = function(n){ return '₹'+Math.round(Number(n)||0).toLocaleString('en-IN'); };
+  var mname = function(m){ return new Date(Number(m.slice(0,4)), Number(m.slice(5,7))-1, 1).toLocaleDateString('en-IN',{month:'long',year:'numeric'}); };
+  var present = {};
+  (CHQ.rows||[]).forEach(function(c){ var m = String(c.date_issued||'').slice(0,7); if(m.length===7) present[m] = true; });
+  var months = Object.keys(present).sort().reverse();
+  if(CHQSM.month && !present[CHQSM.month]) months.unshift(CHQSM.month);
+  var g = { total:{a:0,n:0}, pending:{a:0,n:0}, issued:{a:0,n:0}, cleared:{a:0,n:0} };
+  (CHQ.rows||[]).forEach(function(c){
+    if(CHQSM.month && String(c.date_issued||'').slice(0,7)!==CHQSM.month) return;
+    var a = Number(c.amount)||0, st = c.status==='cleared' ? 'cleared' : c.status==='issued' ? 'issued' : 'pending';
+    g.total.a += a; g.total.n++; g[st].a += a; g[st].n++;
+  });
+  var scope = CHQSM.month ? 'issued in '+mname(CHQSM.month) : 'all months';
+  var card = function(label, sub, o, col){
+    return '<div style="background:'+C.card+';border:1px solid '+C.line+';border-radius:10px;padding:14px 16px">'
+      +'<div style="font-family:monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:'+C.inkSoft+';margin-bottom:6px">'+label+'</div>'
+      +'<div style="font-family:Georgia,serif;font-size:21px;font-weight:700;color:'+col+'">'+money(o.a)+'</div>'
+      +'<div style="font-size:11px;color:'+C.inkSoft+';margin-top:3px">'+o.n+' cheque'+(o.n===1?'':'s')+' · '+sub+'</div></div>';
+  };
+  var opts = '<option value="">All months</option>'+months.map(function(m){ return '<option value="'+m+'"'+(m===CHQSM.month?' selected':'')+'>'+mname(m)+'</option>'; }).join('');
+  box.style.gridTemplateColumns = 'repeat(auto-fit,minmax(150px,1fr))';
+  box.innerHTML =
+    '<div style="grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+      +'<span style="font-family:monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:'+C.inkSoft+'">Totals for</span>'
+      +'<select onchange="chqSumPick(this.value)" style="border:1px solid '+C.line+';background:#fff;border-radius:6px;padding:7px 10px;font-size:13px;font-weight:600;color:'+C.ink+'">'+opts+'</select>'
+      +(CHQSM.month ? '<button onclick="chqSumPick(\'\')" style="border:1px solid '+C.line+';background:'+C.card+';color:'+C.ink+';border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Show all months</button>' : '')
+      +'<span style="font-size:11px;color:'+C.inkSoft+'">by the month the cheque was issued</span>'
+    +'</div>'
+    +card('Total cheques', scope, g.total, C.ink)
+    +card('Pending', 'written, not handed over', g.pending, C.rust)
+    +card('Issued', 'handed over, not cleared', g.issued, C.brass)
+    +card('Cleared', 'cleared at the bank', g.cleared, '#2E7D4F');
 }
 
 function chqReminderFix(){
@@ -6154,6 +6199,7 @@ var _renderChequeLedger3 = renderChequeLedger;
 renderChequeLedger = async function(){
   var r = await _renderChequeLedger3.apply(this, arguments);
   try{ chqRunwayFix(); }catch(e){ console.warn('cash runway fix failed', e); }
+  try{ chqSumMonthFix(); }catch(e){ console.warn('monthly totals failed', e); }
   try{ chqReminderFix(); }catch(e){ console.warn('cheque reminder failed', e); }
   return r;
 };
