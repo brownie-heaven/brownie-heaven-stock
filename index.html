@@ -7579,6 +7579,83 @@ ckDraw = function(){
 };
 // after a successful add or send, keep the list in sync
 var _ckAddP = ckAdd; ckAdd = function(){ var r = _ckAddP.apply(this, arguments); try{ var l = document.getElementById('ckp-list'); if(l) l.innerHTML = ckpRows(); }catch(e){} return r; };
+  // ── STORE INVENTORY TIDY-UP: (1) removes the "Upload sheet" tab (2) neat boxes for Kitchen stock / Outlet accessories
+//    (3) "Fill all = asked" button on each indent group (4) an Issue always counts on the day the kitchen asked ──
+// Paste BELOW the kitchen_stock_lines block. No SQL.
+
+// (1) no Upload sheet tab
+var _siTabsTD = siTabs;
+siTabs = function(){ return String(_siTabsTD.apply(this, arguments)).replace(/<button[^>]*siTab\('upload'\)[^>]*>[\s\S]*?<\/button>/, ''); };
+
+// (4) Issue is recorded on the date of the request (not the day the button is pressed).
+//     So a Saturday indent issued on Monday does NOT subtract again from a Saturday count that already had it taken out.
+var _sbPostTD = sbPost;
+sbPost = function(table, rows){
+  try{
+    if(table==='store_entries' && Array.isArray(rows) && typeof SI!=='undefined' && SI.req){
+      rows.forEach(function(e){
+        if(e && e.source==='indent' && e.request_id){
+          var r = SI.req.filter(function(x){ return String(x.id)===String(e.request_id); })[0];
+          if(r && r.req_date && String(r.req_date).slice(0,10) < e.entry_date) e.entry_date = String(r.req_date).slice(0,10);
+        }
+      });
+    }
+  }catch(err){}
+  return _sbPostTD.apply(this, arguments);
+};
+
+// (3) fill every "give" box with the asked quantity
+function tdAskedAll(ids){
+  ids.forEach(function(id){ var r = (SI.req||[]).filter(function(x){ return String(x.id)===String(id) && x.status==='requested'; })[0]; if(r && (SI.issue[id]==null || String(SI.issue[id]).trim()==='')) SI.issue[id] = r.qty; });
+  siDraw();
+}
+
+// (2) neat boxes
+function tdEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function tdGrid(rows){
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:0 22px;margin-top:6px">'
+    + rows.map(function(r){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 2px;border-bottom:1px solid #f0ebe6;font-size:13px"><span style="color:#444">'+tdEsc(r[0])+'</span><b style="white-space:nowrap">'+tdEsc(r[1])+'</b></div>'; }).join('') + '</div>';
+}
+function tdSection(title, rows, open){
+  return '<details'+(open?' open':'')+' style="margin-top:10px;border:1px solid #eee;border-radius:10px;padding:8px 12px;background:#fffdfb"><summary style="cursor:pointer;font-weight:700;font-size:14px;color:#6B2400">'+tdEsc(title)+' <span style="color:#999;font-weight:400;font-size:12px">· '+rows.length+' items</span></summary>'+tdGrid(rows)+'</details>';
+}
+function tdTidy(){
+  var el = document.getElementById('screen'); if(!el) return;
+  var ks = el.querySelector('#ks-box details > div');
+  if(ks && !ks.getAttribute('data-tidy') && typeof KS!=='undefined' && KS.rows.length){
+    var L = {pastry:'🍰 Pastry', brownie:'🍫 Brownie', tub:'🥣 Tub'}, h = '';
+    ['pastry','brownie','tub'].forEach(function(s){
+      var rows = KS.rows.filter(function(x){ return x.section===s; }).sort(function(a,b){ return String(a.item).localeCompare(String(b.item)); })
+        .map(function(x){ return [x.item, ksFmt(x.qty)+' '+(x.unit||'')]; });
+      if(rows.length) h += tdSection(L[s], rows, false);
+    });
+    ks.innerHTML = h; ks.setAttribute('data-tidy','1');
+  }
+  var ob = el.querySelector('#ol-box details > div');
+  if(ob && !ob.getAttribute('data-tidy') && typeof OL!=='undefined' && OL.rows.length){
+    var by = {}; OL.rows.forEach(function(x){ var o = x.outlet_name||x.outlet_id; (by[o] = by[o]||[]).push(x); });
+    var h2 = Object.keys(by).sort().map(function(o){
+      var rows = by[o].slice().sort(function(a,b){ return String(a.item).localeCompare(String(b.item)); }).map(function(x){ return [x.item, olFmt(x.qty)]; });
+      return tdSection(o+' · '+olDMY(by[o][0].report_date)+(by[o][0].staff_name?' · '+by[o][0].staff_name:''), rows, false);
+    }).join('');
+    ob.innerHTML = h2; ob.setAttribute('data-tidy','1');
+  }
+  // "Fill all = asked" next to each "Issue all lines I filled in"
+  el.querySelectorAll('button[onclick^="siIssue(["]').forEach(function(b){
+    var oc = b.getAttribute('onclick') || '';
+    if(!/,true\)/.test(oc) || b.getAttribute('data-td')) return;
+    var ids = (oc.match(/'([^']+)'/g)||[]).map(function(s){ return s.slice(1,-1); });
+    b.setAttribute('data-td','1');
+    b.insertAdjacentHTML('beforebegin','<button class="btn btn-s" onclick="tdAskedAll(['+ids.map(function(i){ return "\\'"+i+"\\'"; }).join(',')+'])" style="width:auto;padding:7px 12px;font-size:12px;margin-right:6px">Fill all = asked</button>');
+  });
+}
+var _siDrawTD = siDraw;
+siDraw = function(){
+  if(SI.tab==='upload') SI.tab = 'stock';
+  var r = _siDrawTD.apply(this, arguments);
+  try{ if(SI.tab==='indent') tdTidy(); }catch(e){}
+  return r;
+};
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
