@@ -7487,6 +7487,98 @@ function ksDecorate(){
   var anchor = el.querySelector('#ol-box') || el.querySelector('.tabs');
   if(anchor) anchor.insertAdjacentHTML('afterend', html);
 }
+  // ── CHEF LOGIN (PIN 0000): easy mobile item list instead of typing ──────────────────────────────
+// A search box + a ready list of all Purchase products. The chef just types the number next to each item. Nothing else changes.
+// Paste BELOW the kitchen_indent_chef block (anywhere above the "App starts via welcome screen" line).
+var CKP = {all:false, prods:null, n:-1};
+var CK_UNITS = ['kg','g','pkt','box','nos','pcs','btl','sheet','ltr','tin','bag','roll'];
+
+function ckpProds(){
+  var src = (typeof getAllPurchaseProducts==='function') ? getAllPurchaseProducts() : [];
+  if(CKP.prods && CKP.n===src.length) return CKP.prods;
+  var seen = {}, out = [];
+  src.forEach(function(p){ var k = ckNorm(p.name); if(!k || seen[k]) return; seen[k] = 1; out.push({name:String(p.name).trim().replace(/\s+/g,' '), cat:String(p.category||'').toLowerCase()}); });
+  out.sort(function(a,b){ return a.name.localeCompare(b.name); });
+  CKP.prods = out; CKP.n = src.length; return out;
+}
+function ckpFind(name){ var k = ckNorm(name); for(var i=0;i<CK.draft.length;i++){ if(ckNorm(CK.draft[i].item)===k) return i; } return -1; }
+function ckpShown(){
+  var q = ckNorm(CK.q||'');
+  return ckpProds().map(function(p,i){ return {p:p,i:i}; }).filter(function(x){
+    if(q && ckNorm(x.p.name).indexOf(q)<0) return false;
+    if(!CKP.all && !q){ return x.p.cat===CK.cat || x.p.cat==='ingredient'; }
+    return true;
+  });
+}
+function ckpRows(){
+  var shown = ckpShown();
+  if(!shown.length) return '<div style="padding:16px;text-align:center;color:#999;font-size:13px">No item found. Try other letters, or use “Not in the list?” below.</div>';
+  return shown.map(function(x){
+    var j = ckpFind(x.p.name), d = j>=0 ? CK.draft[j] : null;
+    var on = !!d;
+    var unitOpts = '<option value="">unit</option>' + CK_UNITS.map(function(u){ return '<option value="'+u+'"'+(d&&d.unit===u?' selected':'')+'>'+u+'</option>'; }).join('');
+    return '<div id="ckp-r'+x.i+'" style="display:flex;align-items:center;gap:8px;padding:10px 4px;border-top:1px solid #eee;background:'+(on?'#fff6ee':'transparent')+'">'
+      +'<div style="flex:1;min-width:0;font-size:14px;font-weight:'+(on?'700':'500')+'">'+ckEsc(x.p.name)+'</div>'
+      +'<input type="number" inputmode="decimal" min="0" step="any" placeholder="0" value="'+(d?ckEsc(d.qty):'')+'" oninput="ckpQty('+x.i+',this.value)" style="width:72px;padding:10px 6px;border:1px solid #ccc;border-radius:8px;font-size:16px;text-align:center;font-weight:700">'
+      +'<select onchange="ckpUnit('+x.i+',this.value)" style="width:74px;padding:10px 2px;border:1px solid #ccc;border-radius:8px;font-size:14px;background:#fff">'+unitOpts+'</select></div>';
+  }).join('');
+}
+function ckpBar(){
+  var n = CK.draft.length, b = document.getElementById('ckp-send'); if(!b) return;
+  b.textContent = CK.busy ? 'Sending…' : (n ? '📨 Send indent ('+n+' item'+(n>1?'s':'')+')' : 'Type a number next to an item');
+  b.disabled = !n || CK.busy;
+  var s = document.getElementById('ckp-sum'); if(s) s.textContent = CK.draft.map(function(d){ return d.item+' '+ckFmt(d.qty)+(d.unit?' '+d.unit:''); }).join(' · ');
+}
+function ckpQty(i, v){
+  var p = ckpProds()[i]; if(!p) return;
+  var q = Number(String(v).replace(/,/g,'')), j = ckpFind(p.name);
+  var unitEl = document.querySelector('#ckp-r'+i+' select'), unit = unitEl ? unitEl.value : '';
+  if(q>0){ if(j>=0){ CK.draft[j].qty = q; } else CK.draft.push({item:p.name, in_list:true, qty:q, unit:unit}); }
+  else if(j>=0){ CK.draft.splice(j,1); }
+  var r = document.getElementById('ckp-r'+i); if(r){ var on = q>0; r.style.background = on ? '#fff6ee' : 'transparent'; r.firstChild.style.fontWeight = on ? '700' : '500'; }
+  ckpBar();
+}
+function ckpUnit(i, u){ var p = ckpProds()[i]; if(!p) return; var j = ckpFind(p.name); if(j>=0){ CK.draft[j].unit = u; ckpBar(); } }
+function ckpSearch(v){ CK.q = v; var el = document.getElementById('ckp-list'); if(el) el.innerHTML = ckpRows(); }
+function ckpAll(on){ CKP.all = !!on; ckDraw(); }
+
+ckDraw = function(){
+  var el = document.getElementById('screen'); if(!el || S.role!=='chef') return;
+  var C = {brown:'#6B2400'};
+  var inp = 'padding:12px;border:1px solid #ddd;border-radius:8px;font-size:15px;background:#fff;box-sizing:border-box;width:100%';
+  var catBtn = function(c, label){ var on = CK.cat===c; return '<button onclick="ckCat(\''+c+'\')" style="flex:1;padding:14px 8px;font-size:16px;font-weight:700;border-radius:10px;cursor:pointer;border:2px solid '+C.brown+';background:'+(on?C.brown:'#fff')+';color:'+(on?'#fff':C.brown)+'">'+label+'</button>'; };
+  var chip = function(on, label, val){ return '<button onclick="ckpAll('+val+')" style="flex:1;padding:9px 6px;font-size:13px;font-weight:700;border-radius:8px;cursor:pointer;border:1px solid '+C.brown+';background:'+(on?C.brown:'#fff')+';color:'+(on?'#fff':C.brown)+'">'+label+'</button>'; };
+  var stCol = {requested:['Waiting','#a35c00'], issued:['Given','#1a7f4b'], rejected:['Not given','#B03020'], cancelled:['Cancelled','#999']};
+  var mine = CK.rows.length ? CK.rows.map(function(r){
+    var s = stCol[r.status]||['',''];
+    var extra = r.status==='issued' ? ' · '+ckFmt(r.qty_issued)+' given' : r.status==='rejected' ? (r.issue_note?' · '+ckEsc(r.issue_note):'') : '';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 4px;border-top:1px solid #eee;'+(r.status==='cancelled'?'opacity:.5':'')+'"><div><div style="font-size:14px;font-weight:600">'+ckEsc(r.item)+'</div><div style="font-size:12px;color:#888">asked '+ckFmt(r.qty)+' '+ckEsc(r.unit_note||'')+' · by '+ckEsc(r.requested_by||'')+'</div></div>'
+      +'<div style="text-align:right;white-space:nowrap"><div style="font-weight:700;font-size:13px;color:'+s[1]+'">'+s[0]+extra+'</div>'+(r.status==='requested'?'<button onclick="ckCancel(\''+ckEsc(r.id)+'\')" style="border:none;background:none;color:#B03020;font-size:11px;text-decoration:underline;cursor:pointer">cancel</button>':'')+'</div></div>'; }).join('')
+    : '<div style="padding:12px 4px;color:#999;font-size:13px">No indent sent for this day yet.</div>';
+  var extra = CK.draft.filter(function(d){ return !d.in_list; });
+  el.innerHTML = '<div style="max-width:560px;margin:0 auto;padding:14px 14px 90px">'
+    +'<div style="display:flex;gap:10px;margin-bottom:12px">'+catBtn('pastry','🍰 Pastry')+catBtn('brownie','🍫 Brownie')+'</div>'
+    +'<div class="card" style="margin-bottom:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+      +'<div><div style="font-size:11px;color:#888;margin-bottom:3px">Date</div><input type="date" max="'+ckToday()+'" value="'+ckEsc(CK.date)+'" onchange="ckDate(this.value)" style="'+inp+'"></div>'
+      +'<div><div style="font-size:11px;color:#888;margin-bottom:3px">Your name</div><input value="'+ckEsc(CK.name)+'" oninput="ckName(this.value)" placeholder="Your name" style="'+inp+'"></div></div></div>'
+    +(CK.err?'<div class="card" style="color:#B03020;font-size:13px">Could not load: '+ckEsc(CK.err)+'</div>':'')
+    +(CK.loading?'<div class="loading"><div class="spinner"></div></div>':
+      '<div class="card" style="margin-bottom:12px;padding:12px"><div class="card-title" style="margin-bottom:8px">Tap and type how many you need</div>'
+        +'<input value="'+ckEsc(CK.q||'')+'" oninput="ckpSearch(this.value)" placeholder="🔎 Search an item" autocomplete="off" style="'+inp+';margin-bottom:8px">'
+        +'<div style="display:flex;gap:8px;margin-bottom:6px">'+chip(!CKP.all, (CK.cat==='brownie'?'🍫 Brownie items':'🍰 Pastry items'), 'false')+chip(CKP.all,'All items','true')+'</div>'
+        +'<div id="ckp-list">'+ckpRows()+'</div>'
+        +'<details style="margin-top:12px"'+(extra.length?' open':'')+'><summary style="cursor:pointer;font-size:13px;color:#6B2400;font-weight:600">Not in the list? Type it here</summary><div style="margin-top:8px">'
+          +'<input id="ck-item" placeholder="Item name" autocomplete="off" style="'+inp+';margin-bottom:8px">'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px"><input id="ck-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="How many" style="'+inp+'"><input id="ck-unit" placeholder="pkt / box…" style="'+inp+'"><button class="btn btn-p" onclick="ckAdd()" style="width:auto;padding:0 20px;font-size:15px">＋ Add</button></div>'
+          +extra.map(function(d){ var i = CK.draft.indexOf(d); return '<div style="display:flex;justify-content:space-between;padding:8px 2px;border-top:1px solid #eee;font-size:14px"><span><b>'+ckEsc(d.item)+'</b> <span style="font-size:11px;color:#a35c00">(store will match it)</span></span><span style="white-space:nowrap;font-weight:700">'+ckFmt(d.qty)+' '+ckEsc(d.unit||'')+' <button onclick="ckRemove('+i+')" style="border:none;background:none;color:#B03020;font-size:18px">✕</button></span></div>'; }).join('')
+        +'</div></details></div>'
+      +'<div class="card"><div class="card-title" style="margin-bottom:4px">Sent for '+ckEsc(ckDMY(CK.date))+' · '+(CK.cat==='brownie'?'Brownie':'Pastry')+'</div>'+mine+'</div>')
+    +'</div>'
+    +(CK.loading?'':'<div style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #ddd;padding:10px 14px;box-shadow:0 -2px 8px rgba(0,0,0,.08)"><div style="max-width:560px;margin:0 auto"><div id="ckp-sum" style="font-size:11px;color:#888;max-height:32px;overflow:hidden;margin-bottom:6px"></div><button id="ckp-send" class="btn btn-p" onclick="ckSend()" style="width:100%;padding:14px;font-size:16px"></button></div></div>');
+  ckpBar();
+};
+// after a successful add or send, keep the list in sync
+var _ckAddP = ckAdd; ckAdd = function(){ var r = _ckAddP.apply(this, arguments); try{ var l = document.getElementById('ckp-list'); if(l) l.innerHTML = ckpRows(); }catch(e){} return r; };
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
