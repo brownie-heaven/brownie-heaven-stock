@@ -7372,6 +7372,109 @@ confirmHome = function(){
   }
   return _confirmHomeMA.apply(this, arguments);
 };
+  // ── ACCESSORIES = Ahila's sheet: same list, same order, two boxes (Total count + Received today) ──
+// Paste BELOW managers_accessories.js (and below kitchen_edits is fine too). Run accessories_received.sql once.
+var MA_SHEET = ["Butter", "Milk", "Fudge Sauce", "Caramel Sauce Bottle", "Nutella Bottle", "Biscoff Bottle", "Chocolate Syrup Bottle", "White Chocolate Chips", "Dark Chocolate Chips", "Roasted Almond Flakes", "Roasted Cashew Nuts", "Oreo Biscuits", "Brownie Crumbles", "Milo Powder", "Butterscotch Bits", "7 Layer Salt", "Paper Straw", "Candles", "Sticks 6-inch", "Wooden Spoon", "Wooden Knife", "1 Pc Box", "2 Pc Box", "4 Pc Box", "50ml Black Small Container", "250ml Black Round Container", "7 Layer Box", "Cake Box 1 KG", "Cake Box 1/2 KG", "Small Cloth Bag", "Cake Bag 1 kg", "Cake Bag 1\\2 kg", "Thermal Bag", "Shake Bottle 300ml", "Sundae Cups 350ml", "Icecream Cups 150 ml", "Gel Pack", "BH Tape", "Green Pen", "Bill Roll (Big)", "Bill Roll (Small)", "Tissue Roll (Big)", "Brownie Heaven Sticker Sheet", "Tissues", "Review Card", "Birthday Card", "Plain Card", "Number Candle 1", "Number Candle 2", "Number Candle 3", "Number Candle 4", "Number Candle 5", "Number Candle 6", "Number Candle 7", "Number Candle 8", "Number Candle 9", "Number Candle 0", "Happy Birthday Topper", "Happy Anniversary Topper", "Classic Party Popper", "Money Party Popper", "Rose Party Popper", "Star Party Popper", "Garbage Bag - XL", "Hand Gloves", "Cling Wrap (1 Box)", "Hairnet", "Cloth", "Soap Oil", "Scrubber", "Broom", "Floor Cleaner", "Colin/Glass Cleaner", "French Vanilla Ice Cream", "Double Chocolate Ice Cream", "Salted Caramel Ice Cream", "Milo Ice Cream", "Alphonso Mango Ice Cream", "Strawberries And Cream Ice Cream", "Coffee Mocha Swirl Ice Cream", "Banana Walnut Ice Cream", "Swiss Chocolate Ice Cream", "Madagascar Vanilla Ice Cream", "Chocolate Overload Ice Cream", "Roasted Sicilian Pistachio Ice Cream", "Plain Vanilla Ice Cream"];
+MA.rec = {}; MA.q = '';
+function maKey(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function maItems(){
+  var cat = {};
+  (typeof ACC_CATALOG!=='undefined' ? ACC_CATALOG : []).forEach(function(g){ g.items.forEach(function(p){ cat[maKey(p.name)] = {name:p.name, cat:g.cat}; }); });
+  return [{cat:'Accessories (same order as your sheet)', items: MA_SHEET.map(function(n){
+    var m = cat[maKey(n)]; return {name: m ? m.name : n, label: n, cat: m ? m.cat : 'Accessories'};
+  })}];
+}
+function maRec(name, v){ MA.rec[name] = v; MA.dirty = true; }
+function maSearch(v){
+  MA.q = String(v||'').toLowerCase().trim();
+  var rows = document.querySelectorAll('.ma-row');
+  for(var i=0;i<rows.length;i++){ rows[i].style.display = (!MA.q || rows[i].getAttribute('data-n').indexOf(MA.q)>=0) ? '' : 'none'; }
+}
+async function maLoad(){
+  MA.loading = true; MA.err = ''; maDraw();
+  try{
+    if(typeof accLoadCatalog==='function' && !(typeof ACC!=='undefined' && ACC.catalogLoaded)){ try{ await accLoadCatalog(); }catch(e){} }
+    var oid = encodeURIComponent(S.outlet);
+    var rows = await sbGetAll('accessory_stock','?outlet_id=eq.'+oid+'&report_date=eq.'+MA.date+'&select=*');
+    var prev = await sbGetAll('accessory_stock','?outlet_id=eq.'+oid+'&report_date=gte.'+crShift(MA.date,-45)+'&report_date=lt.'+MA.date+'&qty=not.is.null&select=item,qty,report_date&order=report_date.desc');
+    MA.last = {}; prev.forEach(function(r){ if(!(r.item in MA.last)) MA.last[r.item] = r.qty; });
+    MA.data = {}; MA.rec = {}; MA.saved = {}; var times = [];
+    rows.forEach(function(r){ MA.saved[r.item] = true; if(r.qty!=null) MA.data[r.item] = String(r.qty); if(r.received!=null) MA.rec[r.item] = String(r.received); if(r.updated_at) times.push(r.updated_at); });
+    times.sort(); MA.savedAt = times.length ? times[times.length-1] : '';
+    MA.dirty = false;
+  }catch(e){ MA.err = e.message||String(e); }
+  MA.loading = false; maDraw();
+}
+function maDraw(){
+  var el = document.getElementById('screen'); if(!el) return;
+  var g = maItems()[0];
+  var esc = function(s){ return crEsc(String(s)); };
+  var js = function(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); };
+  var box = 'width:84px;text-align:center;font-weight:700;padding:9px 4px;border:1px solid #ccc;border-radius:8px;font-size:15px;box-sizing:border-box';
+  var d = MA.date ? new Date(MA.date+'T00:00:00') : new Date();
+  var dl = d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  var rows = g.items.map(function(p, i){
+    var v = MA.data[p.name]; v = (v==null?'':v); var r = MA.rec[p.name]; r = (r==null?'':r);
+    var hint = (p.name in MA.last) ? String(MA.last[p.name]) : '';
+    return '<div class="ma-row" data-n="'+esc(p.label.toLowerCase())+'" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f0e8e0">'
+      +'<div style="flex:1;font-size:14px"><span style="color:#aaa;font-size:11px">'+(i+1)+'.</span> '+esc(p.label)+'</div>'
+      +'<input type="number" inputmode="decimal" min="0" step="any" placeholder="'+esc(hint)+'" value="'+esc(v)+'" oninput="maSet(\''+js(p.name)+'\',this.value)" style="'+box+'">'
+      +'<input type="number" inputmode="decimal" min="0" step="any" placeholder="0" value="'+esc(r)+'" oninput="maRec(\''+js(p.name)+'\',this.value)" style="'+box+';background:#f4faf5">'
+      +'</div>';
+  }).join('');
+  var last = MA.savedAt ? '<span style="color:var(--green,#1a7f4b);font-weight:600">✅ Saved '+crEsc(crIST(MA.savedAt))+'</span>' : '<span style="color:#a35c00">Not saved yet</span>';
+  el.innerHTML = '<div style="margin-top:0">'
+    + '<div style="margin-top:10px"><button class="btn btn-s" style="width:auto;padding:7px 14px" onclick="confirmHome()">⇄ Switch outlet</button></div>'
+    + maBar()
+    + '<div class="card" style="margin-top:12px;margin-bottom:12px"><div class="card-title" style="margin-bottom:10px">Accessories — '+crEsc(S.outletName||'')+'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        +'<div class="field" style="margin:0"><label>Date</label><input type="date" value="'+crEsc(MA.date)+'" max="'+crToday()+'" onchange="maDate(this.value)"></div>'
+        +'<div class="field" style="margin:0"><label>Your name</label><input type="text" value="'+crEsc(CR.staff)+'" placeholder="Your name" oninput="CR.staff=this.value"></div>'
+      +'</div>'
+      +'<div style="font-size:12px;color:#888;margin-top:10px">Same list and order as the accessories sheet. <b>Total count</b> = how many are left in the outlet. <b>Received today</b> = what came today (optional). Grey number = last count. '+last+'</div>'
+    + '</div>'
+    + (MA.err ? '<div class="card" style="color:#B03020;font-size:13px">Could not load: '+crEsc(MA.err)+'</div>' : '')
+    + (MA.loading ? '<div class="loading"><div class="spinner"></div></div>' :
+      '<div class="card"><input id="ma-q" placeholder="🔎 Search item" oninput="maSearch(this.value)" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #ddd;border-radius:10px;font-size:15px;margin-bottom:8px">'
+        + '<div style="display:flex;gap:8px;font-size:12px;font-weight:700;color:#6B2400;padding:4px 0;border-bottom:2px solid #e6ddd5"><div style="flex:1">Product</div><div style="width:84px;text-align:center">Total count on '+crEsc(dl)+'</div><div style="width:84px;text-align:center">Received today</div></div>'
+        + rows
+        + '<div class="nav-row" style="margin-top:14px"><span></span><button class="btn btn-p" '+(MA.saving?'disabled':'')+' onclick="maSave()">'+(MA.saving?'Saving…':'💾 Save accessories')+'</button><span></span></div>'
+        + '<div style="text-align:center;font-size:12px;color:#888;margin-top:10px"><span id="ma-cnt">'+maCount()+'</span> items entered</div></div>')
+    + '</div>';
+  if(MA.q) maSearch(MA.q);
+}
+async function maSave(){
+  if(MA.saving) return;
+  if(!String(CR.staff||'').trim()){ alert('Please enter your name.'); return; }
+  var rows = [], bad = false, now = new Date().toISOString();
+  maItems()[0].items.forEach(function(p){
+    var v = MA.data[p.name], has = (v!==''&&v!=null), r = MA.rec[p.name], hr = (r!==''&&r!=null);
+    if(!has && !hr && !MA.saved[p.name]) return;
+    var x = has ? Number(v) : null, y = hr ? Number(r) : null;
+    if((has && (isNaN(x)||x<0)) || (hr && (isNaN(y)||y<0))) bad = true;
+    var row = {outlet_id:S.outlet, outlet_name:S.outletName, report_date:MA.date, category:p.cat, item:p.name, qty:x, staff_name:CR.staff.trim(), updated_at:now};
+    if(hr || MA.saved[p.name]) row.received = y;
+    rows.push(row);
+  });
+  if(bad){ alert('Please use numbers (0 or more) only.'); return; }
+  if(!rows.length){ alert('Nothing entered yet.'); return; }
+  // every row must carry the same columns
+  var withRec = rows.some(function(x){ return 'received' in x; });
+  if(withRec) rows.forEach(function(x){ if(!('received' in x)) x.received = null; });
+  MA.saving = true; maDraw();
+  try{
+    var r2 = await fetch(SB_URL+'/rest/v1/accessory_stock?on_conflict=outlet_id,report_date,item',{
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(rows)});
+    if(!r2.ok){ var tx = await r2.text(); throw new Error(/received/i.test(tx) ? 'The "Received today" column is missing. Run accessories_received.sql in Supabase once.' : tx); }
+    rows.forEach(function(x){ MA.saved[x.item] = true; });
+    MA.savedAt = now; MA.dirty = false;
+    try{ if(typeof actLog==='function') actLog('Accessories','Saved accessories', (S.mgr?S.mgr.name:'?')+' saved accessories for '+S.outletName+' ('+MA.date+', '+rows.length+' items)', S.mgr?'Manager: '+S.mgr.name:'', 'manager'); }catch(e){}
+    toast('✅ Accessories saved');
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
+  MA.saving = false; maDraw();
+}
   // ── KITCHEN INDENTS (admin / Gautham): shows what is LEFT in the outlets (from the managers' Accessories tab) ──
 // Read-only. Adds (1) a small box at the top "x outlets reported today" with a details list and
 // (2) under each indent item a grey line like "🏪 Left in outlets: Porur 5 · Royapettah 3" when that item is in the accessories list.
@@ -8376,7 +8479,7 @@ kcFixGiven = async function(id){
   }catch(err){ alert('Could not save: '+(err.message||err)); }
 };
 // App starts via welcome screen Get Started button → startApp()
-  // ── STEP B: PRODUCT NAMES — join "same product, different name/brand" into ONE product (Gautham does it himself) ──
+ // ── STEP B: PRODUCT NAMES — join "same product, different name/brand" into ONE product (Gautham does it himself) ──
 // Example: White Compound 500 g / White Compound 500gms / another brand → one item "White Compound 500 g".
 // Stock of the joined names is ADDED together everywhere (Store screen, chef requests, Issue). Nothing is deleted or rewritten;
 // "Separate again" undoes it. Needs store_aliases_policy.sql run once. Paste BELOW the kitchen_requests_tab block.
@@ -8480,7 +8583,7 @@ function pnHtml(){
     + '<div style="border:1.5px solid #6B2400;border-radius:14px;padding:14px;margin-bottom:16px;background:#fffaf5">'
     + '<div style="font-weight:700;margin-bottom:8px">Join two names</div>'
     + '<div style="font-size:12px;color:#888;margin-bottom:3px">1. Main name (this one stays)</div><input id="pn-main" list="pn-names" placeholder="Start typing…" autocomplete="off" style="'+inp+';margin-bottom:10px">'
-    + '<div style="font-size:12px;color:#888;margin-bottom:3px">2. Other name (joins the main one)</div><input id="pn-other" list="pn-names" placeholder="Start typing…" autocomplete="off" style="'+inp+';margin-bottom:12px">'
+    + '<div style="font-size:12px;color:#888;margin-bottom:3px">2. Other name (joins the main one — pick from the list or type any name)</div><input id="pn-other" list="pn-names" placeholder="Start typing…" autocomplete="off" style="'+inp+';margin-bottom:12px">'
     + '<button class="btn btn-p" onclick="pnJoin()" style="width:100%;padding:13px;font-size:15px">🧩 Join</button></div>'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Joined products ('+groups.length+')</b></div>'
     + '<input value="'+pnEsc(PN.q)+'" oninput="pnSearch(this)" id="pn-q" placeholder="🔎 Search" autocomplete="off" style="'+inp+';margin-bottom:10px">'
@@ -8490,18 +8593,23 @@ function pnSearch(i){ PN.q = i.value; var pos = i.selectionStart; siDraw(); var 
 function pnKeyOf(name){ var k = siNorm(name); return SI.allItems[k] ? k : null; }
 async function pnJoin(){
   var g = function(i){ return String((document.getElementById(i)||{}).value||'').trim(); };
-  var km = pnKeyOf(g('pn-main')), ko = pnKeyOf(g('pn-other'));
-  if(!km || !ko){ alert('Please pick both names from the list (start typing and choose).'); return; }
+  var mainTxt = g('pn-main'), otherTxt = g('pn-other');
+  var km = pnKeyOf(mainTxt), ko = siNorm(otherTxt);
+  if(!km){ alert('Main name: please pick it from the list (start typing and choose).'); return; }
+  if(!ko){ alert('Please type the other name.'); return; }
   if(SI.memberOf[km]){ km = SI.memberOf[km]; }
   if(km===ko){ alert('These are the same product already.'); return; }
   if(SI.memberOf[ko]===km){ alert('They are already joined.'); return; }
-  if(SI.grp[ko] && SI.grp[ko].length){ alert('“'+SI.allItems[ko].name+'” already has other names joined to it. Join those to the main name instead, or separate them first.'); return; }
-  var a = SI.allItems[km], b = SI.allItems[ko], sa = siStock(km), sb = _siStock0(ko);
-  var msg = 'Join “'+b.name+'” into “'+a.name+'”?\n\nNow: '+a.name+' = '+(sa.balance==null?'not counted':siFmt(sa.balance))+', '+b.name+' = '+(sb.balance==null?'not counted':siFmt(sb.balance))
+  var a = SI.allItems[km], b = SI.allItems[ko], moved = (SI.grp[ko]||[]).slice();
+  var sa = siStock(km), sb = b ? siStock(ko) : null;
+  var msg = 'Join “'+(b?b.name:otherTxt)+'” into “'+a.name+'”?\n\nNow: '+a.name+' = '+(sa.balance==null?'not counted':siFmt(sa.balance))+(b?', '+b.name+' = '+(sb.balance==null?'not counted':siFmt(sb.balance)):'')
+    + (moved.length ? '\n(The names already joined to it — '+moved.map(function(m){ return SI.allItems[m]?SI.allItems[m].name:m; }).join(', ')+' — move along too.)' : '')
+    + (b ? '' : '\n(This name is not in the store list yet. Any future entry with this name will count as “'+a.name+'”.)')
     + '\nAfter joining, they show as ONE item: “'+a.name+'”, with the stock added together.\n(You can separate them again later.)';
   if(!confirm(msg)) return;
   try{
-    var r = await fetch(SB_URL+'/rest/v1/store_aliases?on_conflict=alias',{method:'POST',headers:siHdr('resolution=merge-duplicates,return=minimal'),body:JSON.stringify([{alias:ko, item:a.name, actor:siWho()}])});
+    var rows = [{alias:ko, item:a.name, actor:siWho()}].concat(moved.map(function(m){ return {alias:m, item:a.name, actor:siWho()}; }));
+    var r = await fetch(SB_URL+'/rest/v1/store_aliases?on_conflict=alias',{method:'POST',headers:siHdr('resolution=merge-duplicates,return=minimal'),body:JSON.stringify(rows)});
     if(!r.ok) throw new Error(await r.text());
     toast('✅ Joined'); await siLoad();
   }catch(e){ alert('Could not join: '+(e.message||e)+'\n\nIf it says permission, run store_aliases_policy.sql in Supabase once.'); }
