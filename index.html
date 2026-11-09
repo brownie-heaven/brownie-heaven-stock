@@ -8068,7 +8068,7 @@ async function kcBadge(force){
 }
 var _setHdrKC = setHdr;
 setHdr = function(sub, showTabs){ var r = _setHdrKC.apply(this, arguments); try{ if(showTabs) kcBadge(); }catch(e){} return r; };
-  // ── STOCK VALUE (₹): what all the stock is worth right now — central store, each outlet, kitchen ──────────────────
+ // ── STOCK VALUE (₹): what all the stock is worth right now — central store, each outlet, kitchen ──────────────────
 // New admin tab "Stock Value". Read-only: it only reads and adds up. Nothing is changed.
 //  • Central store  = counted stock in the store × latest purchase rate (joined product names are added together)
 //  • Outlet stock   = last closing report of each outlet × the Supply Ledger rate (unchanged)
@@ -8223,14 +8223,14 @@ function pvCsv(){
 }
 
 // ---------- the "Stock Value" tab button (admin only) ----------
-var _setTabPV = setTab;
+if(!window.__pvW1){ window.__pvW1=1; var _setTabPV = setTab;
 setTab = function(i, fromBack){
   if(i!==14) return _setTabPV(i, fromBack);
   if(S.role!=='admin') return;
   if(!fromBack && typeof S.mainTab==='number' && S.mainTab!==14){ S.navHistory.push({type:'tab', mainTab:S.mainTab}); try{ history.pushState({nav:true},'',''); }catch(e){} }
   S.mainTab = 14; setHdr('Dashboard', true); updateBackBtn(); pvLoad();
-};
-var _setHdrPV = setHdr;
+}; }
+if(!window.__pvW2){ window.__pvW2=1; var _setHdrPV = setHdr;
 setHdr = function(sub, showTabs){
   _setHdrPV(sub, showTabs);
   var tabs = document.getElementById('main-tabs');
@@ -8240,9 +8240,141 @@ setHdr = function(sub, showTabs){
   }
   var t = document.getElementById('mt14');
   if(t){ t.style.display = (showTabs && S.role==='admin') ? '' : 'none'; t.classList.toggle('active', S.mainTab===14); }
+}; }
+if(!window.__pvW3){ window.__pvW3=1; var _siDrawPV = siDraw;
+siDraw = function(){ if(typeof S!=='undefined' && S.mainTab===14) return; return _siDrawPV.apply(this, arguments); }; }
+  // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
+// 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
+// 2) Store → Yesterday: a clear ✏️ button on every row (change the count, or add a missed one), a reason is always asked.
+// 3) Issue now also writes the line into the old Kitchen Indent → History (with the price), so Gautham no longer fills "New entry".
+// Run kitchen_indents_link.sql once. Paste LAST (below stock_value). 
+
+// ---------- a small form (replaces the plain pop-up boxes) ----------
+function kmForm(title, intro, fields, okLabel){
+  return new Promise(function(resolve){
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    var inp = 'width:100%;box-sizing:border-box;padding:12px;border:1px solid #ccc;border-radius:10px;font-size:16px;margin-top:4px';
+    var units = ['kg','g','pkt','box','nos','pcs','btl','sheet','ltr','tin','bag','roll'];
+    var body = fields.map(function(f){
+      var common = 'id="km-'+f.id+'" style="'+inp+'" '+(f.placeholder?'placeholder="'+siEsc(f.placeholder)+'"':'');
+      var el = f.type==='number' ? '<input '+common+' type="number" inputmode="decimal" min="0" step="any" value="'+siEsc(f.value==null?'':f.value)+'">'
+        : f.type==='unit' ? '<input '+common+' list="km-units" autocomplete="off" value="'+siEsc(f.value||'')+'"><datalist id="km-units">'+units.map(function(u){ return '<option value="'+u+'">'; }).join('')+'</datalist>'
+        : '<input '+common+' type="text" autocomplete="off" value="'+siEsc(f.value||'')+'">';
+      return '<div style="margin-top:12px"><div style="font-size:13px;color:#666">'+siEsc(f.label)+(f.required?' <span style="color:#B03020">*</span>':'')+'</div>'+el+'</div>';
+    }).join('');
+    ov.innerHTML = '<div style="background:#fff;border-radius:16px;padding:18px;width:100%;max-width:380px;max-height:90vh;overflow:auto"><div style="font-weight:800;font-size:17px;color:#6B2400">'+siEsc(title)+'</div>'
+      + (intro?'<div style="font-size:13px;color:#777;margin-top:4px">'+siEsc(intro)+'</div>':'') + body
+      + '<div id="km-err" style="color:#B03020;font-size:13px;margin-top:10px;min-height:16px"></div>'
+      + '<div style="display:flex;gap:10px;margin-top:8px"><button id="km-cancel" class="btn btn-s" style="flex:1;padding:12px">Cancel</button><button id="km-ok" class="btn btn-p" style="flex:1;padding:12px">'+siEsc(okLabel||'Save')+'</button></div></div>';
+    document.body.appendChild(ov);
+    var first = ov.querySelector('input'); if(first) setTimeout(function(){ try{ first.focus(); first.select && first.select(); }catch(e){} }, 50);
+    var close = function(v){ ov.remove(); resolve(v); };
+    ov.querySelector('#km-cancel').onclick = function(){ close(null); };
+    ov.querySelector('#km-ok').onclick = function(){
+      var out = {};
+      for(var i=0;i<fields.length;i++){
+        var f = fields[i], v = String(ov.querySelector('#km-'+f.id).value||'').trim();
+        if(f.required && !v){ ov.querySelector('#km-err').textContent = '“'+f.label+'” is needed.'; return; }
+        if(f.type==='number' && v!==''){ var n = Number(v); if(isNaN(n) || n<(f.min==null?0:f.min) || (f.positive && n<=0)){ ov.querySelector('#km-err').textContent = 'Please type a valid number for “'+f.label+'”.'; return; } out[f.id] = n; }
+        else out[f.id] = v;
+      }
+      close(out);
+    };
+  });
+}
+
+// ---------- 1) chef request ✏️: quantity + unit ----------
+kcEditAsked = async function(id){
+  var r = (SI.req||[]).filter(function(x){ return String(x.id)===String(id); })[0]; if(!r || r.status!=='requested') return;
+  var f = await kmForm('Change “'+r.item+'”', 'The chef asked for '+siFmt(r.qty)+' '+(r.unit_note||'')+'.', [
+    {id:'qty', label:'Quantity asked', type:'number', value:r.qty, positive:true, required:true},
+    {id:'unit', label:'Unit (pcs, kg, pkt, box …)', type:'unit', value:r.unit_note||''},
+    {id:'why', label:'Reason for the change', type:'text', placeholder:'e.g. chef wrote the wrong unit', required:true}]);
+  if(!f) return;
+  if(f.qty===Number(r.qty) && f.unit===(r.unit_note||'')){ alert('Nothing was changed.'); return; }
+  try{
+    var res = await sbPatch('kitchen_requests','?id=eq.'+encodeURIComponent(id)+'&status=eq.requested',{qty:f.qty, unit_note:f.unit||null, issue_note:'[was '+siFmt(r.qty)+' '+(r.unit_note||'')+' · changed by '+siWho()+': '+f.why+']'});
+    if(Array.isArray(res) && !res.length) throw new Error('It was already handled, so it cannot be changed.');
+    toast('✅ Changed'); await kcLoad();
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
 };
-var _siDrawPV = siDraw;
-siDraw = function(){ if(typeof S!=='undefined' && S.mainTab===14) return; return _siDrawPV.apply(this, arguments); };
+
+// ---------- 2) Store → Yesterday: clear ✏️ on every row ----------
+if(!window.__keW1){ window.__keW1=1; var _svDayHtmlKE = svDayHtml;
+svDayHtml = function(){
+  var h = _svDayHtmlKE.apply(this, arguments), pen = 'border:1px solid #d9c9bb;background:#fff;border-radius:8px;padding:4px 9px;cursor:pointer;font-size:15px;margin-left:4px';
+  h = h.replace(/(<button onclick="svAddMissed[^>]*?)style="[^"]*">add<\/button>/g, '$1style="'+pen+'">✏️</button>');
+  h = h.replace(/(<button onclick="svFix[^>]*?)style="[^"]*">✏️<\/button>/g, '$1style="'+pen+'">✏️</button>');
+  return h;
+}; }
+svFix = async function(id){
+  var e = SI.ent.filter(function(x){ return String(x.id)===String(id); })[0]; if(!e) return;
+  var f = await kmForm('Fix the count of “'+e.item+'”', 'Counted on '+siDMY(e.entry_date)+'. It says '+siFmt(e.qty)+' '+(e.unit||'')+'.', [
+    {id:'qty', label:'Correct count', type:'number', value:e.qty, required:true},
+    {id:'why', label:'Reason', type:'text', placeholder:'e.g. counted by mistake', required:true}]);
+  if(!f) return;
+  if(f.qty===Number(e.qty)){ alert('That is the same number, nothing changed.'); return; }
+  try{
+    var note = (e.note||'') + ((e.note||'')?' ':'') + '[fixed by '+siWho()+': was '+siFmt(e.qty)+', '+f.why+']';
+    var res = await sbPatch('store_entries','?id=eq.'+encodeURIComponent(id), {qty:f.qty, note:note, updated_at:new Date().toISOString()});
+    if(Array.isArray(res) && !res.length) throw new Error('The change was not saved (permission is not switched on).');
+    toast('✅ Fixed'); await siLoad();
+  }catch(err){ alert('Could not save: '+(err.message||err)); }
+};
+svAddMissed = async function(k, D){
+  var it = SI.items[k]; if(!it) return;
+  var f = await kmForm('Count for “'+it.name+'”', 'There is no count on '+siDMY(D)+'. How many were in the store?', [
+    {id:'qty', label:'Count', type:'number', value:'', required:true},
+    {id:'why', label:'Reason', type:'text', placeholder:'e.g. forgot to count', required:true}]);
+  if(!f) return;
+  try{
+    await sbPost('store_entries',[{entry_date:D, item:it.name, unit:it.unit||null, kind:'count', qty:f.qty, expected:siExpected(k, D), note:'[added later by '+siWho()+': '+f.why+']', actor:siWho(), source:'screen'}]);
+    toast('✅ Added'); await siLoad();
+  }catch(err){ alert('Could not save: '+(err.message||err)); }
+};
+
+// ---------- 3) an Issue also writes the old Kitchen Indent History ----------
+function keKey(s){ return String(s==null?'':s).toLowerCase().replace(/\b(pcs|pc|nos)\b\s*$/,'').replace(/[^a-z0-9]+/g,''); }
+async function kcSyncIndents(ids){
+  var reqs = (SI.req||[]).filter(function(r){ return ids.indexOf(String(r.id))>-1 && r.status==='issued' && Number(r.qty_issued)>0; });
+  if(!reqs.length) return;
+  var have = {}; try{ (await sbGetAll('kitchen_indents','?request_id=in.('+reqs.map(function(r){ return encodeURIComponent(r.id); }).join(',')+')&select=request_id')).forEach(function(x){ have[String(x.request_id)] = 1; }); }catch(e){ throw e; }
+  var prices = {}; try{ (await sbGetAll('kitchen_products','?select=category,name,price')).forEach(function(p){ prices[p.category+'|'+keKey(p.name)] = Number(p.price)||0; if(!(('*|'+keKey(p.name)) in prices)) prices['*|'+keKey(p.name)] = Number(p.price)||0; }); }catch(e){}
+  var rows = reqs.filter(function(r){ return !have[String(r.id)]; }).map(function(r){
+    var k = keKey(r.item), price = prices[r.category+'|'+k]; if(price==null) price = prices['*|'+k]; if(price==null) price = 0;
+    var q = Number(r.qty_issued);
+    return {date:String(r.req_date).slice(0,10), category:r.category, product:r.item, qty:q, price:price, amount:Math.round(q*price*100)/100, request_id:r.id};
+  });
+  if(rows.length) await sbPost('kitchen_indents', rows);
+}
+if(!window.__keW2){ window.__keW2=1; var _siIssueKE = siIssue;
+siIssue = async function(ids){
+  var r = await _siIssueKE.apply(this, arguments);
+  try{ await kcSyncIndents((ids||[]).map(String)); }
+  catch(e){ try{ toast('Given ✔ — but the old History was not updated (run kitchen_indents_link.sql once)'); }catch(x){} }
+  return r;
+}; }
+// fixing a given quantity also fixes the History line
+kcFixGiven = async function(id){
+  var r = (SI.req||[]).filter(function(x){ return String(x.id)===String(id); })[0]; if(!r || r.status!=='issued') return;
+  if(!r.entry_id){ alert('This line has no store record to fix.'); return; }
+  var f = await kmForm('Fix what was given: “'+r.item+'”', 'It says '+siFmt(r.qty_issued)+' '+(r.unit_note||'')+' given.', [
+    {id:'qty', label:'Correct quantity given', type:'number', value:r.qty_issued, positive:true, required:true},
+    {id:'why', label:'Reason', type:'text', placeholder:'e.g. typed wrong', required:true}]);
+  if(!f) return;
+  if(f.qty===Number(r.qty_issued)){ alert('That is the same number, nothing changed.'); return; }
+  try{
+    var e = (SI.ent||[]).filter(function(x){ return String(x.id)===String(r.entry_id); })[0];
+    var note = ((e&&e.note)||'') + ' [fixed by '+siWho()+': was '+siFmt(r.qty_issued)+', '+f.why+']';
+    var a = await sbPatch('store_entries','?id=eq.'+encodeURIComponent(r.entry_id),{qty:f.qty, note:note, updated_at:new Date().toISOString()});
+    if(Array.isArray(a) && !a.length) throw new Error('The store record could not be changed.');
+    var b = await sbPatch('kitchen_requests','?id=eq.'+encodeURIComponent(id),{qty_issued:f.qty});
+    if(Array.isArray(b) && !b.length) throw new Error('The request could not be updated.');
+    try{ var hist = await sbGetAll('kitchen_indents','?request_id=eq.'+encodeURIComponent(id)+'&select=id,price'); for(var i=0;i<hist.length;i++){ await sbPatch('kitchen_indents','?id=eq.'+encodeURIComponent(hist[i].id),{qty:f.qty, amount:Math.round(f.qty*(Number(hist[i].price)||0)*100)/100}); } }catch(x){}
+    toast('✅ Fixed'); await kcLoad();
+  }catch(err){ alert('Could not save: '+(err.message||err)); }
+};
 // App starts via welcome screen Get Started button → startApp()
   // ── STEP B: PRODUCT NAMES — join "same product, different name/brand" into ONE product (Gautham does it himself) ──
 // Example: White Compound 500 g / White Compound 500gms / another brand → one item "White Compound 500 g".
