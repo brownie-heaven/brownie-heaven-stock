@@ -8069,6 +8069,163 @@ async function kcBadge(force){
 var _setHdrKC = setHdr;
 setHdr = function(sub, showTabs){ var r = _setHdrKC.apply(this, arguments); try{ if(showTabs) kcBadge(); }catch(e){} return r; };
 // App starts via welcome screen Get Started button → startApp()
+  // ── STEP B: PRODUCT NAMES — join "same product, different name/brand" into ONE product (Gautham does it himself) ──
+// Example: White Compound 500 g / White Compound 500gms / another brand → one item "White Compound 500 g".
+// Stock of the joined names is ADDED together everywhere (Store screen, chef requests, Issue). Nothing is deleted or rewritten;
+// "Separate again" undoes it. Needs store_aliases_policy.sql run once. Paste BELOW the kitchen_requests_tab block.
+var PN = {q:'', msg:''};
+SI.grp = {}; SI.memberOf = {}; SI.allItems = {};
+
+// ---------- group the names after every load ----------
+function pnRegroup(){
+  var all = {}; Object.keys(SI.items).forEach(function(k){ all[k] = SI.items[k]; });
+  SI.allItems = all;
+  var memberOf = {};
+  Object.keys(SI.alias||{}).forEach(function(ka){
+    if(!all[ka]) return;                                   // alias of something that is not a stock item (a chef's spelling): ignore here
+    var km = siNorm(SI.alias[ka]), hops = 0;
+    while(SI.alias[km] && all[km] && SI.alias[km]!==SI.alias[ka] && hops<5){ km = siNorm(SI.alias[km]); hops++; }
+    if(km && km!==ka && all[km]) memberOf[ka] = km;
+  });
+  var grp = {};
+  Object.keys(memberOf).forEach(function(k){ (grp[memberOf[k]] = grp[memberOf[k]] || []).push(k); });
+  SI.grp = grp; SI.memberOf = memberOf;
+  Object.keys(memberOf).forEach(function(k){ delete SI.items[k]; });
+  SI.order = SI.order.filter(function(k){ return !memberOf[k]; });
+}
+var _siLoadPN = siLoad;
+siLoad = async function(){
+  var r = await _siLoadPN.apply(this, arguments);
+  try{ pnRegroup(); }catch(e){}
+  siDraw();
+  return r;
+};
+function pnMembers(k){ return [k].concat((SI.grp||{})[k]||[]); }
+
+// ---------- the maths adds the joined names together ----------
+var _siStock0 = siStock;
+siStock = function(key){
+  var mem = pnMembers(key); if(mem.length===1) return _siStock0(key);
+  var tot = {count:null, bought:0, inn:0, out:0, balance:null}, any = false;
+  mem.forEach(function(m){ var s = _siStock0(m); tot.bought += s.bought; tot.inn += s.inn; tot.out += s.out; if(s.count){ any = true; if(!tot.count || s.count.entry_date>tot.count.entry_date) tot.count = s.count; tot.balance = (tot.balance||0) + s.balance; } });
+  if(!any) tot.balance = null;
+  return tot;
+};
+var _siExpected0 = siExpected;
+siExpected = function(key, date){
+  var mem = pnMembers(key); if(mem.length===1) return _siExpected0(key, date);
+  var sum = null; mem.forEach(function(m){ var e = _siExpected0(m, date); if(e!=null) sum = (sum||0) + e; });
+  return sum;
+};
+var _svClose0 = svClose;
+svClose = function(k, date){
+  var mem = pnMembers(k); if(mem.length===1) return _svClose0(k, date);
+  var sum = null; mem.forEach(function(m){ var c = _svClose0(m, date); if(c!=null) sum = (sum||0) + c; });
+  return sum;
+};
+var _svFlow0 = svFlow;
+svFlow = function(k, from, to){
+  var mem = pnMembers(k); if(mem.length===1) return _svFlow0(k, from, to);
+  var t = {cameIn:0, issued:0}; mem.forEach(function(m){ var f = _svFlow0(m, from, to); t.cameIn += f.cameIn; t.issued += f.issued; }); return t;
+};
+// when the joined item is counted, the other names are set to 0 on that day so they are not counted twice
+var _sbPostPN = sbPost;
+sbPost = function(table, rows){
+  try{
+    if(table==='store_entries' && Array.isArray(rows)){
+      var extra = [];
+      rows.forEach(function(e){
+        if(e && e.kind==='count' && e.source==='screen'){
+          var k = siNorm(e.item), mem = (SI.grp||{})[k]; if(!mem) return;
+          mem.forEach(function(m){ var it = SI.allItems[m]; if(it) extra.push({entry_date:e.entry_date, item:it.name, unit:it.unit||null, kind:'count', qty:0, expected:null, note:'[counted together with “'+e.item+'”]', actor:e.actor, source:'merge'}); });
+        }
+      });
+      if(extra.length) rows = rows.concat(extra);
+    }
+  }catch(err){}
+  return _sbPostPN.call(this, table, rows);
+};
+
+// ---------- the screen ----------
+function pnEsc(s){ return siEsc(s); }
+function pnHtml(){
+  var inp = 'padding:12px;border:1px solid #ddd;border-radius:10px;font-size:15px;background:#fff;box-sizing:border-box;width:100%';
+  var names = Object.keys(SI.allItems).map(function(k){ return SI.allItems[k].name; }).sort();
+  var dl = '<datalist id="pn-names">'+names.map(function(n){ return '<option value="'+pnEsc(n)+'">'; }).join('')+'</datalist>';
+  var q = siNorm(PN.q), groups = Object.keys(SI.grp||{}).filter(function(k){
+    if(!q) return true; return mem(k).some(function(m){ return siNorm(SI.allItems[m].name).indexOf(q)>=0; });
+  }).sort(function(a,b){ return SI.allItems[a].name.localeCompare(SI.allItems[b].name); });
+  function mem(k){ return pnMembers(k).filter(function(m){ return SI.allItems[m]; }); }
+  var cards = groups.map(function(k){
+    var st = siStock(k), it = SI.allItems[k], unc = pnMembers(k).filter(function(m){ return !_siStock0(m).count; }).length;
+    return '<div style="border:1px solid #e6ddd5;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff">'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b style="font-size:15px">'+pnEsc(it.name)+'</b><span style="font-size:13px;color:#555">Total in store: <b>'+(st.balance==null?'not counted':siFmt(st.balance))+'</b> <span style="color:#999">'+pnEsc(it.unit||'')+'</span></span></div>'
+      + '<div style="margin-top:8px;font-size:13px;color:#555">Joined names:</div>'
+      + (SI.grp[k]||[]).map(function(m){ var mi = SI.allItems[m], ms = _siStock0(m);
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 10px;margin-top:6px;background:#fbf7f3;border-radius:8px;font-size:14px"><span>'+pnEsc(mi.name)+' <span style="color:#888;font-size:12px">· '+(ms.balance==null?'not counted':siFmt(ms.balance))+'</span></span>'
+            + '<button onclick="pnDetach(\''+pnEsc(m)+'\')" style="border:1px solid #d9c9bb;background:#fff;color:#B03020;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Separate again</button></div>'; }).join('')
+      + (unc ? '<div style="font-size:11px;color:#a35c00;margin-top:8px">⚠ '+unc+' of these names was never counted. Count the item once on the Store screen to make the total right.</div>' : '')
+      + '</div>';
+  }).join('');
+  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><button class="btn btn-s" onclick="svView(\'today\')" style="width:auto;padding:8px 14px">← Store</button><h3 style="margin:0;color:var(--brown,#6B2400)">🧩 Product names</h3></div>'
+    + '<div style="font-size:13px;color:#666;margin-bottom:12px">Same product with different names or brands (for example <i>White Compound 500 g</i> and <i>White Compound 500gms</i>)? Join them here. Their stock is <b>added together</b> in the store, in chef requests and when issuing. Nothing is deleted, and you can separate them again.</div>'
+    + dl
+    + '<div style="border:1.5px solid #6B2400;border-radius:14px;padding:14px;margin-bottom:16px;background:#fffaf5">'
+    + '<div style="font-weight:700;margin-bottom:8px">Join two names</div>'
+    + '<div style="font-size:12px;color:#888;margin-bottom:3px">1. Main name (this one stays)</div><input id="pn-main" list="pn-names" placeholder="Start typing…" autocomplete="off" style="'+inp+';margin-bottom:10px">'
+    + '<div style="font-size:12px;color:#888;margin-bottom:3px">2. Other name (joins the main one)</div><input id="pn-other" list="pn-names" placeholder="Start typing…" autocomplete="off" style="'+inp+';margin-bottom:12px">'
+    + '<button class="btn btn-p" onclick="pnJoin()" style="width:100%;padding:13px;font-size:15px">🧩 Join</button></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Joined products ('+groups.length+')</b></div>'
+    + '<input value="'+pnEsc(PN.q)+'" oninput="pnSearch(this)" id="pn-q" placeholder="🔎 Search" autocomplete="off" style="'+inp+';margin-bottom:10px">'
+    + (cards || '<div style="padding:22px;text-align:center;color:#999;border:1px dashed #ddd;border-radius:12px">Nothing joined yet.</div>');
+}
+function pnSearch(i){ PN.q = i.value; var pos = i.selectionStart; siDraw(); var n = document.getElementById('pn-q'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }
+function pnKeyOf(name){ var k = siNorm(name); return SI.allItems[k] ? k : null; }
+async function pnJoin(){
+  var g = function(i){ return String((document.getElementById(i)||{}).value||'').trim(); };
+  var km = pnKeyOf(g('pn-main')), ko = pnKeyOf(g('pn-other'));
+  if(!km || !ko){ alert('Please pick both names from the list (start typing and choose).'); return; }
+  if(SI.memberOf[km]){ km = SI.memberOf[km]; }
+  if(km===ko){ alert('These are the same product already.'); return; }
+  if(SI.memberOf[ko]===km){ alert('They are already joined.'); return; }
+  if(SI.grp[ko] && SI.grp[ko].length){ alert('“'+SI.allItems[ko].name+'” already has other names joined to it. Join those to the main name instead, or separate them first.'); return; }
+  var a = SI.allItems[km], b = SI.allItems[ko], sa = siStock(km), sb = _siStock0(ko);
+  var msg = 'Join “'+b.name+'” into “'+a.name+'”?\n\nNow: '+a.name+' = '+(sa.balance==null?'not counted':siFmt(sa.balance))+', '+b.name+' = '+(sb.balance==null?'not counted':siFmt(sb.balance))
+    + '\nAfter joining, they show as ONE item: “'+a.name+'”, with the stock added together.\n(You can separate them again later.)';
+  if(!confirm(msg)) return;
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/store_aliases?on_conflict=alias',{method:'POST',headers:siHdr('resolution=merge-duplicates,return=minimal'),body:JSON.stringify([{alias:ko, item:a.name, actor:siWho()}])});
+    if(!r.ok) throw new Error(await r.text());
+    toast('✅ Joined'); await siLoad();
+  }catch(e){ alert('Could not join: '+(e.message||e)+'\n\nIf it says permission, run store_aliases_policy.sql in Supabase once.'); }
+}
+async function pnDetach(m){
+  var it = SI.allItems[m]; if(!it) return; var main = SI.allItems[SI.memberOf[m]];
+  if(!confirm('Separate “'+it.name+'” from “'+(main?main.name:'')+'”?\n\nIt becomes its own item again, with its own stock.')) return;
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/store_aliases?alias=eq.'+encodeURIComponent(m),{method:'DELETE',headers:siHdr('return=representation')});
+    if(!r.ok) throw new Error(await r.text());
+    var gone = await r.json(); if(!gone.length) throw new Error('Nothing was changed (permission). Run store_aliases_policy.sql in Supabase once.');
+    toast('Separated'); await siLoad();
+  }catch(e){ alert('Could not separate: '+(e.message||e)); }
+}
+
+// ---------- plug into the Store screen ----------
+var _svSegPN = svSeg;
+svSeg = function(){
+  var h = _svSegPN.apply(this, arguments), i = h.lastIndexOf('</button></div>');
+  if(i<0) return h;
+  return h.slice(0, i+9) + ' <button onclick="SV.view=\'names\';siDraw()" class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px">🧩 Product names</button>' + h.slice(i+9);
+};
+var _siDrawPN = siDraw;
+siDraw = function(){
+  if(typeof S!=='undefined' && S.mainTab===13 && SV.view==='names' && SI.tab!=='indent' && !SI.quiet){
+    var el = document.getElementById('screen'); if(!el) return;
+    el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px">'+(SI.loading?'<div class="loading"><div class="spinner"></div></div>':pnHtml())+'</div>';
+    return;
+  }
+  return _siDrawPN.apply(this, arguments);
+};
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
 const SL_HOTELS=['Zaitoon (Anna Nagar)','Zaitoon (Velachery)','Zaitoon (Royapettah)','Zaitoon (Navalur)','Zaitoon (Adyar)','Zaitoon (Selaiyur)','Zaitoon (Nungambakkam)','Zaitoon (ECR - Injambakkam)','Jalpaan','Food Nirvana','Abids','Juice World','Flower Drum','Thalapakati','Veda Dairy','Roll Baby Roll','Frutta','Far East','Sona Foods (Sangam)'];
