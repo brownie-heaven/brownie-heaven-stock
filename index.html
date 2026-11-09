@@ -7900,6 +7900,174 @@ siDraw = function(){
 // the "Back to store" on the old requests screen: the Daily count tab now opens the new screen
 var _siTabSV = siTab;
 siTab = function(t){ if(t==='stock' || t==='diff' || t==='history' || t==='move' || t==='upload'){ SI.tab = 'stock'; SV.view = SV.view || 'today'; SI.editId = null; siDraw(); window.scrollTo && window.scrollTo({top:0}); return; } return _siTabSV.apply(this, arguments); };
+  // ── STEP C: chef requests pop up INSIDE the Kitchen Indent tab (📥 Chef requests) ─────────────────────
+// The chefs' PIN-0000 indents show here with a count. Open one, give (type or "= asked"), press Issue:
+// the store goes down, the line shows who gave it. Print, edit (with a reason) and name-matching are here too.
+// The old "Kitchen requests" screen inside Store is no longer used. Old New entry / History / Manage products stay as they were.
+// Paste BELOW the store_v2 block. No SQL.
+var KC = {stat:'waiting', cat:'', open:{}, init:false, loading:false, badgeAt:0};
+function kcDMY(d){ d = String(d||'').slice(0,10); return d.length===10 ? d.slice(8,10)+'-'+d.slice(5,7)+'-'+d.slice(0,4) : ''; }
+function kcWaiting(){ return (SI.req||[]).filter(function(r){ return r.status==='requested'; }).length; }
+
+// the Store screen's "Kitchen requests" button now opens this tab
+svRequests = function(){ setTab(9); };
+
+// SI.quiet: load the store data without drawing the Store screen
+var _siDrawKC = siDraw;
+siDraw = function(){
+  if(SI.quiet) return;
+  if(typeof S!=='undefined' && S.mainTab===9){ if(typeof KI!=='undefined' && KI.view==='requests') kcDraw(); return; }
+  return _siDrawKC.apply(this, arguments);
+};
+
+// ---------- the tab: 4 views ----------
+var _rkiKC = renderKitchenIndent;
+renderKitchenIndent = async function(){
+  setHdr('Kitchen Indent', true);
+  if(!KC.init){ KC.init = true; KI.view = 'requests'; }
+  var el = document.getElementById('screen'); if(!el) return;
+  var tab = function(v, label){ var on = KI.view===v; return '<button onclick="kiSetView(\''+v+'\')" style="padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;'+(on?'color:var(--brown);font-weight:600;border-bottom:2px solid var(--brown)':'color:#888')+'">'+label+'</button>'; };
+  var w = kcWaiting();
+  el.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:16px"><div style="display:flex;gap:22px;border-bottom:1px solid var(--border);margin-bottom:18px;overflow-x:auto;white-space:nowrap">'
+    + tab('requests','📥 Chef requests'+(w?' <span style="background:#c2410c;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">'+w+'</span>':''))
+    + tab('entry','New entry') + tab('history','History') + tab('manage','Manage products')
+    + '</div><div id="ki-body"></div></div>';
+  if(KI.view==='requests') await kcLoad();
+  else if(KI.view==='entry') await kiRenderEntry();
+  else if(KI.view==='history') await kiRenderHistory();
+  else await kiRenderManage();
+};
+async function kcLoad(){
+  KC.loading = true; kcDraw();
+  SI.quiet = true;
+  try{ await siLoad(); }catch(e){ SI.err = e.message||String(e); }
+  SI.quiet = false; KC.loading = false;
+  kcBadge(true); kcDraw();
+}
+
+// ---------- the list ----------
+function kcFiltered(){
+  return (SI.req||[]).filter(function(r){
+    if(KC.cat && r.category!==KC.cat) return false;
+    if(KC.stat==='waiting') return r.status==='requested';
+    if(KC.stat==='done') return r.status==='issued';
+    return true;
+  });
+}
+function kcInfo(r, store){
+  var parts = [];
+  var st = store ? siStock(siNorm(store)) : null;
+  parts.push(st ? (st.balance==null ? '<span style="color:#B03020">store: not counted</span>' : 'in store <b>'+siFmt(st.balance)+'</b>') : '<span style="color:#B03020">not matched to a store item</span>');
+  try{
+    var kk = ksKey(r.item), kl = (typeof KS!=='undefined'?KS.rows:[]).filter(function(x){ return ksKey(x.item)===kk; });
+    if(kl.length) parts.push('kitchen has '+kl.map(function(x){ return ksFmt(x.qty)+' '+(x.unit||''); }).join(' + '));
+    var ok = olKey(r.item), ol = (typeof OL!=='undefined'?OL.rows:[]).filter(function(x){ return olKey(x.item)===ok; });
+    if(ol.length) parts.push('outlets: '+ol.slice(0,4).map(function(x){ return (x.outlet_name||'')+' '+olFmt(x.qty); }).join(', '));
+  }catch(e){}
+  return parts.join(' · ');
+}
+function kcRow(r){
+  var inp = 'padding:7px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff';
+  var store = siStoreItemFor(r), inList = !!SI.items[siNorm(r.item)];
+  var matchSel = inList ? '' : '<select onchange="siMapReq(\''+siEsc(r.id)+'\',this.value)" style="'+inp+';font-size:12px;margin-top:4px;max-width:260px"><option value="">— match to a store item —</option>'
+    + (function(){ var seen = {}, o = ''; var add = function(k){ if(!k||seen[k]||!SI.items[k]) return; seen[k]=1; o += '<option value="'+siEsc(SI.items[k].name)+'"'+(store===SI.items[k].name?' selected':'')+'>'+siEsc(SI.items[k].name)+'</option>'; }; siSuggest(r.item).forEach(add); o += '<optgroup label="All items">'; SI.order.forEach(function(k){ add(k); }); return o+'</optgroup>'; })() + '</select>';
+  var asked = '<span style="font-weight:700">'+siFmt(r.qty)+'</span> <span style="color:#888;font-size:12px">'+siEsc(r.unit_note||'')+'</span>';
+  var left = '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px">'+siEsc(r.item)+'</div><div style="font-size:11px;color:#777;margin-top:2px">'+kcInfo(r, store)+'</div>'
+    + (store && !inList ? '<div style="font-size:11px;color:#1a7f4b">→ '+siEsc(store)+'</div>' : '') + matchSel + '</div>';
+  var right;
+  if(r.status==='requested'){
+    right = '<div style="text-align:right;white-space:nowrap"><div style="margin-bottom:6px;font-size:13px">asked '+asked+' <button onclick="kcEditAsked(\''+siEsc(r.id)+'\')" title="Change what was asked" style="border:none;background:none;cursor:pointer;font-size:13px">✏️</button></div>'
+      + '<input type="number" inputmode="decimal" min="0" step="any" placeholder="give" value="'+siEsc(SI.issue[r.id]==null?'':SI.issue[r.id])+'" oninput="SI.issue[\''+siEsc(r.id)+'\']=this.value" style="width:70px;padding:8px;border:1px solid #ccc;border-radius:8px;text-align:right;font-size:15px"> '
+      + '<button onclick="siAsked(\''+siEsc(r.id)+'\')" style="border:none;background:none;color:#6B2400;font-size:11px;text-decoration:underline;cursor:pointer">= asked</button> '
+      + '<button class="btn btn-p" onclick="siIssue([\''+siEsc(r.id)+'\'])" style="width:auto;padding:8px 14px;font-size:13px">Issue</button> '
+      + '<button onclick="siRejectReq(\''+siEsc(r.id)+'\')" title="Not giving this" style="border:none;background:none;color:#B03020;cursor:pointer;font-size:16px">✕</button></div>';
+  } else if(r.status==='issued'){
+    right = '<div style="text-align:right;white-space:nowrap"><div style="color:#1a7f4b;font-weight:700">✔ Given '+siFmt(r.qty_issued)+' <button onclick="kcFixGiven(\''+siEsc(r.id)+'\')" title="Fix a mistake" style="border:none;background:none;cursor:pointer;font-size:13px">✏️</button></div><div style="font-size:11px;color:#888">asked '+siFmt(r.qty)+' '+siEsc(r.unit_note||'')+' · '+siEsc(r.issued_by||'')+(r.issued_at?' · '+siEsc(siIST(r.issued_at)):'')+'</div></div>';
+  } else if(r.status==='rejected'){
+    right = '<div style="text-align:right"><div style="color:#B03020;font-weight:700">Not given</div><div style="font-size:11px;color:#888">'+siEsc(r.issue_note||'')+'</div></div>';
+  } else right = '<div style="color:#999">Cancelled</div>';
+  return '<div style="display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:11px 12px;border-top:1px solid #eee">'+left+right+'</div>';
+}
+function kcHtml(){
+  if(KC.loading) return '<div class="loading"><div class="spinner"></div></div>';
+  if(SI.err) return '<div class="card" style="color:#B03020;font-size:13px">Could not load: '+siEsc(SI.err)+'</div>';
+  var chip = function(on, label, js){ return '<button onclick="'+js+'" style="padding:9px 14px;font-size:14px;font-weight:700;border-radius:20px;cursor:pointer;border:1.5px solid #6B2400;background:'+(on?'#6B2400':'#fff')+';color:'+(on?'#fff':'#6B2400')+'">'+label+'</button>'; };
+  var bar = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'
+    + chip(KC.stat==='waiting','Waiting ('+kcWaiting()+')',"KC.stat='waiting';kcDraw()") + chip(KC.stat==='done','Given',"KC.stat='done';kcDraw()") + chip(KC.stat==='all','All',"KC.stat='all';kcDraw()")
+    + '<span style="width:10px"></span>' + chip(KC.cat==='','Both',"KC.cat='';kcDraw()") + chip(KC.cat==='pastry','🍰 Pastry',"KC.cat='pastry';kcDraw()") + chip(KC.cat==='brownie','🍫 Brownie',"KC.cat='brownie';kcDraw()") + '</div>';
+  var list = kcFiltered(), groups = {}, order = [];
+  list.forEach(function(r){ var g = r.req_date+'|'+r.category+'|'+(r.requested_by||''); if(!groups[g]){ groups[g] = {key:g, date:r.req_date, cat:r.category, by:r.requested_by, rows:[]}; order.push(g); } groups[g].rows.push(r); });
+  if(!order.length) return bar+'<div class="card" style="text-align:center;color:#999;padding:28px">'+(KC.stat==='waiting'?'Nothing waiting. 🎉':'Nothing here.')+'</div>';
+  var cards = order.map(function(g, gi){
+    var G = groups[g], waiting = G.rows.filter(function(r){ return r.status==='requested'; });
+    var open = (KC.open[g]!==undefined) ? KC.open[g] : (gi===0);
+    var ids = waiting.map(function(r){ return "'"+siEsc(r.id)+"'"; }).join(',');
+    return '<details '+(open?'open':'')+' ontoggle="KC.open[\''+siEsc(g).replace(/'/g,"\\'")+'\']=this.open" style="border:1px solid #e6ddd5;border-radius:12px;margin-bottom:12px;background:#fff;overflow:hidden">'
+      + '<summary style="cursor:pointer;padding:12px 14px;background:rgba(107,36,0,0.06);display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><span><b>'+(G.cat==='brownie'?'🍫 Brownie':'🍰 Pastry')+'</b> · '+siEsc(kcDMY(G.date))+' <span style="color:#777;font-size:13px">· by '+siEsc(G.by||'?')+'</span></span>'
+      + '<span style="font-size:13px">'+G.rows.length+' item'+(G.rows.length>1?'s':'')+(waiting.length?' · <b style="color:#c2410c">'+waiting.length+' waiting</b>':' · <b style="color:#1a7f4b">all handled</b>')+'</span></summary>'
+      + (waiting.length ? '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid #eee"><button class="btn btn-s" onclick="tdAskedAll(['+ids+'])" style="width:auto;padding:8px 12px;font-size:13px">Fill all = asked</button><button class="btn btn-p" onclick="siIssue(['+ids+'],true)" style="width:auto;padding:8px 12px;font-size:13px">Issue all lines I filled in</button></div>' : '')
+      + '<div style="padding:0 0 2px">'+G.rows.map(kcRow).join('')+'</div>'
+      + '<div style="padding:10px 12px;border-top:1px solid #eee"><button class="btn btn-s" onclick="kcPrintGroup(\''+siEsc(g).replace(/'/g,"\\'")+'\')" style="width:auto;padding:8px 12px;font-size:13px">🖨 Print this indent</button></div></details>';
+  }).join('');
+  return bar + cards;
+}
+function kcDraw(){
+  if(typeof S==='undefined' || S.mainTab!==9 || KI.view!=='requests') return;
+  var b = document.getElementById('ki-body'); if(!b) return;
+  b.innerHTML = kcHtml();
+  // refresh the number on the tab
+  var t = document.querySelector('#screen button[onclick="kiSetView(\'requests\')"]');
+  if(t){ var w = kcWaiting(); t.innerHTML = '📥 Chef requests'+(w?' <span style="background:#c2410c;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">'+w+'</span>':''); }
+}
+function kcPrintGroup(g){
+  var rows = (SI.req||[]).filter(function(r){ return (r.req_date+'|'+r.category+'|'+(r.requested_by||''))===g && r.status!=='cancelled'; });
+  if(!rows.length) return;
+  kpPrint([{cat:rows[0].category, date:rows[0].req_date, by:rows[0].requested_by, rows:rows}], 'Kitchen indent');
+}
+
+// ---------- edits (a reason is always asked) ----------
+async function kcEditAsked(id){
+  var r = (SI.req||[]).filter(function(x){ return String(x.id)===String(id); })[0]; if(!r || r.status!=='requested') return;
+  var nv = prompt('Change what was asked for “'+r.item+'”\n\nNow: '+siFmt(r.qty)+' '+(r.unit_note||'')+'\nNew number:'); if(nv===null) return;
+  var q = siNum(nv); if(q==null || isNaN(q) || q<=0){ alert('Please type a number above 0.'); return; }
+  if(q===Number(r.qty)){ alert('Same number, nothing changed.'); return; }
+  var why = prompt('Why is it being changed?'); if(why===null) return; why = why.trim(); if(!why){ alert('A reason is needed.'); return; }
+  try{
+    var res = await sbPatch('kitchen_requests','?id=eq.'+encodeURIComponent(id)+'&status=eq.requested',{qty:q, issue_note:'[asked '+siFmt(r.qty)+' → '+siFmt(q)+' · '+siWho()+': '+why+']'});
+    if(Array.isArray(res) && !res.length) throw new Error('It was already handled, so it cannot be changed.');
+    toast('✅ Changed'); await kcLoad();
+  }catch(e){ alert('Could not save: '+(e.message||e)); }
+}
+async function kcFixGiven(id){
+  var r = (SI.req||[]).filter(function(x){ return String(x.id)===String(id); })[0]; if(!r || r.status!=='issued') return;
+  if(!r.entry_id){ alert('This line has no store record to fix.'); return; }
+  var nv = prompt('Fix the quantity given for “'+r.item+'”\n\nIt says '+siFmt(r.qty_issued)+'. What should it be?'); if(nv===null) return;
+  var q = siNum(nv); if(q==null || isNaN(q) || q<=0){ alert('Please type a number above 0.'); return; }
+  if(q===Number(r.qty_issued)){ alert('Same number, nothing changed.'); return; }
+  var why = prompt('Why is it being fixed? (for example: typed wrong)'); if(why===null) return; why = why.trim(); if(!why){ alert('A reason is needed to change a given line.'); return; }
+  try{
+    var e = (SI.ent||[]).filter(function(x){ return String(x.id)===String(r.entry_id); })[0];
+    var note = ((e&&e.note)||'') + ' [fixed by '+siWho()+': was '+siFmt(r.qty_issued)+', '+why+']';
+    var a = await sbPatch('store_entries','?id=eq.'+encodeURIComponent(r.entry_id),{qty:q, note:note, updated_at:new Date().toISOString()});
+    if(Array.isArray(a) && !a.length) throw new Error('The store record could not be changed.');
+    var b = await sbPatch('kitchen_requests','?id=eq.'+encodeURIComponent(id),{qty_issued:q});
+    if(Array.isArray(b) && !b.length) throw new Error('The request could not be updated.');
+    toast('✅ Fixed'); await kcLoad();
+  }catch(err){ alert('Could not save: '+(err.message||err)); }
+}
+
+// ---------- the number on the "Kitchen Indent" tab button (checks every minute) ----------
+async function kcBadge(force){
+  try{
+    if(typeof S==='undefined' || S.role!=='admin') return;
+    var now = Date.now(); if(!force && now-KC.badgeAt<60000) return; KC.badgeAt = now;
+    var n = (typeof SI!=='undefined' && SI.req && force) ? kcWaiting() : null;
+    if(n===null){ var rows = await sbGetAll('kitchen_requests','?status=eq.requested&select=id'); n = rows.length; }
+    var b = document.getElementById('mt9'); if(b) b.innerHTML = 'Kitchen Indent'+(n?' <span style="background:#c2410c;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px">'+n+'</span>':'');
+  }catch(e){}
+}
+var _setHdrKC = setHdr;
+setHdr = function(sub, showTabs){ var r = _setHdrKC.apply(this, arguments); try{ if(showTabs) kcBadge(); }catch(e){} return r; };
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
