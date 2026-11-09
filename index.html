@@ -7731,6 +7731,175 @@ siDraw = function(){
   }catch(e){}
   return r;
 };
+  // ── STORE (step A): one simple screen — Today / Yesterday / This month ──────────────────────────────
+// Replaces the busy Store Inventory screen. Today can be changed freely (indents come in all day).
+// Yesterday and older days are LOCKED: a count can only be fixed with a reason ("counted by mistake"), which is logged.
+// Nothing is deleted; every count is still a line with who and when. Paste BELOW the kitchen_indent_print block. No SQL.
+var SV = {view:'today', month:'', q:'', only:false};
+
+function svDay(d, n){ var x = new Date(d+'T00:00:00+05:30'); x.setDate(x.getDate()+n); return x.toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
+function svMonthOf(d){ return String(d).slice(0,7); }
+function svMonthShift(m, n){ var p = m.split('-'); var x = new Date(Date.UTC(+p[0], +p[1]-1+n, 1)); return x.getUTCFullYear()+'-'+String(x.getUTCMonth()+1).padStart(2,'0'); }
+function svMonthName(m){ var p = m.split('-'); return ['January','February','March','April','May','June','July','August','September','October','November','December'][+p[1]-1]+' '+p[0]; }
+function svLastDay(m){ var p = m.split('-'); return m+'-'+String(new Date(+p[0], +p[1], 0).getDate()).padStart(2,'0'); }
+
+// what is in the store at the END of a day (null = never counted)
+function svClose(k, date){
+  var c = siLastCount(k, date, false); if(!c) return null;
+  var m = siMoves(k, c.entry_date, date);
+  return (Number(c.qty)||0) + m.bought + m.inn - m.out;
+}
+// what happened between two dates (from exclusive, to inclusive)
+function svFlow(k, from, to){
+  var cameIn = 0, issued = 0;
+  (SI.pur[k]||[]).forEach(function(p){ if(p.d>from && p.d<=to) cameIn += p.q; });
+  (SI.byKey[k]||[]).forEach(function(e){
+    if(e.voided || e.kind==='count' || e.entry_date<=from || e.entry_date>to) return;
+    if(e.kind==='in') cameIn += Number(e.qty)||0; else if(e.kind==='out') issued += Number(e.qty)||0;
+  });
+  return {cameIn:cameIn, issued:issued};
+}
+function svCountOn(k, d){ var best = null; (SI.byKey[k]||[]).forEach(function(e){ if(e.kind==='count' && !e.voided && e.entry_date===d && (!best || String(e.created_at)>String(best.created_at))) best = e; }); return best; }
+
+function svKeys(){
+  var q = siNorm(SV.q);
+  return SI.order.filter(function(k){ if(SI.hidden[k]) return false; var it = SI.items[k]; return !q || siNorm(it.name).indexOf(q)>=0; });
+}
+function svCell(v, extra){ return '<td style="padding:9px 8px;border-top:1px solid #eee;text-align:right;white-space:nowrap;'+(extra||'')+'">'+v+'</td>'; }
+function svNum(v){ return v==null ? '<span style="color:#B03020;font-size:11px">not counted</span>' : siFmt(v); }
+function svSeg(){
+  var b = function(v, label){ var on = SV.view===v; return '<button onclick="svView(\''+v+'\')" style="flex:1;padding:12px 6px;font-size:15px;font-weight:700;border:none;cursor:pointer;background:'+(on?'#6B2400':'#fff')+';color:'+(on?'#fff':'#6B2400')+'">'+label+'</button>'; };
+  var waiting = (SI.req||[]).filter(function(r){ return r.status==='requested'; }).length;
+  return '<div style="display:flex;border:1.5px solid #6B2400;border-radius:12px;overflow:hidden;margin-bottom:12px">'+b('today','Today')+b('yesterday','Yesterday')+b('month','This month')+'</div>'
+    + '<div style="margin-bottom:12px"><button onclick="svRequests()" class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px">📥 Kitchen requests'+(waiting?' <b style="color:#a35c00">('+waiting+' waiting)</b>':'')+'</button></div>';
+}
+function svView(v){ SV.view = v; SV.q = ''; if(v==='month' && !SV.month) SV.month = svMonthOf(siToday()); siDraw(); window.scrollTo && window.scrollTo({top:0}); }
+function svRequests(){ SI.tab = 'indent'; siDraw(); window.scrollTo && window.scrollTo({top:0}); }
+function svSearch(inp){ SV.q = inp.value; var pos = inp.selectionStart; siDraw(); var n = document.getElementById('sv-q'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }
+function svOnly(on){ SV.only = !!on; siDraw(); }
+
+// ---------- a single day ----------
+function svDayHtml(D, isToday){
+  var keys = svKeys(), prev = svDay(D,-1);
+  var rows = keys.map(function(k){
+    var it = SI.items[k], before = svClose(k, prev), end = svClose(k, D), f = svFlow(k, prev, D), cnt = svCountOn(k, D);
+    if(SV.only && !f.cameIn && !f.issued && !cnt) return null;
+    return {k:k, it:it, before:before, end:end, f:f, cnt:cnt};
+  }).filter(Boolean);
+  SI.view = rows.map(function(r){ return r.k; });
+  var nTyped = Object.keys(SI.typed).filter(function(k){ return String(SI.typed[k]).trim()!==''; }).length;
+  var body = rows.map(function(r, idx){
+    var it = r.it, cell;
+    if(isToday){
+      cell = '<input type="number" inputmode="decimal" min="0" step="any" placeholder="'+(r.cnt?siFmt(r.cnt.qty):'count')+'" value="'+siEsc(SI.typed[r.k]==null?'':SI.typed[r.k])+'" oninput="svType('+idx+',this.value)" style="width:78px;padding:8px;border:1px solid #ccc;border-radius:8px;text-align:right;font-size:15px;'+(r.cnt?'background:#f0faf2':'')+'">';
+    } else if(r.cnt){
+      cell = '<b>'+siFmt(r.cnt.qty)+'</b> <button onclick="svFix(\''+siEsc(r.cnt.id)+'\')" title="Fix a mistake" style="border:none;background:none;cursor:pointer;font-size:14px">✏️</button>';
+    } else {
+      cell = '<span style="color:#bbb;font-size:12px">no count</span> <button onclick="svAddMissed(\''+siEsc(r.k)+'\',\''+D+'\')" title="Add a count that was missed" style="border:none;background:none;cursor:pointer;color:#6B2400;font-size:12px;text-decoration:underline">add</button>';
+    }
+    return '<tr><td style="padding:9px 8px;border-top:1px solid #eee;min-width:150px"><div style="font-weight:600;font-size:14px">'+siEsc(it.name)+'</div><div style="font-size:11px;color:#999">'+siEsc(it.unit||'')+'</div></td>'
+      + svCell(svNum(r.before),'color:#666')
+      + svCell(r.f.cameIn?'<span style="color:#1a7f4b">+'+siFmt(r.f.cameIn)+'</span>':'<span style="color:#ccc">–</span>')
+      + svCell(r.f.issued?'<span style="color:#B03020">−'+siFmt(r.f.issued)+'</span>':'<span style="color:#ccc">–</span>')
+      + svCell('<b style="font-size:15px;'+(r.end!=null&&r.end<0?'color:#B03020':'')+'">'+svNum(r.end)+'</b>')
+      + svCell(cell) + '</tr>';
+  }).join('');
+  var head = isToday
+    ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div><b style="font-size:16px">Today · '+siEsc(siDMY(D))+'</b><div style="font-size:12px;color:#888">Type what is really in the store, then Save. You can change today as many times as you like.</div></div><button id="sv-save" class="btn btn-p" '+(SI.busy?'disabled':'')+' onclick="svSave()" style="width:auto;padding:12px 18px;font-size:15px">💾 Save today\'s count'+(nTyped?' ('+nTyped+')':'')+'</button></div>'
+    : '<div style="margin-bottom:10px"><b style="font-size:16px">Yesterday · '+siEsc(siDMY(D))+'</b> <span style="font-size:12px;color:#888">🔒 locked — use ✏️ only to fix a mistake (a reason is needed)</span></div>';
+  return head
+    + '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><input id="sv-q" value="'+siEsc(SV.q)+'" oninput="svSearch(this)" placeholder="🔎 Search an item" autocomplete="off" style="flex:1;min-width:180px;padding:11px;border:1px solid #ddd;border-radius:10px;font-size:15px;box-sizing:border-box">'
+    + '<label style="font-size:13px;color:#666;display:flex;gap:6px;align-items:center"><input type="checkbox" '+(SV.only?'checked':'')+' onchange="svOnly(this.checked)"> only items that moved</label></div>'
+    + '<div style="overflow-x:auto;border:1px solid #eee;border-radius:12px;background:#fff"><table style="width:100%;border-collapse:collapse;min-width:560px"><thead><tr style="background:rgba(107,36,0,0.06)">'
+    + ['Item','Before','Came in','Issued','In store','Count'].map(function(h,i){ return '<th style="padding:9px 8px;font-size:11px;text-transform:uppercase;color:#777;text-align:'+(i?'right':'left')+'">'+h+'</th>'; }).join('')
+    + '</tr></thead><tbody>'+(body||'<tr><td colspan="6" style="padding:22px;text-align:center;color:#999">Nothing to show.</td></tr>')+'</tbody></table></div>'
+    + '<div style="font-size:11px;color:#999;margin-top:8px">Before = in store at the end of the day before · Came in = purchases + stock in · Issued = given out (kitchen and others) · In store = what the system says at the end of this day (it equals your count if you counted).</div>';
+}
+function svType(idx, v){
+  var k = SI.view[idx]; if(k===undefined) return; SI.typed[k] = v;
+  var b = document.getElementById('sv-save'); if(b){ var n = Object.keys(SI.typed).filter(function(x){ return String(SI.typed[x]).trim()!==''; }).length; b.textContent = '💾 Save today\'s count'+(n?' ('+n+')':''); }
+}
+async function svSave(){ SI.cdate = siToday(); return siSaveCounts(); }
+
+// ---------- fixing a past count ----------
+async function svFix(id){
+  var e = SI.ent.filter(function(x){ return String(x.id)===String(id); })[0]; if(!e) return;
+  var nv = prompt('Fix the count of “'+e.item+'” on '+siDMY(e.entry_date)+'\n\nIt says '+siFmt(e.qty)+'. What should it be?'); if(nv===null) return;
+  var q = siNum(nv); if(q==null || isNaN(q) || q<0){ alert('Please type a number (0 or more).'); return; }
+  if(q===Number(e.qty)){ alert('That is the same number, nothing changed.'); return; }
+  var why = prompt('Why is it being fixed? (for example: counted by mistake)'); if(why===null) return; why = why.trim();
+  if(!why){ alert('A reason is needed to change a past day.'); return; }
+  try{
+    var note = (e.note||'') + ((e.note||'')?' ':'') + '[fixed by '+siWho()+': was '+siFmt(e.qty)+', '+why+']';
+    var res = await sbPatch('store_entries','?id=eq.'+encodeURIComponent(id), {qty:q, note:note, updated_at:new Date().toISOString()});
+    if(Array.isArray(res) && !res.length) throw new Error('The change was not saved (permission is not switched on).');
+    toast('✅ Fixed'); await siLoad();
+  }catch(err){ alert('Could not save: '+(err.message||err)); }
+}
+async function svAddMissed(k, D){
+  var it = SI.items[k]; if(!it) return;
+  var nv = prompt('Add a count for “'+it.name+'” on '+siDMY(D)+'\n\nHow many were in the store?'); if(nv===null) return;
+  var q = siNum(nv); if(q==null || isNaN(q) || q<0){ alert('Please type a number (0 or more).'); return; }
+  var why = prompt('Why was it missed? (for example: forgot to count)'); if(why===null) return; why = why.trim();
+  if(!why){ alert('A reason is needed to add a count to a past day.'); return; }
+  try{
+    await sbPost('store_entries',[{entry_date:D, item:it.name, unit:it.unit||null, kind:'count', qty:q, expected:siExpected(k, D), note:'[added later by '+siWho()+': '+why+']', actor:siWho(), source:'screen'}]);
+    toast('✅ Added'); await siLoad();
+  }catch(err){ alert('Could not save: '+(err.message||err)); }
+}
+
+// ---------- the month ----------
+function svMonthHtml(){
+  if(!SV.month) SV.month = svMonthOf(siToday());
+  var M = SV.month, first = M+'-01', last = svLastDay(M), today = siToday(), upto = last>today ? today : last, before = svDay(first,-1);
+  var keys = svKeys();
+  var rows = keys.map(function(k){
+    var f = svFlow(k, before, upto), start = svClose(k, before), end = svClose(k, upto);
+    if(SV.only && !f.cameIn && !f.issued) return null;
+    return {k:k, it:SI.items[k], f:f, start:start, end:end};
+  }).filter(Boolean);
+  var short = SI.ent.filter(function(e){ return e.kind==='count' && !e.voided && e.expected!=null && e.entry_date>=first && e.entry_date<=last && Number(e.qty) < Number(e.expected)-0.0005; });
+  var shortHtml = short.length
+    ? '<div style="background:#fdecea;border:1px solid #f1b9b3;border-radius:12px;padding:12px 14px;margin-bottom:12px"><div style="font-weight:700;color:#B03020;margin-bottom:4px">⚠ '+short.length+' count'+(short.length>1?'s were':' was')+' lower than expected this month</div>'
+      + short.sort(function(a,b){ return a.entry_date<b.entry_date?1:-1; }).slice(0,12).map(function(e){ return '<div style="font-size:13px;display:flex;justify-content:space-between;gap:10px;padding:3px 0"><span>'+siEsc(e.item)+' <span style="color:#999">· '+siEsc(siDMY(e.entry_date))+'</span></span><b style="color:#B03020">short '+siFmt(Number(e.expected)-Number(e.qty))+' '+siEsc(e.unit||'')+'</b></div>'; }).join('')
+      + (short.length>12?'<div style="font-size:12px;color:#888">and '+(short.length-12)+' more</div>':'')+'</div>'
+    : '<div style="background:#eaf6ee;border:1px solid #bfe3c9;border-radius:12px;padding:10px 14px;margin-bottom:12px;color:#1a7f4b;font-weight:600">✅ No count was lower than expected this month.</div>';
+  SI.view = [];
+  var body = rows.map(function(r){
+    return '<tr><td style="padding:9px 8px;border-top:1px solid #eee;min-width:150px"><div style="font-weight:600;font-size:14px">'+siEsc(r.it.name)+'</div><div style="font-size:11px;color:#999">'+siEsc(r.it.unit||'')+'</div></td>'
+      + svCell(svNum(r.start),'color:#666')
+      + svCell(r.f.cameIn?'<span style="color:#1a7f4b">+'+siFmt(r.f.cameIn)+'</span>':'<span style="color:#ccc">–</span>')
+      + svCell(r.f.issued?'<span style="color:#B03020">−'+siFmt(r.f.issued)+'</span>':'<span style="color:#ccc">–</span>')
+      + svCell('<b style="font-size:15px">'+svNum(r.end)+'</b>') + '</tr>';
+  }).join('');
+  var isNow = (M===svMonthOf(today));
+  return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><button class="btn btn-s" onclick="svMonth(-1)" style="width:auto;padding:8px 14px">←</button><b style="font-size:16px">'+svMonthName(M)+'</b><button class="btn btn-s" '+(isNow?'disabled':'')+' onclick="svMonth(1)" style="width:auto;padding:8px 14px">→</button></div>'
+    + shortHtml
+    + '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><input id="sv-q" value="'+siEsc(SV.q)+'" oninput="svSearch(this)" placeholder="🔎 Search an item" autocomplete="off" style="flex:1;min-width:180px;padding:11px;border:1px solid #ddd;border-radius:10px;font-size:15px;box-sizing:border-box">'
+    + '<label style="font-size:13px;color:#666;display:flex;gap:6px;align-items:center"><input type="checkbox" '+(SV.only?'checked':'')+' onchange="svOnly(this.checked)"> only items that moved</label></div>'
+    + '<div style="overflow-x:auto;border:1px solid #eee;border-radius:12px;background:#fff"><table style="width:100%;border-collapse:collapse;min-width:520px"><thead><tr style="background:rgba(107,36,0,0.06)">'
+    + ['Item','Start of month','Came in','Issued','In store'+(isNow?' now':' at month end')].map(function(h,i){ return '<th style="padding:9px 8px;font-size:11px;text-transform:uppercase;color:#777;text-align:'+(i?'right':'left')+'">'+h+'</th>'; }).join('')
+    + '</tr></thead><tbody>'+(body||'<tr><td colspan="5" style="padding:22px;text-align:center;color:#999">Nothing to show.</td></tr>')+'</tbody></table></div>';
+}
+function svMonth(n){ SV.month = svMonthShift(SV.month || svMonthOf(siToday()), n); if(SV.month>svMonthOf(siToday())) SV.month = svMonthOf(siToday()); siDraw(); }
+
+// ---------- plug into the Store Inventory tab ----------
+var _siDrawSV = siDraw;
+siDraw = function(){
+  if(SI.tab==='indent') return _siDrawSV.apply(this, arguments);   // kitchen requests screen stays as it is until step C
+  var el = document.getElementById('screen'); if(!el) return;
+  var body;
+  if(SI.loading) body = '<div class="loading"><div class="spinner"></div></div>';
+  else if(SI.err) body = '<div class="card" style="color:#B03020;font-size:13px">Could not load the store: '+siEsc(SI.err)+'</div>';
+  else {
+    var t = siToday();
+    body = svSeg() + (SV.view==='today' ? svDayHtml(t, true) : SV.view==='yesterday' ? svDayHtml(svDay(t,-1), false) : svMonthHtml());
+  }
+  el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px"><h2 style="color:var(--brown,#6B2400);margin:0 0 12px">🏬 Store</h2>'+body+'</div>';
+};
+// the "Back to store" on the old requests screen: the Daily count tab now opens the new screen
+var _siTabSV = siTab;
+siTab = function(t){ if(t==='stock' || t==='diff' || t==='history' || t==='move' || t==='upload'){ SI.tab = 'stock'; SV.view = SV.view || 'today'; SI.editId = null; siDraw(); window.scrollTo && window.scrollTo({top:0}); return; } return _siTabSV.apply(this, arguments); };
 // App starts via welcome screen Get Started button → startApp()
   // ── OUTLET SUPPLY LEDGER ─────────────────────────────────────────────────────
 const SL_OUTLETS=['Royapettah','Anna Nagar','Porur','BSR','Tambaram','RA Puram','Adyar','Perumbakkam','Egmore','Thiruvanmiyur (ECR)','Kovilambakkam','Besant Nagar','Velachery','Vadapalani','Pallavaram'];
