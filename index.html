@@ -8346,7 +8346,7 @@ setHdr = function(sub, showTabs){
 }; }
 if(!window.__pvW3){ window.__pvW3=1; var _siDrawPV = siDraw;
 siDraw = function(){ if(typeof S!=='undefined' && S.mainTab===14) return; return _siDrawPV.apply(this, arguments); }; }
-  // ── STOCK VALUE: change prices by Excel/CSV (download → edit Rate → upload → Save changes) ──
+// ── STOCK VALUE: change prices by Excel/CSV (download → edit Rate → upload → Save changes) ──
 // Paste BELOW stock_value.js. Run price_overrides_setup.sql once.
 // A price set here wins over the purchase rate (store, accessories, kitchen). Purchase entries are never touched.
 // The outlet Supply Ledger rates are NOT changed by this. Clearing a Rate cell and uploading puts the item back to the purchase rate.
@@ -8383,10 +8383,17 @@ pvCompute = function(purch, closing, acc, kit){
   var ovs = Object.keys(PV.ov||{}); var extra = [];
   if(ovs.length){
     var unitOf = {}; purch.forEach(function(r){ var k = pvKey(r.product); if(k && !(k in unitOf)) unitOf[k] = r.unit||''; });
-    ovs.forEach(function(k){ var o = PV.ov[k]; extra.push({product:o.item, rate:Number(o.rate), unit:o.unit || unitOf[pvKey(o.item)] || '', date:'2999-01-01'}); });
+    ovs.forEach(function(k){ var o = PV.ov[k]; if(o.rate==null || !(Number(o.rate)>0)) return; extra.push({product:o.item, rate:Number(o.rate), unit:o.unit || unitOf[pvKey(o.item)] || '', date:'2999-01-01'}); });
   }
   var D = _pvComputePU.call(this, extra.concat(purch), closing, acc, kit);
-  D.ovCount = ovs.length; return D;
+  D.ovCount = ovs.length;
+  // GST: only where a GST % was given (by upload or the pencil)
+  var g = 0, withG = 0, valued = 0;
+  var addRows = function(rows){ rows.forEach(function(r){ valued++; var o = PV.ov[pvKey(r.name)]; if(o && o.gst!=null && o.gst!==''){ withG++; g += r.value*Number(o.gst)/100; } }); };
+  addRows(D.store.rows); addRows(D.kitchen.rows);
+  Object.keys(D.outlets).forEach(function(k){ addRows(D.outlets[k].accRows); });
+  D.gstAmt = g; D.gstItems = withG; D.gstValued = valued;
+  return D;
 };
 
 // ---------- the price list (one row per item) ----------
@@ -8398,13 +8405,13 @@ function puList(){
   D.store.noRate.forEach(function(n){ add(n, null, ''); });
   D.kitchen.rows.forEach(function(r){ add(r.name, r.rate, r.unit); });
   Object.keys(D.outlets).forEach(function(k){ D.outlets[k].accRows.forEach(function(r){ add(r.name, r.rate, D.unit && D.unit[pvKey(r.name)]); }); });
-  Object.keys(PV.ov||{}).forEach(function(k){ var o = PV.ov[k]; if(!map[k]) add(o.item, Number(o.rate), o.unit); });
-  return Object.keys(map).map(function(k){ var m = map[k]; m.set = !!PV.ov[k]; return m; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+  Object.keys(PV.ov||{}).forEach(function(k){ var o = PV.ov[k]; if(!map[k]) add(o.item, Number(o.rate)||0, o.unit); });
+  return Object.keys(map).map(function(k){ var m = map[k], o = PV.ov[k]; m.set = !!o; m.gst = (o && o.gst!=null && o.gst!=='') ? Number(o.gst) : null; return m; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
 }
 function puDownload(){
   var L = puList(); if(!L.length){ alert('Nothing to download yet. Press Refresh first.'); return; }
   var q = function(s){ return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'; };
-  var lines = ['Item,Unit,Rate,Source'].concat(L.map(function(m){ return [m.name, m.unit, m.rate==null?'':m.rate, m.set?'changed by upload':(m.rate==null?'no price yet':'purchase')].map(q).join(','); }));
+  var lines = ['Item,Unit,Rate,GST %,Source'].concat(L.map(function(m){ return [m.name, m.unit, m.rate==null?'':m.rate, m.gst==null?'':m.gst, m.set?'changed by upload':(m.rate==null?'no price yet':'purchase')].map(q).join(','); }));
   var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));
   a.download = 'price-list-'+pvToday()+'.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
 }
@@ -8422,25 +8429,40 @@ function puPlan(text){
   if(rows.length<2){ alert('The file looks empty.'); return; }
   var H = rows[0].map(function(h){ return String(h).trim().toLowerCase(); });
   var iItem = H.findIndex(function(h){ return /^(item|product)/.test(h); }), iRate = H.findIndex(function(h){ return /^(new )?rate/.test(h); });
-  var iGroup = H.indexOf('group'), iUnit = H.indexOf('unit');
-  if(iItem<0 || iRate<0){ alert('I could not find the "Item" and "Rate" columns. Please upload the file you downloaded here (keep the column names).'); return; }
+  var iGroup = H.indexOf('group'), iUnit = H.indexOf('unit'), iGst = H.findIndex(function(h){ return /^gst/.test(h); });
+  var iWith = iGst>=0 ? -1 : H.findIndex(function(h){ return /(with|incl|inc)\.?\s*gst|gst\s*(incl|inc)/.test(h); });   // a column with the price INCLUDING GST: the % is worked out from it
+  if(iItem<0 || (iRate<0 && iGst<0 && iWith<0)){ alert('I could not find the "Item" and "Rate" columns. Please upload the file you downloaded here (keep the column names).'); return; }
   var cur = {}; puList().forEach(function(m){ cur[m.key] = m; });
   var seen = {}, changes = [], skipped = [], conflicts = {};
+  var num = function(v){ var x = puRate(v); return x; };
   for(var i=1;i<rows.length;i++){
     var r = rows[i], name = String(r[iItem]||'').trim(); if(!name) continue;
     if(iGroup>=0 && String(r[iGroup]||'').trim().toLowerCase()==='products') continue;           // outlet Supply Ledger rows: not changed here
     if(/^total$/i.test(String(r[0]||'').trim())) continue;
-    var rt = puRate(r[iRate]), k = pvKey(name);
+    var rt = iRate>=0 ? num(r[iRate]) : null, gs = iGst>=0 ? num(r[iGst]) : null, k = pvKey(name);
+    if(rt===0) rt = null;                                                                       // 0 = no price filled in
+    if(iWith>=0){ var wv = num(r[iWith]); gs = (rt>0 && wv>0 && !isNaN(wv)) ? Math.round((wv/rt-1)*10000)/100 : null; }
     if(rt!=null && (isNaN(rt) || rt<=0)){ skipped.push(name+' ("'+r[iRate]+'" is not a valid price)'); continue; }
-    if(k in seen){ if(seen[k].rate!==rt) conflicts[name] = 1; continue; }
-    seen[k] = {key:k, name:name, rate:rt, unit: iUnit>=0 ? String(r[iUnit]||'').trim() : ''};
+    if(gs!=null && (isNaN(gs) || gs<0 || gs>100)){ skipped.push(name+' ("'+r[iGst]+'" is not a valid GST %)'); continue; }
+    var sig = rt+'|'+gs;
+    if(k in seen){ if(seen[k].sig!==sig) conflicts[name] = 1; continue; }
+    seen[k] = {key:k, name:name, rate:rt, gst:gs, sig:sig, unit: iUnit>=0 ? String(r[iUnit]||'').trim() : ''};
   }
   Object.keys(seen).forEach(function(k){
-    var s = seen[k], c = cur[k], now = c ? c.rate : null, ov = PV.ov[k];
-    if(conflicts[s.name]){ skipped.push(s.name+' (listed with different prices — fix it to one price)'); return; }
-    if(s.rate==null){ if(ov) changes.push({key:k, name:s.name, now:now, next:null, reset:true}); return; }   // blank cell: only meaningful when a changed price exists
-    if(now!=null && Math.abs(now-s.rate)<0.005) return;
-    changes.push({key:k, name:s.name, now:now, next:s.rate, unit:s.unit || (c&&c.unit) || ''});
+    var s = seen[k], c = cur[k], now = c ? c.rate : null, ov = PV.ov[k] || null;
+    if(conflicts[s.name]){ skipped.push(s.name+' (listed with different values — fix it to one)'); return; }
+    var ovRate = ov && ov.rate!=null ? Number(ov.rate) : null, ovGst = ov && ov.gst!=null && ov.gst!=='' ? Number(ov.gst) : null, ovUnit = ov && ov.unit ? ov.unit : '';
+    var newRate = ovRate;
+    if(iRate>=0){
+      if(s.rate==null){ newRate = null; }                                                         // blank = purchase rate
+      else if(now!=null && Math.abs(now-s.rate)<0.005){ newRate = ovRate; }                      // same as what the app uses: nothing to change
+      else newRate = s.rate;
+    }
+    var newGst = (iGst>=0 || iWith>=0) ? s.gst : ovGst;
+    var newUnit = ovUnit; if(iUnit>=0 && s.unit && c && String(c.unit||'').toLowerCase()!==s.unit.toLowerCase()) newUnit = s.unit;
+    var same = (newRate===ovRate) && (newGst===ovGst) && (newUnit===ovUnit);
+    if(same) return;
+    changes.push({key:k, name:s.name, now:now, next:newRate, gst:newGst, gstNow:ovGst, unit:newUnit, reset:(newRate==null && newGst==null && !newUnit)});
   });
   PV.up = {changes:changes, skipped:skipped};
   puShow();
@@ -8450,19 +8472,28 @@ function puShow(){
   var old = document.getElementById('pu-ov'); if(old) old.remove();
   var ov = document.createElement('div'); ov.id = 'pu-ov';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
-  var th = 'padding:7px 8px;font-size:12px;color:#6B2400;text-align:'; 
+  var th = 'padding:7px 8px;font-size:12px;color:#6B2400;text-align:';
+  var td = 'padding:7px 8px;border-top:1px solid #eee;font-size:13px;';
   var rowsH = P.changes.map(function(c){
-    return '<tr><td style="padding:7px 8px;border-top:1px solid #eee;font-size:13px">'+pvEsc(c.name)+'</td><td style="padding:7px 8px;border-top:1px solid #eee;text-align:right;font-size:13px;color:#888">'+(c.now==null?'—':pvRs(c.now).replace(/^₹/,'₹')+(c.now%1?'':''))+'</td><td style="padding:7px 8px;border-top:1px solid #eee;text-align:right;font-size:13px;font-weight:700;color:'+(c.reset?'#a35c00':'#1a7f4b')+'">'+(c.reset?'back to purchase rate':'₹'+c.next)+'</td></tr>';
+    var rateTxt = c.reset ? 'back to purchase rate' : (c.next==null ? '<span style="color:#888;font-weight:400">purchase rate</span>' : '₹'+c.next);
+    return '<tr><td style="'+td+'">'+pvEsc(c.name)+(c.unit?' <span style="color:#999;font-size:11px">'+pvEsc(c.unit)+'</span>':'')+'</td>'
+      +'<td style="'+td+'text-align:right;color:#888">'+(c.now==null?'—':'₹'+c.now)+'</td>'
+      +'<td style="'+td+'text-align:right;font-weight:700;color:'+(c.reset?'#a35c00':'#1a7f4b')+'">'+rateTxt+'</td>'
+      +'<td style="'+td+'text-align:right;color:#555">'+(c.reset?'':(c.gst==null?'—':c.gst+'%'))+(c.gst!==c.gstNow&&!c.reset?' <span style="color:#1a7f4b;font-size:11px">new</span>':'')+'</td></tr>';
   }).join('');
-  ov.innerHTML = '<div style="background:#fff;border-radius:16px;padding:18px;width:100%;max-width:560px;max-height:90vh;overflow:auto">'
+  ov.innerHTML = '<div style="background:#fff;border-radius:16px;padding:18px;width:100%;max-width:600px;max-height:90vh;overflow:auto">'
     + '<div style="font-weight:800;font-size:17px;color:#6B2400">Check the changes</div>'
-    + '<div style="font-size:13px;color:#777;margin:4px 0 10px">'+(P.changes.length ? P.changes.length+' price'+(P.changes.length>1?'s':'')+' will change. Nothing is saved until you press <b>Save changes</b>.' : 'No price is different from what the app already uses.')+'</div>'
-    + (P.changes.length ? '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'left">Item</th><th style="'+th+'right">Now</th><th style="'+th+'right">New</th></tr></thead><tbody>'+rowsH+'</tbody></table>' : '')
+    + '<div style="font-size:13px;color:#777;margin:4px 0 10px">'+(P.changes.length ? P.changes.length+' item'+(P.changes.length>1?'s':'')+' will change'+puGstSummary(P.changes)+'. Nothing is saved until you press <b>Save changes</b>.' : 'Nothing is different from what the app already uses.')+'</div>'
+    + (P.changes.length ? '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'left">Item</th><th style="'+th+'right">Rate now</th><th style="'+th+'right">New rate</th><th style="'+th+'right">GST</th></tr></thead><tbody>'+rowsH+'</tbody></table>' : '')
     + (P.skipped.length ? '<div style="margin-top:10px;font-size:12px;color:#a35c00">Skipped:<br>'+P.skipped.slice(0,10).map(pvEsc).join('<br>')+(P.skipped.length>10?'<br>…':'')+'</div>' : '')
     + '<div style="display:flex;gap:10px;margin-top:14px"><button class="btn btn-s" style="flex:1;padding:12px" onclick="puCancel()">Cancel</button>'
     + (P.changes.length ? '<button id="pu-save" class="btn btn-p" style="flex:1;padding:12px" onclick="puSave()">💾 Save changes</button>' : '')
     + '</div></div>';
   document.body.appendChild(ov);
+}
+function puGstSummary(ch){
+  var c = {}; ch.forEach(function(x){ if(x.gst!=null && x.gst!==x.gstNow){ c[x.gst] = (c[x.gst]||0)+1; } });
+  var ks = Object.keys(c).sort(function(a,b){ return a-b; }); return ks.length ? ' (GST: '+ks.map(function(k){ return k+'% on '+c[k]; }).join(', ')+')' : '';
 }
 function puCancel(){ var o = document.getElementById('pu-ov'); if(o) o.remove(); PV.up = null; }
 async function puSave(){
@@ -8474,7 +8505,7 @@ async function puSave(){
   try{
     if(sets.length){
       var r = await fetch(SB_URL+'/rest/v1/price_overrides?on_conflict=item_key',{method:'POST',headers:Object.assign({'Prefer':'resolution=merge-duplicates,return=minimal'},H),
-        body:JSON.stringify(sets.map(function(c){ return {item_key:c.key, item:c.name, rate:c.next, unit:c.unit||null, updated_by:who, updated_at:now}; }))});
+        body:JSON.stringify(sets.map(function(c){ return {item_key:c.key, item:c.name, rate:c.next, gst:c.gst==null?null:c.gst, unit:c.unit||null, updated_by:who, updated_at:now}; }))});
       if(!r.ok) throw new Error(await r.text());
     }
     if(resets.length){
@@ -8482,11 +8513,11 @@ async function puSave(){
       if(!d.ok) throw new Error(await d.text());
     }
     try{ await fetch(SB_URL+'/rest/v1/price_override_log',{method:'POST',headers:Object.assign({'Prefer':'return=minimal'},H),
-      body:JSON.stringify(P.changes.map(function(c){ return {item:c.name, old_rate:c.now, new_rate:c.reset?null:c.next, action:c.reset?'back to purchase rate':'price changed', actor:who}; }))}); }catch(e){}
-    try{ if(typeof actLog==='function') actLog('Stock Value','Prices changed', who+' changed '+P.changes.length+' price(s) by upload', '', 'admin'); }catch(e){}
-    puCancel(); toast('✅ Prices saved'); await pvLoad();
+      body:JSON.stringify(P.changes.map(function(c){ return {item:c.name, old_rate:c.now, new_rate:c.reset?null:c.next, action:(c.reset?'back to purchase rate':'changed'+(c.gst!==c.gstNow?' (GST '+(c.gst==null?'removed':c.gst+'%')+')':''))+(P.reason?' — '+P.reason:''), actor:who}; }))}); }catch(e){}
+    try{ if(typeof actLog==='function') actLog('Stock Value','Prices changed', who+' changed '+P.changes.length+' item(s) by upload', '', 'admin'); }catch(e){}
+    puCancel(); toast('✅ Saved'); await pvLoad();
   }catch(e){
-    alert('Could not save: '+(e.message||e)+(/price_overrides|relation|schema/i.test(String(e.message||e))?'\n\nRun price_overrides_setup.sql in Supabase once.':''));
+    alert('Could not save: '+(e.message||e)+(/gst|price_overrides|relation|schema|null value/i.test(String(e.message||e))?'\n\nRun price_overrides_setup.sql and price_overrides_gst.sql in Supabase once.':''));
     if(b){ b.disabled = false; b.textContent = '💾 Save changes'; }
   }
 }
@@ -8509,6 +8540,7 @@ pvHtml = function(){
   var b = 'width:auto;padding:9px 14px;font-size:13px';
   var btns = ' <button class="btn btn-s" style="'+b+'" onclick="puDownload()">⬇ Price list</button> <button class="btn btn-s" style="'+b+'" onclick="puPick()">⬆ Upload prices</button><input id="pu-file" type="file" accept=".csv,.txt,text/csv" style="display:none" onchange="puRead(this)">';
   var i = h.indexOf('onclick="pvCsv()"'); if(i>=0){ var j = h.indexOf('</button>', i); if(j>=0) h = h.slice(0, j+9)+btns+h.slice(j+9); }
+  if(PV.data && PV.data.gstItems){ h = h.replace('rates before GST','rates before GST · <b>'+pvRs(PV.data.grand+PV.data.gstAmt)+' with GST</b> (GST added on '+PV.data.gstItems+' of '+PV.data.gstValued+' items)'); }
   var keys = Object.keys(PV.ov||{});
   var box = PV.ovErr ? '<div style="font-size:12px;color:#a35c00;margin:-6px 0 12px">'+pvEsc(PV.ovErr)+'</div>' : '';
   if(keys.length){
@@ -8521,6 +8553,49 @@ pvHtml = function(){
   var cut = (w>=0 && (m<0 || w<m)) ? h.lastIndexOf('<div', w) : m;
   return cut>=0 ? h.slice(0,cut)+box+h.slice(cut) : h+box;
 };
+
+// ---------- ✏️ on every row: change one price right here (with a reason) ----------
+var _pvTablePU = pvTable;
+pvTable = function(){
+  var h = _pvTablePU.apply(this, arguments);
+  return h.replace(/(<tr><td[^>]*>)([^<]+)(<\/td>)/g, function(m, a, name, c){
+    return a+name+' <button data-n="'+name+'" onclick="puEdit(this.getAttribute(\'data-n\'))" title="Change price" style="border:1px solid #d9c9bb;background:#fff;border-radius:8px;padding:1px 6px;font-size:12px;cursor:pointer;margin-left:4px">✏️</button>'+c;
+  });
+};
+function puEdit(name){
+  var k = pvKey(name), cur = puList().filter(function(m){ return m.key===k; })[0];
+  var isSupply = (typeof SL_CATALOG!=='undefined') && SL_CATALOG.some(function(g){ return g.items.some(function(p){ return siNorm(p.name)===siNorm(name); }); });
+  if(!cur && isSupply){ alert('“'+name+'” is an outlet product. Its price comes from the Supply Ledger, which is not changed here.'); return; }
+  var old = document.getElementById('pu-one'); if(old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'pu-one';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
+  var inp = 'width:100%;box-sizing:border-box;padding:12px;border:1px solid #ccc;border-radius:10px;font-size:16px;margin-top:4px';
+  ov.innerHTML = '<div style="background:#fff;border-radius:16px;padding:18px;width:100%;max-width:380px">'
+    + '<div style="font-weight:800;font-size:17px;color:#6B2400">Change price</div>'
+    + '<div style="font-size:14px;margin-top:4px">'+pvEsc(name)+'</div>'
+    + '<div style="font-size:13px;color:#777;margin-top:2px">Now: '+(cur&&cur.rate!=null?'₹'+cur.rate+(cur.unit?' / '+pvEsc(cur.unit):''):'no price yet')+'</div>'
+    + '<div style="margin-top:12px;font-size:13px;color:#666">New price (₹)<input id="pu1-rate" type="number" inputmode="decimal" min="0" step="any" style="'+inp+'"></div>'
+    + '<div style="margin-top:12px;font-size:13px;color:#666">GST % (optional)<input id="pu1-gst" type="number" inputmode="decimal" min="0" max="100" step="any" value="'+(cur&&cur.gst!=null?cur.gst:'')+'" style="'+inp+'"></div>'
+    + '<div style="margin-top:12px;font-size:13px;color:#666">Reason <span style="color:#B03020">*</span><input id="pu1-why" type="text" placeholder="e.g. purchase bill rate was different" autocomplete="off" style="'+inp+'"></div>'
+    + '<div id="pu1-err" style="color:#B03020;font-size:13px;margin-top:8px;min-height:16px"></div>'
+    + '<div style="display:flex;gap:10px;margin-top:6px"><button class="btn btn-s" style="flex:1;padding:12px" onclick="document.getElementById(\'pu-one\').remove()">Cancel</button><button class="btn btn-p" style="flex:1;padding:12px" onclick="puEditSave(this)" data-n="'+pvEsc(name)+'">💾 Save</button></div></div>';
+  document.body.appendChild(ov);
+  setTimeout(function(){ var e = document.getElementById('pu1-rate'); if(e) e.focus(); }, 50);
+}
+async function puEditSave(btn){
+  var name = btn.getAttribute('data-n'), rate = Number(document.getElementById('pu1-rate').value), why = String(document.getElementById('pu1-why').value||'').trim();
+  var err = document.getElementById('pu1-err');
+  var gv = String(document.getElementById('pu1-gst').value||'').trim(), gst = gv===''?null:Number(gv);
+  if(document.getElementById('pu1-rate').value!=='' && !(rate>0)){ err.textContent = 'Please type a price above 0.'; return; }
+  if(document.getElementById('pu1-rate').value==='' && gv===''){ err.textContent = 'Type a new price or a GST %.'; return; }
+  if(gst!=null && (isNaN(gst)||gst<0||gst>100)){ err.textContent = 'GST % must be between 0 and 100.'; return; }
+  if(!why){ err.textContent = 'Please give a reason.'; return; }
+  var k = pvKey(name), cur = puList().filter(function(m){ return m.key===k; })[0];
+  var ovx = PV.ov[k] || null, newRate = document.getElementById('pu1-rate').value!=='' ? rate : (ovx&&ovx.rate!=null?Number(ovx.rate):null);
+  PV.up = {changes:[{key:k, name:name, now:cur?cur.rate:null, next:newRate, gst:gst!=null?gst:(ovx&&ovx.gst!=null?Number(ovx.gst):null), gstNow:ovx&&ovx.gst!=null?Number(ovx.gst):null, unit:(ovx&&ovx.unit)||(cur&&cur.unit)||''}], skipped:[], reason:why};
+  var o = document.getElementById('pu-one'); if(o) o.remove();
+  await puSave();
+}
   // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
 // 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
 // 2) Store → Yesterday: a clear ✏️ button on every row (change the count, or add a missed one), a reason is always asked.
