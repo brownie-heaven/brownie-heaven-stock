@@ -8346,6 +8346,181 @@ setHdr = function(sub, showTabs){
 }; }
 if(!window.__pvW3){ window.__pvW3=1; var _siDrawPV = siDraw;
 siDraw = function(){ if(typeof S!=='undefined' && S.mainTab===14) return; return _siDrawPV.apply(this, arguments); }; }
+  // ── STOCK VALUE: change prices by Excel/CSV (download → edit Rate → upload → Save changes) ──
+// Paste BELOW stock_value.js. Run price_overrides_setup.sql once.
+// A price set here wins over the purchase rate (store, accessories, kitchen). Purchase entries are never touched.
+// The outlet Supply Ledger rates are NOT changed by this. Clearing a Rate cell and uploading puts the item back to the purchase rate.
+PV.ov = PV.ov || {}; PV.up = null;
+
+function puCsvSplit(text){
+  text = String(text||'').replace(/^\uFEFF/,'');
+  var first = text.split(/\r?\n/)[0]||''; var d = ',';
+  var cnt = {',':0,';':0,'\t':0}; for(var c in cnt) cnt[c] = first.split(c).length-1;
+  d = cnt[';']>cnt[',']&&cnt[';']>=cnt['\t'] ? ';' : (cnt['\t']>cnt[','] ? '\t' : ',');
+  var rows = [], row = [], cur = '', q = false;
+  for(var i=0;i<text.length;i++){
+    var ch = text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){ cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if(ch==='"') q = true;
+    else if(ch===d){ row.push(cur); cur = ''; }
+    else if(ch==='\n' || ch==='\r'){ if(ch==='\r' && text[i+1]==='\n') i++; row.push(cur); cur = ''; if(row.some(function(x){ return String(x).trim()!==''; })) rows.push(row); row = []; }
+    else cur += ch;
+  }
+  row.push(cur); if(row.some(function(x){ return String(x).trim()!==''; })) rows.push(row);
+  return rows;
+}
+function puRate(s){ s = String(s==null?'':s).replace(/[₹,\s]/g,'').replace(/rs\.?/i,''); if(s==='') return null; var n = Number(s); return isNaN(n) ? NaN : n; }
+
+// ---------- prices set by upload win over the purchase rate ----------
+var _pvLoadPU = pvLoad;
+pvLoad = async function(){
+  try{ var rows = await sbGetAll('price_overrides','?select=*'); PV.ov = {}; rows.forEach(function(r){ PV.ov[r.item_key] = r; }); PV.ovErr = ''; }
+  catch(e){ PV.ov = PV.ov || {}; PV.ovErr = 'Price changes are not available yet — run price_overrides_setup.sql in Supabase once.'; }
+  return _pvLoadPU.apply(this, arguments);
+};
+var _pvComputePU = pvCompute;
+pvCompute = function(purch, closing, acc, kit){
+  var ovs = Object.keys(PV.ov||{}); var extra = [];
+  if(ovs.length){
+    var unitOf = {}; purch.forEach(function(r){ var k = pvKey(r.product); if(k && !(k in unitOf)) unitOf[k] = r.unit||''; });
+    ovs.forEach(function(k){ var o = PV.ov[k]; extra.push({product:o.item, rate:Number(o.rate), unit:o.unit || unitOf[pvKey(o.item)] || '', date:'2999-01-01'}); });
+  }
+  var D = _pvComputePU.call(this, extra.concat(purch), closing, acc, kit);
+  D.ovCount = ovs.length; return D;
+};
+
+// ---------- the price list (one row per item) ----------
+function puList(){
+  var D = PV.data; if(!D) return [];
+  var map = {};
+  var add = function(name, rate, unit){ var k = pvKey(name); if(!k) return; if(!map[k] || (rate>0 && !(map[k].rate>0))) map[k] = {key:k, name:name, rate:rate>0?rate:null, unit:unit||''}; };
+  D.store.rows.forEach(function(r){ add(r.name, r.rate, r.unit); });
+  D.store.noRate.forEach(function(n){ add(n, null, ''); });
+  D.kitchen.rows.forEach(function(r){ add(r.name, r.rate, r.unit); });
+  Object.keys(D.outlets).forEach(function(k){ D.outlets[k].accRows.forEach(function(r){ add(r.name, r.rate, D.unit && D.unit[pvKey(r.name)]); }); });
+  Object.keys(PV.ov||{}).forEach(function(k){ var o = PV.ov[k]; if(!map[k]) add(o.item, Number(o.rate), o.unit); });
+  return Object.keys(map).map(function(k){ var m = map[k]; m.set = !!PV.ov[k]; return m; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+}
+function puDownload(){
+  var L = puList(); if(!L.length){ alert('Nothing to download yet. Press Refresh first.'); return; }
+  var q = function(s){ return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'; };
+  var lines = ['Item,Unit,Rate,Source'].concat(L.map(function(m){ return [m.name, m.unit, m.rate==null?'':m.rate, m.set?'changed by upload':(m.rate==null?'no price yet':'purchase')].map(q).join(','); }));
+  var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));
+  a.download = 'price-list-'+pvToday()+'.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+
+// ---------- upload → preview → Save changes ----------
+function puPick(){ var f = document.getElementById('pu-file'); if(f){ f.value = ''; f.click(); } }
+function puRead(inp){
+  var f = inp && inp.files && inp.files[0]; if(!f) return;
+  var rd = new FileReader();
+  rd.onload = function(){ try{ puPlan(String(rd.result||'')); }catch(e){ alert('Could not read the file: '+(e.message||e)); } };
+  rd.readAsText(f);
+}
+function puPlan(text){
+  var rows = puCsvSplit(text);
+  if(rows.length<2){ alert('The file looks empty.'); return; }
+  var H = rows[0].map(function(h){ return String(h).trim().toLowerCase(); });
+  var iItem = H.findIndex(function(h){ return /^(item|product)/.test(h); }), iRate = H.findIndex(function(h){ return /^(new )?rate/.test(h); });
+  var iGroup = H.indexOf('group'), iUnit = H.indexOf('unit');
+  if(iItem<0 || iRate<0){ alert('I could not find the "Item" and "Rate" columns. Please upload the file you downloaded here (keep the column names).'); return; }
+  var cur = {}; puList().forEach(function(m){ cur[m.key] = m; });
+  var seen = {}, changes = [], skipped = [], conflicts = {};
+  for(var i=1;i<rows.length;i++){
+    var r = rows[i], name = String(r[iItem]||'').trim(); if(!name) continue;
+    if(iGroup>=0 && String(r[iGroup]||'').trim().toLowerCase()==='products') continue;           // outlet Supply Ledger rows: not changed here
+    if(/^total$/i.test(String(r[0]||'').trim())) continue;
+    var rt = puRate(r[iRate]), k = pvKey(name);
+    if(rt!=null && (isNaN(rt) || rt<=0)){ skipped.push(name+' ("'+r[iRate]+'" is not a valid price)'); continue; }
+    if(k in seen){ if(seen[k].rate!==rt) conflicts[name] = 1; continue; }
+    seen[k] = {key:k, name:name, rate:rt, unit: iUnit>=0 ? String(r[iUnit]||'').trim() : ''};
+  }
+  Object.keys(seen).forEach(function(k){
+    var s = seen[k], c = cur[k], now = c ? c.rate : null, ov = PV.ov[k];
+    if(conflicts[s.name]){ skipped.push(s.name+' (listed with different prices — fix it to one price)'); return; }
+    if(s.rate==null){ if(ov) changes.push({key:k, name:s.name, now:now, next:null, reset:true}); return; }   // blank cell: only meaningful when a changed price exists
+    if(now!=null && Math.abs(now-s.rate)<0.005) return;
+    changes.push({key:k, name:s.name, now:now, next:s.rate, unit:s.unit || (c&&c.unit) || ''});
+  });
+  PV.up = {changes:changes, skipped:skipped};
+  puShow();
+}
+function puShow(){
+  var P = PV.up; if(!P) return;
+  var old = document.getElementById('pu-ov'); if(old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'pu-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
+  var th = 'padding:7px 8px;font-size:12px;color:#6B2400;text-align:'; 
+  var rowsH = P.changes.map(function(c){
+    return '<tr><td style="padding:7px 8px;border-top:1px solid #eee;font-size:13px">'+pvEsc(c.name)+'</td><td style="padding:7px 8px;border-top:1px solid #eee;text-align:right;font-size:13px;color:#888">'+(c.now==null?'—':pvRs(c.now).replace(/^₹/,'₹')+(c.now%1?'':''))+'</td><td style="padding:7px 8px;border-top:1px solid #eee;text-align:right;font-size:13px;font-weight:700;color:'+(c.reset?'#a35c00':'#1a7f4b')+'">'+(c.reset?'back to purchase rate':'₹'+c.next)+'</td></tr>';
+  }).join('');
+  ov.innerHTML = '<div style="background:#fff;border-radius:16px;padding:18px;width:100%;max-width:560px;max-height:90vh;overflow:auto">'
+    + '<div style="font-weight:800;font-size:17px;color:#6B2400">Check the changes</div>'
+    + '<div style="font-size:13px;color:#777;margin:4px 0 10px">'+(P.changes.length ? P.changes.length+' price'+(P.changes.length>1?'s':'')+' will change. Nothing is saved until you press <b>Save changes</b>.' : 'No price is different from what the app already uses.')+'</div>'
+    + (P.changes.length ? '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'left">Item</th><th style="'+th+'right">Now</th><th style="'+th+'right">New</th></tr></thead><tbody>'+rowsH+'</tbody></table>' : '')
+    + (P.skipped.length ? '<div style="margin-top:10px;font-size:12px;color:#a35c00">Skipped:<br>'+P.skipped.slice(0,10).map(pvEsc).join('<br>')+(P.skipped.length>10?'<br>…':'')+'</div>' : '')
+    + '<div style="display:flex;gap:10px;margin-top:14px"><button class="btn btn-s" style="flex:1;padding:12px" onclick="puCancel()">Cancel</button>'
+    + (P.changes.length ? '<button id="pu-save" class="btn btn-p" style="flex:1;padding:12px" onclick="puSave()">💾 Save changes</button>' : '')
+    + '</div></div>';
+  document.body.appendChild(ov);
+}
+function puCancel(){ var o = document.getElementById('pu-ov'); if(o) o.remove(); PV.up = null; }
+async function puSave(){
+  var P = PV.up; if(!P || !P.changes.length) return;
+  var b = document.getElementById('pu-save'); if(b){ b.disabled = true; b.textContent = 'Saving…'; }
+  var who = (typeof siWho==='function') ? siWho() : 'Admin', now = new Date().toISOString();
+  var sets = P.changes.filter(function(c){ return !c.reset; }), resets = P.changes.filter(function(c){ return c.reset; });
+  var H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'};
+  try{
+    if(sets.length){
+      var r = await fetch(SB_URL+'/rest/v1/price_overrides?on_conflict=item_key',{method:'POST',headers:Object.assign({'Prefer':'resolution=merge-duplicates,return=minimal'},H),
+        body:JSON.stringify(sets.map(function(c){ return {item_key:c.key, item:c.name, rate:c.next, unit:c.unit||null, updated_by:who, updated_at:now}; }))});
+      if(!r.ok) throw new Error(await r.text());
+    }
+    if(resets.length){
+      var d = await fetch(SB_URL+'/rest/v1/price_overrides?item_key=in.('+resets.map(function(c){ return '"'+c.key.replace(/"/g,'')+'"'; }).join(',')+')',{method:'DELETE',headers:Object.assign({'Prefer':'return=minimal'},H)});
+      if(!d.ok) throw new Error(await d.text());
+    }
+    try{ await fetch(SB_URL+'/rest/v1/price_override_log',{method:'POST',headers:Object.assign({'Prefer':'return=minimal'},H),
+      body:JSON.stringify(P.changes.map(function(c){ return {item:c.name, old_rate:c.now, new_rate:c.reset?null:c.next, action:c.reset?'back to purchase rate':'price changed', actor:who}; }))}); }catch(e){}
+    try{ if(typeof actLog==='function') actLog('Stock Value','Prices changed', who+' changed '+P.changes.length+' price(s) by upload', '', 'admin'); }catch(e){}
+    puCancel(); toast('✅ Prices saved'); await pvLoad();
+  }catch(e){
+    alert('Could not save: '+(e.message||e)+(/price_overrides|relation|schema/i.test(String(e.message||e))?'\n\nRun price_overrides_setup.sql in Supabase once.':''));
+    if(b){ b.disabled = false; b.textContent = '💾 Save changes'; }
+  }
+}
+async function puBack(key){
+  var o = PV.ov[key]; if(!o) return;
+  if(!confirm('Put “'+o.item+'” back to the purchase rate?')) return;
+  try{
+    var H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'};
+    var d = await fetch(SB_URL+'/rest/v1/price_overrides?item_key=eq.'+encodeURIComponent(key),{method:'DELETE',headers:H}); if(!d.ok) throw new Error(await d.text());
+    try{ await fetch(SB_URL+'/rest/v1/price_override_log',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},H),body:JSON.stringify([{item:o.item, old_rate:o.rate, new_rate:null, action:'back to purchase rate', actor:siWho()}])}); }catch(e){}
+    toast('Back to purchase rate'); await pvLoad();
+  }catch(e){ alert('Could not change: '+(e.message||e)); }
+}
+
+// ---------- buttons on the Stock Value screen ----------
+var _pvHtmlPU = pvHtml;
+pvHtml = function(){
+  var h = _pvHtmlPU.apply(this, arguments);
+  if(PV.loading || PV.err || !PV.data) return h;
+  var b = 'width:auto;padding:9px 14px;font-size:13px';
+  var btns = ' <button class="btn btn-s" style="'+b+'" onclick="puDownload()">⬇ Price list</button> <button class="btn btn-s" style="'+b+'" onclick="puPick()">⬆ Upload prices</button><input id="pu-file" type="file" accept=".csv,.txt,text/csv" style="display:none" onchange="puRead(this)">';
+  var i = h.indexOf('onclick="pvCsv()"'); if(i>=0){ var j = h.indexOf('</button>', i); if(j>=0) h = h.slice(0, j+9)+btns+h.slice(j+9); }
+  var keys = Object.keys(PV.ov||{});
+  var box = PV.ovErr ? '<div style="font-size:12px;color:#a35c00;margin:-6px 0 12px">'+pvEsc(PV.ovErr)+'</div>' : '';
+  if(keys.length){
+    box += '<details style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;margin-bottom:14px"><summary style="cursor:pointer;padding:10px 14px;font-size:13px;font-weight:700;color:#6B2400">✏️ '+keys.length+' price'+(keys.length>1?'s':'')+' changed by upload</summary><div style="padding:0 14px 10px">'
+      + keys.sort().map(function(k){ var o = PV.ov[k]; return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #eee;font-size:13px"><span>'+pvEsc(o.item)+' <b>₹'+Number(o.rate)+'</b> <span style="color:#999;font-size:11px">'+pvEsc(o.updated_by||'')+' · '+pvDMY(o.updated_at)+'</span></span><button onclick="puBack(\''+pvEsc(k).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')" style="border:1px solid #d9c9bb;background:#fff;color:#B03020;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Back to purchase rate</button></div>'; }).join('')
+      + '</div></details>';
+  }
+  // put the note after the buttons row: just before the first warning/box
+  var m = h.indexOf('<details'); var w = h.indexOf('background:#fff7e6');
+  var cut = (w>=0 && (m<0 || w<m)) ? h.lastIndexOf('<div', w) : m;
+  return cut>=0 ? h.slice(0,cut)+box+h.slice(cut) : h+box;
+};
   // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
 // 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
 // 2) Store → Yesterday: a clear ✏️ button on every row (change the count, or add a missed one), a reason is always asked.
