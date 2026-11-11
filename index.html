@@ -8728,6 +8728,74 @@ kcFixGiven = async function(id){
     toast('✅ Fixed'); await kcLoad();
   }catch(err){ alert('Could not save: '+(err.message||err)); }
 };
+  // ── STORE: accessories sent to outlets (the office's daily "accessories_ledger" entry) now take stock OUT of the store ──
+// No new entry for anyone: Sanjay / Gautham keep filing accessories as they do today. The store just reads those lines.
+// Only lines AFTER an item's last store count reduce its stock (same rule as Kitchen Issue); older days are ignored.
+// Paste BELOW product_names.js (anywhere above the "App starts" line). No SQL needed.
+var ACO = {rows:[], unmatched:{}, matched:0, today:0, todayOutlets:{}, last:'', err:'', since:''};
+function acoCompact(n){ return siNorm(n).replace(/ /g,'').replace(/(pcs|pc|nos|no)$/,''); }
+function acoMatch(product){
+  var all = SI.allItems || SI.items, kn = siNorm(product); if(!kn) return null;
+  if(all[kn]) return kn;
+  var al = SI.alias && SI.alias[kn]; if(al && all[siNorm(al)]) return siNorm(al);
+  var ck = acoCompact(product), hit = null;
+  Object.keys(all).some(function(k){ if(acoCompact(all[k].name)===ck){ hit = k; return true; } return false; });
+  return hit;
+}
+if(!window.__acoW1){ window.__acoW1 = 1;
+var _siLoadACO = siLoad;
+siLoad = async function(){
+  var r = await _siLoadACO.apply(this, arguments);
+  try{
+    ACO.err = ''; ACO.unmatched = {}; ACO.matched = 0; ACO.today = 0; ACO.todayOutlets = {}; ACO.last = '';
+    var first = ''; (SI.ent||[]).forEach(function(e){ if(e.kind==='count' && !e.voided && (!first || e.entry_date<first)) first = e.entry_date; });
+    var since = first || new Date(Date.now()-60*86400000).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+    ACO.since = since;
+    var rows = await sbGetAll('accessories_ledger','?date=gte.'+since+'&select=id,outlet,date,product,qty,created_at&order=date.desc');
+    ACO.rows = rows; var today = siToday();
+    rows.forEach(function(x){
+      var d = String(x.date||'').slice(0,10), q = Number(x.qty)||0; if(!(q>0)) return;
+      if(d===today){ ACO.today++; ACO.todayOutlets[x.outlet||'?'] = 1; }
+      if(!ACO.last || d>ACO.last) ACO.last = d;
+      var k = acoMatch(x.product);
+      if(!k){ var n = String(x.product||'').trim(); var u = ACO.unmatched[n] = ACO.unmatched[n] || {qty:0, lines:0}; u.qty += q; u.lines++; return; }
+      ACO.matched++;
+      (SI.byKey[k] = SI.byKey[k] || []).push({id:'acc-'+x.id, kind:'out', qty:q, entry_date:d, item:(SI.allItems||SI.items)[k].name, source:'accessories', note:'sent to '+(x.outlet||''), voided:false, created_at:x.created_at||d+'T00:00:00Z'});
+    });
+  }catch(e){ ACO.err = e.message||String(e); }
+  siDraw();
+  return r;
+};
+}
+async function acoDoMatch(name, itemName){
+  if(!itemName) return;
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/store_aliases?on_conflict=alias',{method:'POST',headers:siHdr('resolution=merge-duplicates,return=minimal'),body:JSON.stringify([{alias:siNorm(name), item:itemName, actor:siWho()}])});
+    if(!r.ok) throw new Error(await r.text());
+    toast('✅ Matched'); await siLoad();
+  }catch(e){ alert('Could not match: '+(e.message||e)+'\n\nIf it says permission, run store_aliases_policy.sql in Supabase once.'); }
+}
+function acoMatchSel(el){ acoDoMatch(el.getAttribute('data-n'), el.value); }
+function acoBox(){
+  if(ACO.err) return '<div style="font-size:12px;color:#a35c00;margin-bottom:12px">Accessories sent to outlets could not be read: '+siEsc(ACO.err)+'</div>';
+  var nOut = Object.keys(ACO.todayOutlets).length, names = Object.keys(ACO.unmatched).sort(function(a,b){ return ACO.unmatched[b].qty-ACO.unmatched[a].qty; });
+  var st = ACO.today ? '<span style="color:#1a7f4b;font-weight:700">✅ Filed today: '+ACO.today+' lines for '+nOut+' outlet'+(nOut>1?'s':'')+'</span>'
+                     : '<span style="color:#B03020;font-weight:700">⚠ Not filed today yet</span>'+(ACO.last?' <span style="color:#888">(last filed '+siDMY(ACO.last)+')</span>':'');
+  var opts = '<option value="">match to a store item…</option>'+SI.order.map(function(k){ return '<option value="'+siEsc(SI.items[k].name)+'">'+siEsc(SI.items[k].name)+'</option>'; }).join('');
+  var list = names.slice(0,15).map(function(n){
+    return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid #f0e8e0"><span style="flex:1;min-width:140px;font-size:13px"><b>'+siEsc(n)+'</b> <span style="color:#999">sent '+ACO.unmatched[n].qty+'</span></span>'
+      +'<select data-n="'+siEsc(n)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+opts+'</select></div>'; }).join('');
+  return '<div style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;padding:12px 14px;margin-bottom:14px">'
+    + '<div style="font-weight:700;color:#6B2400;font-size:14px">🧰 Accessories sent to outlets</div>'
+    + '<div style="font-size:13px;margin-top:4px">'+st+'</div>'
+    + '<div style="font-size:12px;color:#777;margin-top:4px">From the office’s daily accessories entry. Each line takes stock OUT of the store (only after the item’s last count). '+ACO.matched+' lines matched since '+siDMY(ACO.since)+'.</div>'
+    + (names.length ? '<div style="margin-top:8px;font-size:12px;color:#a35c00;font-weight:700">'+names.length+' sent name'+(names.length>1?'s are':' is')+' not matched to a store item, so their stock is NOT reduced yet:</div>'+list+(names.length>15?'<div style="font-size:12px;color:#999;margin-top:4px">…and '+(names.length-15)+' more</div>':'') : '')
+    + '</div>';
+}
+if(!window.__acoW2){ window.__acoW2 = 1;
+var _svDayHtmlACO = svDayHtml;
+svDayHtml = function(){ return acoBox() + _svDayHtmlACO.apply(this, arguments); };
+}
 // App starts via welcome screen Get Started button → startApp()
  // ── STEP B: PRODUCT NAMES — join "same product, different name/brand" into ONE product (Gautham does it himself) ──
 // Example: White Compound 500 g / White Compound 500gms / another brand → one item "White Compound 500 g".
