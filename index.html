@@ -8819,6 +8819,164 @@ getAllPurchaseProducts = function(){
     return c;
   });
 }; }
+// ═══ ACCESSORIES FINAL (one block) — paste below store_accessories_out.js and product_profile.js ═══
+// ── ACCESSORIES TAB: new "🧷 Store link" view — what is sent to outlets, and how it reduces the store ──
+// The "Accessories sent to outlets" box is taken OFF the Store front page and lives here instead.
+// Reads the office's daily accessories filing (Sanjay / Gautham). Nothing new to enter.
+// Paste BELOW store_accessories_out.js and product_profile.js. No SQL.
+var SAC = {open:false, in:false};
+var _acoBoxOrig = acoBox;
+acoBox = function(){ return SAC.in ? _acoBoxOrig.apply(this, arguments) : ''; };   // hidden on the Store front page
+function sacCalc(k){
+  var all = SI.allItems || SI.items || {}, c = siLastCount(k), cd = c ? c.entry_date : null, m = siMoves(k, cd, null), acc = 0, outl = {}, lines = [];
+  pnMembers(k).forEach(function(mk){
+    (SI.byKey[mk]||[]).forEach(function(e){
+      if(e.source!=='accessories' || e.voided) return;
+      if(cd && !(String(e.entry_date)>cd)) return;      // same rule as the store: only AFTER the last count
+      var q = Number(e.qty)||0, o = String(e.note||'').replace(/^sent to /,'') || '?'; acc += q; outl[o] = (outl[o]||0) + q; lines.push({d:String(e.entry_date).slice(0,10), o:o, q:q});
+    });
+  });
+  var st = siStock(k);
+  return {k:k, it:all[k], count:c, bought:m.bought, inn:m.inn, accOut:acc, lines:lines, otherOut:Math.max(0, m.out-acc), outl:outl, balance:st.balance};
+}
+function sacToks(n){ return siNorm(n).replace(/\b(pcs|pc|nos|no|box|pkt|packet|kg|g|ml|l)\b/g,' ').split(/[^a-z0-9]+/).filter(Boolean); }
+function sacOpts(name){
+  var all = (SI.order||[]).map(function(k){ return SI.items[k].name; }), sug = [];
+  if(name){
+    var t = sacToks(name); 
+    sug = all.map(function(n){ var u = sacToks(n), hit = t.filter(function(x){ return u.indexOf(x)>=0; }).length; return {n:n, s:hit}; })
+      .filter(function(x){ return x.s>0 && x.s>=Math.min(2, t.length); }).sort(function(a,b){ return b.s-a.s; }).slice(0,4);
+  }
+  var o = function(n){ return '<option value="'+siEsc(n)+'">'+siEsc(n)+'</option>'; };
+  return '<option value="">join to a store item…</option>'+(sug.length ? '<optgroup label="Looks like">'+sug.map(function(x){ return o(x.n); }).join('')+'</optgroup><optgroup label="All items">' : '')+all.map(o).join('')+(sug.length?'</optgroup>':'');
+}
+function sacItemHtml(r, f){
+  var oc = Object.keys(r.outl).sort(function(a,b){ return r.outl[b]-r.outl[a]; });
+  var cnt = r.count ? f(Number(r.count.qty)||0) : '–';
+  var bal = r.balance==null ? '<span style="color:#a35c00;font-size:12px;font-weight:600">not counted</span>' : '<b>'+f(r.balance)+'</b>';
+  return '<details style="border-top:1px solid #eee"><summary style="list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center">'
+    + '<span><span data-k="'+siEsc(r.k)+'" onclick="event.preventDefault();event.stopPropagation();ppOpen(this.getAttribute(\'data-k\'))" style="font-weight:600;font-size:14px;text-decoration:underline dotted #bbb">'+siEsc(r.it.name)+'</span>'
+    + '<span style="color:#888;font-size:12px"> · '+siEsc(r.it.unit||'')+'</span></span>'
+    + '<span style="white-space:nowrap;font-size:13px"><span style="color:#888" title="Total sent to outlets since the last count">sent since count</span> <b style="color:'+(r.accOut?'#B03020':'#aaa')+'">'+f(r.accOut)+'</b> &nbsp;→&nbsp; '+bal+'</span></summary>'
+    + '<div style="padding:4px 14px 12px;background:#fbf7f3;font-size:13px">'
+    + '<div style="line-height:1.9">Last count <b>'+cnt+'</b>'+(r.count?' <span style="color:#999">('+String(r.count.entry_date).slice(8,10)+'-'+String(r.count.entry_date).slice(5,7)+')</span>':'')
+    + ' &nbsp;+ bought <b>'+f(r.bought)+'</b> &nbsp;+ stock in <b>'+f(r.inn)+'</b> &nbsp;− kitchen <b>'+f(r.otherOut)+'</b> &nbsp;− outlets <b>'+f(r.accOut)+'</b>'
+    + (r.balance==null ? '' : ' &nbsp;= <b>'+f(r.balance)+'</b>')+'</div>'
+    + (oc.length ? '<div style="margin-top:6px;color:#666">Sent to: '+oc.map(function(o){ return siEsc(o)+' <b>'+f(r.outl[o])+'</b>'; }).join(' · ')+'</div>' : '<div style="margin-top:6px;color:#999">Nothing sent to outlets since the last count.</div>')
+    + (r.lines&&r.lines.length ? '<div style="margin-top:8px;color:#666">Day by day:</div>'+r.lines.slice().sort(function(a,b){ return a.d<b.d?1:-1; }).slice(0,40).map(function(x){ return '<div style="padding:2px 0">'+x.d.slice(8,10)+'-'+x.d.slice(5,7)+' · '+siEsc(x.o)+' · <b>'+f(x.q)+'</b></div>'; }).join('') : '')
+    + '</div></details>';
+}
+SAC.date = '';
+function sacShift(n){ var d = new Date(SAC.date+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); var v = d.toISOString().slice(0,10); if(v>siToday()) return; SAC.date = v; sacRefresh(); }
+function sacSetDate(v){ if(v && v<=siToday()){ SAC.date = v; sacRefresh(); } }
+function sacRefresh(){ siDraw(); }
+function sacHtml(){
+  var f = (typeof siFmt==='function') ? siFmt : function(x){ return x; }, today = siToday();
+  if(!SAC.date) SAC.date = today;
+  var d = SAC.date, dmy = d.slice(8,10)+'-'+d.slice(5,7)+'-'+d.slice(0,4);
+  // this day's filing, per product → outlets
+  var items = {}, unm = {}, outletsSet = {};
+  (ACO.rows||[]).forEach(function(x){
+    if(String(x.date||'').slice(0,10)!==d) return; var q = Number(x.qty)||0; if(!(q>0)) return;
+    var o = x.outlet||'?'; outletsSet[o] = 1;
+    var k = acoMatch(x.product);
+    if(!k){ var n = String(x.product||'').trim(); var u = unm[n] = unm[n] || {qty:0, o:{}}; u.qty += q; u.o[o] = (u.o[o]||0)+q; return; }
+    k = (SI.memberOf && SI.memberOf[k]) || k;
+    var it = items[k] = items[k] || {k:k, tot:0, o:{}}; it.tot += q; it.o[o] = (it.o[o]||0)+q;
+  });
+  var nOut = Object.keys(outletsSet).length;
+  var bar = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><button class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px" onclick="sacClose()">← Back</button>'
+    + '<button class="btn btn-s" style="width:auto;padding:9px 12px;font-size:15px" onclick="sacShift(-1)">‹</button>'
+    + '<input type="date" value="'+d+'" max="'+today+'" onchange="sacSetDate(this.value)" style="padding:8px;border:1px solid #ddd;border-radius:8px;font-size:14px">'
+    + '<button class="btn btn-s" style="width:auto;padding:9px 12px;font-size:15px" onclick="sacShift(1)">›</button>'
+    + (d!==today ? '<button class="btn btn-s" style="width:auto;padding:9px 12px;font-size:13px" onclick="sacSetDate(\''+today+'\')">Today</button>' : '')+'</div>'
+    + '<div style="margin-bottom:10px;font-size:14px">'+(nOut ? '<span style="color:#1a7f4b;font-weight:700">✅ '+dmy+': filed for '+nOut+' outlet'+(nOut>1?'s':'')+'</span>' : '<span style="color:#B03020;font-weight:700">⚠ Nothing filed on '+dmy+'</span>'+(ACO.last?' <span style="color:#888;font-size:12px">(last filed '+siDMY(ACO.last)+')</span>':''))+'</div>'
+    + '<div style="font-size:12px;color:#888;margin-bottom:12px">In store now = last count + bought − kitchen − sent to outlets (every day after the count). Tap a name to change its price.</div>';
+  var list = Object.keys(items).map(function(k){ return items[k]; }).sort(function(a,b){ return b.tot-a.tot; });
+  var rows = list.map(function(r){
+    var c = sacCalc(r.k), all = SI.allItems||{}, it = all[r.k];
+    var oc = Object.keys(r.o).sort(function(a,b){ return r.o[b]-r.o[a]; }).map(function(o){ return '<span style="display:inline-block;background:#f3ece5;border-radius:8px;padding:2px 8px;margin:2px 4px 0 0;font-size:12px">'+siEsc(o)+' <b>'+f(r.o[o])+'</b></span>'; }).join('');
+    var bal = c.balance==null ? '<span style="color:#a35c00;font-size:12px;font-weight:600">not counted</span>' : '<b>'+f(c.balance)+'</b> <span style="color:#999;font-size:12px">left</span>';
+    return '<div style="border-top:1px solid #eee;padding:10px 12px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span data-k="'+siEsc(r.k)+'" onclick="ppOpen(this.getAttribute(\'data-k\'))" style="font-weight:600;font-size:14px;cursor:pointer">'+siEsc(it.name)+' <span style="color:#999;font-weight:400;font-size:12px">'+siEsc(it.unit||'')+'</span></span>'
+      + '<span style="white-space:nowrap;font-size:13px"><b style="color:#B03020">−'+f(r.tot)+'</b> &nbsp;→&nbsp; '+bal+'</span></div><div>'+oc+'</div></div>';
+  }).join('');
+  var sentBox = '<div style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;overflow:hidden;margin-bottom:12px"><div style="padding:10px 12px;background:#f9f5f2;font-weight:700;color:#6B2400">Sent to outlets · '+dmy+'</div>'
+    + (rows || '<div style="padding:16px;text-align:center;color:#999;font-size:13px">Nothing sent this day.</div>')+'</div>';
+  // names filed this day that match nothing yet
+  var un = Object.keys(unm).sort(function(a,b){ return unm[b].qty-unm[a].qty; });
+  var unHtml = un.length ? '<div style="border:1px solid #f0c878;border-radius:12px;background:#fffaf3;overflow:hidden;margin-bottom:12px"><div style="padding:10px 12px;font-weight:700;color:#a35c00">Not matched yet ('+un.length+') — join so the store goes down</div>'
+    + un.map(function(n){ return '<div style="border-top:1px solid #f0d8b0;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:150px;font-size:13px"><b>'+siEsc(n)+'</b> <span style="color:#999">'+Object.keys(unm[n].o).map(function(o){ return siEsc(o)+' '+f(unm[n].o[o]); }).join(' · ')+'</span></span><select data-n="'+siEsc(n)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+sacOpts(n)+'</select></div>'; }).join('')+'</div>' : '';
+  // the whole accessories list, closed by default
+  var seen = {}, groups = [];
+  (typeof ACC_CATALOG!=='undefined' ? ACC_CATALOG : []).forEach(function(g){
+    groups.push({cat:g.cat, rows:g.items.map(function(p){ var k = acoMatch(p.name); if(k) k = (SI.memberOf && SI.memberOf[k]) || k; if(k) seen[k] = 1; return {name:p.name, k:k}; })});
+  });
+  var full = groups.map(function(g){
+    var rws = g.rows.map(function(r){
+      if(r.k) return sacItemHtml(sacCalc(r.k), f);
+      return '<div style="border-top:1px solid #eee;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:140px;font-size:14px;font-weight:600">'+siEsc(r.name)+' <span style="color:#a35c00;font-size:11px;font-weight:600">not in store list</span></span><select data-n="'+siEsc(r.name)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+sacOpts(r.name)+'</select></div>';
+    }).join('');
+    return '<div style="padding:8px 12px;background:#f9f5f2;font-weight:700;color:#6B2400;font-size:13px">'+siEsc(g.cat)+'</div>'+rws;
+  }).join('');
+  var fullBox = full ? '<details style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;overflow:hidden;margin-bottom:12px"><summary style="cursor:pointer;padding:11px 12px;font-weight:700;color:#6B2400">All accessories · what is left in store</summary>'+full+'</details>' : '';
+  var aliases = (ACO.rows||[]).reduce(function(m,x){ var n = String(x.product||'').trim(), kn = siNorm(n); if(n && SI.alias && SI.alias[kn] && !(SI.allItems||{})[kn]) m[kn] = {n:n, to:SI.alias[kn]}; return m; }, {});
+  var al = Object.keys(aliases).map(function(kn){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;margin-top:6px;background:#fbf7f3;border-radius:8px;font-size:13px"><span>“'+siEsc(aliases[kn].n)+'” → <b>'+siEsc(aliases[kn].to)+'</b></span><button data-a="'+siEsc(kn)+'" onclick="sacUndo(this.getAttribute(\'data-a\'))" style="border:1px solid #d9c9bb;background:#fff;color:#B03020;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Undo</button></div>'; }).join('');
+  return bar + sentBox + unHtml + fullBox
+    + (al ? '<details class="card"><summary style="cursor:pointer;font-weight:700;font-size:14px">Joined names ('+Object.keys(aliases).length+') · undo</summary>'+al+'</details>' : '');
+}
+async function sacUndo(kn){
+  if(!confirm('Undo this match? That filed name will show as unmatched again.')) return;
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/store_aliases?alias=eq.'+encodeURIComponent(kn),{method:'DELETE',headers:siHdr('return=representation')});
+    if(!r.ok) throw new Error(await r.text()); var g = await r.json(); if(!g.length) throw new Error('Nothing was changed (permission). Run store_aliases_policy.sql once.');
+    toast('Done'); await siLoad();
+  }catch(e){ alert('Could not undo: '+(e.message||e)); }
+}
+
+// ---------- the "🧷 Store link" sub-tab inside the Accessories tab (next to New entry / History / Manage items) ----------
+function sacBar(){
+  var btn = Array.prototype.filter.call(document.querySelectorAll('#screen button, #screen a, #screen div'), function(b){ return b.children.length===0 && /Manage items/.test(b.textContent||''); })[0];
+  return btn ? btn.parentElement : null;
+}
+function sacShow(){
+  var bar = sacBar(); if(!bar) return; var wrap = bar.parentElement; if(!wrap) return;
+  SAC.open = true;
+  Array.prototype.forEach.call(wrap.children, function(c){ if(c!==bar && c.id!=='sac-body') c.style.display = 'none'; });
+  var box = document.getElementById('sac-body'); if(!box){ box = document.createElement('div'); box.id = 'sac-body'; wrap.appendChild(box); }
+  box.style.display = ''; box.innerHTML = SI.loading ? '<div class="loading"><div class="spinner"></div></div>' : (SI.err ? '<div class="card" style="color:#B03020">Could not load: '+siEsc(SI.err)+'</div>' : sacHtml());
+  var b = document.getElementById('sac-tab'); if(b) b.style.cssText += ';font-weight:700;color:#6B2400;border-bottom:2px solid #6B2400';
+}
+async function sacOpen(){
+  SAC.open = true;
+  var box = document.getElementById('sac-body'); sacShow();
+  if(!SI.items || !Object.keys(SI.items).length || !ACO.since){ try{ SI.quiet = true; await siLoad(); }catch(e){} SI.quiet = false; }
+  sacShow();
+}
+function sacClose(){ if(SI.tab==='acc'){ SI.tab = 'stock'; siDraw(); window.scrollTo && window.scrollTo({top:0}); return; } SAC.open = false; if(typeof setTab==='function') setTab(8); }
+// ---- Store side: a 🧷 Accessories button next to Kitchen requests (opens the same view) ----
+function sacStore(){ SI.tab = 'acc'; SAC.open = false; siDraw(); window.scrollTo && window.scrollTo({top:0}); }
+function sacInject(){
+  if(typeof S==='undefined' || S.mainTab!==8 || document.getElementById('sac-tab')) return;
+  var bar = sacBar(); if(!bar) return;
+  var manage = Array.prototype.filter.call(bar.children, function(c){ return /Manage items/.test(c.textContent||''); })[0];
+  var b = document.createElement('button'); b.id = 'sac-tab'; b.type = 'button'; b.textContent = '🧷 Store link';
+  b.style.cssText = 'padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;color:#555;margin-left:18px';
+  b.onclick = sacOpen; if(manage) bar.insertBefore(b, manage); else bar.appendChild(b);
+}
+if(!window.__sacW1){ window.__sacW1 = 1;
+  try{ new MutationObserver(function(){ sacInject(); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
+  var _setTabSAC = setTab; setTab = function(){ SAC.open = false; if(SI.tab==='acc') SI.tab = 'stock'; return _setTabSAC.apply(this, arguments); };
+  var _siDrawSAC = siDraw; siDraw = function(){
+    if(SI.tab==='acc'){ var el = document.getElementById('screen'); if(!el) return; el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px"><h2 style="color:var(--brown,#6B2400);margin:0 0 12px">🧷 Accessories sent to outlets</h2>'+(SI.loading?'<div class="loading"><div class="spinner"></div></div>':(SI.err?'<div class="card" style="color:#B03020">Could not load: '+siEsc(SI.err)+'</div>':sacHtml()))+'</div>'; return; }
+    if(SAC.open && typeof S!=='undefined' && S.mainTab===8){ sacShow(); return; } return _siDrawSAC.apply(this, arguments); };
+}
+
+if(!window.__sacW3){ window.__sacW3 = 1; var _svDaySAC = svDayHtml;
+svDayHtml = function(){
+  var h = _svDaySAC.apply(this, arguments);
+  return '<div style="margin-bottom:12px"><button onclick="sacStore()" class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px">🧷 Accessories</button></div>'+h;
+}; }
+
 // ── PRODUCT NAMES: see every match (also typed / filed names) + ✨ Auto-match obvious names (each can be undone) ──
 // Paste BELOW store_accessories_view.js. No SQL.
 function pmToks(n){ return siNorm(n).replace(/\b(pcs|pc|nos|no|box|pkt|packet|bottle|bottles)\b/g,' ').split(/[^a-z0-9]+/).filter(Boolean); }
@@ -8870,6 +9028,7 @@ sacHtml = function(){
   var h = _sacHtmlPM.apply(this, arguments), n = pmPlan().length;
   return n ? h.replace('join so the store goes down</div>', 'join so the store goes down <button onclick="pnAuto()" style="margin-left:6px;border:1px solid #d9c9bb;background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">✨ Auto-match ('+n+')</button></div>') : h;
 }; }
+// ═══ END ACCESSORIES FINAL ═══
   // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
 // 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
 // 2) Store → Yesterday: a clear ✏️ button on every row (change the count, or add a missed one), a reason is always asked.
