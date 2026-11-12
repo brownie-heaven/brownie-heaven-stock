@@ -8814,6 +8814,82 @@ getAllPurchaseProducts = function(){
     return c;
   });
 }; }
+  // ── STORE: 🧷 Accessories screen (like Kitchen requests) — what is sent to outlets, and how it reduces the store ──
+// Reads the office's daily accessories filing (Sanjay / Gautham). Nothing new to enter.
+// Paste BELOW store_accessories_out.js and product_profile.js. No SQL.
+function sacCol(){ return 'padding:8px 6px;text-align:right;white-space:nowrap'; }
+function sacRows(){
+  var all = SI.allItems || SI.items || {}, groups = {};
+  Object.keys(SI.byKey||{}).forEach(function(k){
+    var has = (SI.byKey[k]||[]).some(function(e){ return e.source==='accessories' && !e.voided; });
+    if(!has) return; var main = (SI.memberOf && SI.memberOf[k]) || k; groups[main] = 1;
+  });
+  return Object.keys(groups).filter(function(k){ return all[k]; }).map(function(k){
+    var c = siLastCount(k), cd = c ? c.entry_date : null, m = siMoves(k, cd, null), acc = 0, outl = {};
+    pnMembers(k).forEach(function(mk){
+      (SI.byKey[mk]||[]).forEach(function(e){
+        if(e.source!=='accessories' || e.voided) return;
+        if(cd && !(String(e.entry_date)>cd)) return;      // same rule as the store: only AFTER the last count
+        var q = Number(e.qty)||0, o = String(e.note||'').replace(/^sent to /,'') || '?'; acc += q; outl[o] = (outl[o]||0) + q;
+      });
+    });
+    var st = siStock(k);
+    return {k:k, it:all[k], count:c, bought:m.bought, inn:m.inn, accOut:acc, otherOut:Math.max(0, m.out-acc), outl:outl, balance:st.balance};
+  }).sort(function(a,b){ return b.accOut-a.accOut; });
+}
+function sacHtml(){
+  var rows = sacRows(), f = (typeof siFmt==='function') ? siFmt : function(x){ return x; };
+  var head = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px" onclick="siTab(\'stock\')">← Back to store</button></div>'
+    + '<div class="card" style="margin-bottom:12px;font-size:13px;line-height:1.6"><b>How the number is worked out</b><br>'
+    + 'In store now = <b>last count</b> + <b>bought</b> (Purchase) + <b>stock in</b> − <b>sent to kitchen</b> − <b>sent to outlets</b>.<br>'
+    + '“Sent to outlets” comes from the office’s daily accessories filing. Only days <u>after</u> the last count are taken off (the count already includes that day). An item with no count yet is “not counted”, so nothing is taken off it until it is counted.<br>'
+    + 'Managers’ own accessories entries are separate and do not change the store.</div>'
+    + (typeof acoBox==='function' ? acoBox() : '');
+  if(!rows.length) return head + '<div class="card" style="text-align:center;color:#999">No accessories filed since the first store count yet.</div>';
+  var body = rows.map(function(r){
+    var oc = Object.keys(r.outl).sort(function(a,b){ return r.outl[b]-r.outl[a]; });
+    var cnt = r.count ? f(Number(r.count.qty)||0) : '–';
+    var bal = r.balance==null ? '<span style="color:#a35c00;font-size:12px;font-weight:600">not counted</span>' : '<b>'+f(r.balance)+'</b>';
+    return '<details style="border-top:1px solid #eee"><summary style="list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center">'
+      + '<span><span data-k="'+siEsc(r.k)+'" onclick="event.preventDefault();event.stopPropagation();ppOpen(this.getAttribute(\'data-k\'))" style="font-weight:600;font-size:14px;text-decoration:underline dotted #bbb">'+siEsc(r.it.name)+'</span>'
+      + '<span style="color:#888;font-size:12px"> · '+siEsc(r.it.unit||'')+'</span></span>'
+      + '<span style="white-space:nowrap;font-size:13px"><span style="color:#888">sent</span> <b style="color:#B03020">'+f(r.accOut)+'</b> &nbsp;→&nbsp; '+bal+'</span></summary>'
+      + '<div style="padding:4px 14px 12px;background:#fbf7f3;font-size:13px">'
+      + '<div style="line-height:1.9">Last count <b>'+cnt+'</b>'+(r.count?' <span style="color:#999">('+String(r.count.entry_date).slice(8,10)+'-'+String(r.count.entry_date).slice(5,7)+')</span>':'')
+      + ' &nbsp;+ bought <b>'+f(r.bought)+'</b> &nbsp;+ stock in <b>'+f(r.inn)+'</b> &nbsp;− kitchen <b>'+f(r.otherOut)+'</b> &nbsp;− outlets <b>'+f(r.accOut)+'</b>'
+      + (r.balance==null ? '' : ' &nbsp;= <b>'+f(r.balance)+'</b>')+'</div>'
+      + (oc.length ? '<div style="margin-top:6px;color:#666">Sent to: '+oc.map(function(o){ return siEsc(o)+' <b>'+f(r.outl[o])+'</b>'; }).join(' · ')+'</div>' : '')
+      + '</div></details>';
+  }).join('');
+  // names matched by a join (so they can be undone)
+  var aliases = (ACO.rows||[]).reduce(function(m,x){ var n = String(x.product||'').trim(), kn = siNorm(n); if(n && SI.alias && SI.alias[kn] && !(SI.allItems||{})[kn]) m[kn] = {n:n, to:SI.alias[kn]}; return m; }, {});
+  var al = Object.keys(aliases).map(function(kn){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;margin-top:6px;background:#fbf7f3;border-radius:8px;font-size:13px"><span>“'+siEsc(aliases[kn].n)+'” → <b>'+siEsc(aliases[kn].to)+'</b></span><button data-a="'+siEsc(kn)+'" onclick="sacUndo(this.getAttribute(\'data-a\'))" style="border:1px solid #d9c9bb;background:#fff;color:#B03020;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Undo</button></div>'; }).join('');
+  return head + '<div style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;overflow:hidden;margin-bottom:12px"><div style="padding:10px 12px;background:#f9f5f2;font-weight:700;color:#6B2400">Accessories in the store <span style="font-weight:400;color:#888;font-size:12px">· tap a row for the calculation and outlets</span></div>'+body+'</div>'
+    + (al ? '<div class="card"><b style="font-size:14px">Names joined to a store item</b><div style="font-size:12px;color:#888;margin-top:2px">Filed with this name, counted as the item on the right. Undo to separate.</div>'+al+'</div>' : '');
+}
+async function sacUndo(kn){
+  if(!confirm('Undo this match? That filed name will show as unmatched again.')) return;
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/store_aliases?alias=eq.'+encodeURIComponent(kn),{method:'DELETE',headers:siHdr('return=representation')});
+    if(!r.ok) throw new Error(await r.text()); var g = await r.json(); if(!g.length) throw new Error('Nothing was changed (permission). Run store_aliases_policy.sql once.');
+    toast('Done'); await siLoad();
+  }catch(e){ alert('Could not undo: '+(e.message||e)); }
+}
+function sacOpen(){ SI.tab = 'acc'; siDraw(); window.scrollTo && window.scrollTo({top:0}); }
+
+if(!window.__sacW1){ window.__sacW1 = 1; var _siDrawSAC = siDraw;
+siDraw = function(){
+  if(typeof S!=='undefined' && S.mainTab===14) return _siDrawSAC.apply(this, arguments);
+  if(SI.tab!=='acc') return _siDrawSAC.apply(this, arguments);
+  var el = document.getElementById('screen'); if(!el) return;
+  var body = SI.loading ? '<div class="loading"><div class="spinner"></div></div>' : (SI.err ? '<div class="card" style="color:#B03020">Could not load: '+siEsc(SI.err)+'</div>' : sacHtml());
+  el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px"><h2 style="color:var(--brown,#6B2400);margin:0 0 12px">🧷 Accessories — sent to outlets</h2>'+body+'</div>';
+}; }
+if(!window.__sacW2){ window.__sacW2 = 1; var _svDayHtmlSAC = svDayHtml;
+svDayHtml = function(){
+  var h = _svDayHtmlSAC.apply(this, arguments);
+  return '<div style="margin-bottom:12px"><button onclick="sacOpen()" class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px">🧷 Accessories</button></div>'+h;
+}; }
   // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
 // 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
 // 2) Store → Yesterday: a clear ✏️ button on every row (change the count, or add a missed one), a reason is always asked.
