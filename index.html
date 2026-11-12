@@ -8750,7 +8750,12 @@ function puEdit(name){
 if(!window.__ppW6){ window.__ppW6 = 1; var _pvHtmlPP = pvHtml;
 pvHtml = function(){
   var h = _pvHtmlPP.apply(this, arguments);
-  return h.replace(/<button[^>]*onclick="puPick\(\)"[^>]*>[^<]*<\/button>/, '');
+  // keep Stock Value simple: no Price list / Upload buttons, no "prices changed by upload" box, no yellow warning box
+  h = h.replace(/<button[^>]*onclick="puPick\(\)"[^>]*>[^<]*<\/button>/, '').replace(/<button[^>]*onclick="puDownload\(\)"[^>]*>[^<]*<\/button>/, '').replace(/<input id="pu-file"[^>]*>/, '');
+  h = h.replace(/<details style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;margin-bottom:14px">[\s\S]*?<\/details>/, '');
+  var w = h.indexOf('<div style="background:#fff7e6');
+  if(w>=0){ var e = h.indexOf('</div></div>', w); if(e>=0) h = h.slice(0,w)+h.slice(e+12); }
+  return h;
 }; }
 
 // ---------- Purchase screen: tap a product in Purchase History, and a ⓘ next to each product in a new bill ----------
