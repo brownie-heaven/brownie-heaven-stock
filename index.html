@@ -8821,54 +8821,70 @@ getAllPurchaseProducts = function(){
 var SAC = {open:false, in:false};
 var _acoBoxOrig = acoBox;
 acoBox = function(){ return SAC.in ? _acoBoxOrig.apply(this, arguments) : ''; };   // hidden on the Store front page
-function sacCol(){ return 'padding:8px 6px;text-align:right;white-space:nowrap'; }
-function sacRows(){
-  var all = SI.allItems || SI.items || {}, groups = {};
-  Object.keys(SI.byKey||{}).forEach(function(k){
-    var has = (SI.byKey[k]||[]).some(function(e){ return e.source==='accessories' && !e.voided; });
-    if(!has) return; var main = (SI.memberOf && SI.memberOf[k]) || k; groups[main] = 1;
-  });
-  return Object.keys(groups).filter(function(k){ return all[k]; }).map(function(k){
-    var c = siLastCount(k), cd = c ? c.entry_date : null, m = siMoves(k, cd, null), acc = 0, outl = {};
-    pnMembers(k).forEach(function(mk){
-      (SI.byKey[mk]||[]).forEach(function(e){
-        if(e.source!=='accessories' || e.voided) return;
-        if(cd && !(String(e.entry_date)>cd)) return;      // same rule as the store: only AFTER the last count
-        var q = Number(e.qty)||0, o = String(e.note||'').replace(/^sent to /,'') || '?'; acc += q; outl[o] = (outl[o]||0) + q;
-      });
+function sacCalc(k){
+  var all = SI.allItems || SI.items || {}, c = siLastCount(k), cd = c ? c.entry_date : null, m = siMoves(k, cd, null), acc = 0, outl = {};
+  pnMembers(k).forEach(function(mk){
+    (SI.byKey[mk]||[]).forEach(function(e){
+      if(e.source!=='accessories' || e.voided) return;
+      if(cd && !(String(e.entry_date)>cd)) return;      // same rule as the store: only AFTER the last count
+      var q = Number(e.qty)||0, o = String(e.note||'').replace(/^sent to /,'') || '?'; acc += q; outl[o] = (outl[o]||0) + q;
     });
-    var st = siStock(k);
-    return {k:k, it:all[k], count:c, bought:m.bought, inn:m.inn, accOut:acc, otherOut:Math.max(0, m.out-acc), outl:outl, balance:st.balance};
-  }).sort(function(a,b){ return b.accOut-a.accOut; });
+  });
+  var st = siStock(k);
+  return {k:k, it:all[k], count:c, bought:m.bought, inn:m.inn, accOut:acc, otherOut:Math.max(0, m.out-acc), outl:outl, balance:st.balance};
+}
+function sacOpts(){ return '<option value="">join to a store item…</option>'+(SI.order||[]).map(function(k){ return '<option value="'+siEsc(SI.items[k].name)+'">'+siEsc(SI.items[k].name)+'</option>'; }).join(''); }
+function sacItemHtml(r, f){
+  var oc = Object.keys(r.outl).sort(function(a,b){ return r.outl[b]-r.outl[a]; });
+  var cnt = r.count ? f(Number(r.count.qty)||0) : '–';
+  var bal = r.balance==null ? '<span style="color:#a35c00;font-size:12px;font-weight:600">not counted</span>' : '<b>'+f(r.balance)+'</b>';
+  return '<details style="border-top:1px solid #eee"><summary style="list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center">'
+    + '<span><span data-k="'+siEsc(r.k)+'" onclick="event.preventDefault();event.stopPropagation();ppOpen(this.getAttribute(\'data-k\'))" style="font-weight:600;font-size:14px;text-decoration:underline dotted #bbb">'+siEsc(r.it.name)+'</span>'
+    + '<span style="color:#888;font-size:12px"> · '+siEsc(r.it.unit||'')+'</span></span>'
+    + '<span style="white-space:nowrap;font-size:13px"><span style="color:#888">sent</span> <b style="color:'+(r.accOut?'#B03020':'#aaa')+'">'+f(r.accOut)+'</b> &nbsp;→&nbsp; '+bal+'</span></summary>'
+    + '<div style="padding:4px 14px 12px;background:#fbf7f3;font-size:13px">'
+    + '<div style="line-height:1.9">Last count <b>'+cnt+'</b>'+(r.count?' <span style="color:#999">('+String(r.count.entry_date).slice(8,10)+'-'+String(r.count.entry_date).slice(5,7)+')</span>':'')
+    + ' &nbsp;+ bought <b>'+f(r.bought)+'</b> &nbsp;+ stock in <b>'+f(r.inn)+'</b> &nbsp;− kitchen <b>'+f(r.otherOut)+'</b> &nbsp;− outlets <b>'+f(r.accOut)+'</b>'
+    + (r.balance==null ? '' : ' &nbsp;= <b>'+f(r.balance)+'</b>')+'</div>'
+    + (oc.length ? '<div style="margin-top:6px;color:#666">Sent to: '+oc.map(function(o){ return siEsc(o)+' <b>'+f(r.outl[o])+'</b>'; }).join(' · ')+'</div>' : '<div style="margin-top:6px;color:#999">Nothing sent to outlets since the last count.</div>')
+    + '</div></details>';
 }
 function sacHtml(){
-  var rows = sacRows(), f = (typeof siFmt==='function') ? siFmt : function(x){ return x; };
+  var f = (typeof siFmt==='function') ? siFmt : function(x){ return x; }, opts = sacOpts();
+  var nOut = Object.keys(ACO.todayOutlets||{}).length;
+  var st = ACO.today ? '<span style="color:#1a7f4b;font-weight:700">✅ Filed today: '+ACO.today+' lines for '+nOut+' outlet'+(nOut>1?'s':'')+'</span>'
+    : '<span style="color:#B03020;font-weight:700">⚠ Not filed today yet</span>'+(ACO.last?' <span style="color:#888">(last filed '+siDMY(ACO.last)+')</span>':'');
   var head = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px" onclick="sacClose()">← Back</button></div>'
-    + '<div class="card" style="margin-bottom:12px;font-size:13px;line-height:1.6"><b>How the number is worked out</b><br>'
+    + '<div class="card" style="margin-bottom:12px;font-size:13px;line-height:1.6"><div style="margin-bottom:6px">'+st+'</div><b>How the number is worked out</b><br>'
     + 'In store now = <b>last count</b> + <b>bought</b> (Purchase) + <b>stock in</b> − <b>sent to kitchen</b> − <b>sent to outlets</b>.<br>'
-    + '“Sent to outlets” comes from the office’s daily accessories filing. Only days <u>after</u> the last count are taken off (the count already includes that day). An item with no count yet is “not counted”, so nothing is taken off it until it is counted.<br>'
-    + 'Managers’ own accessories entries are separate and do not change the store.</div>'
-    + (function(){ SAC.in = true; try{ return acoBox(); } finally { SAC.in = false; } })();
-  if(!rows.length) return head + '<div class="card" style="text-align:center;color:#999">No accessories filed since the first store count yet.</div>';
-  var body = rows.map(function(r){
-    var oc = Object.keys(r.outl).sort(function(a,b){ return r.outl[b]-r.outl[a]; });
-    var cnt = r.count ? f(Number(r.count.qty)||0) : '–';
-    var bal = r.balance==null ? '<span style="color:#a35c00;font-size:12px;font-weight:600">not counted</span>' : '<b>'+f(r.balance)+'</b>';
-    return '<details style="border-top:1px solid #eee"><summary style="list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center">'
-      + '<span><span data-k="'+siEsc(r.k)+'" onclick="event.preventDefault();event.stopPropagation();ppOpen(this.getAttribute(\'data-k\'))" style="font-weight:600;font-size:14px;text-decoration:underline dotted #bbb">'+siEsc(r.it.name)+'</span>'
-      + '<span style="color:#888;font-size:12px"> · '+siEsc(r.it.unit||'')+'</span></span>'
-      + '<span style="white-space:nowrap;font-size:13px"><span style="color:#888">sent</span> <b style="color:#B03020">'+f(r.accOut)+'</b> &nbsp;→&nbsp; '+bal+'</span></summary>'
-      + '<div style="padding:4px 14px 12px;background:#fbf7f3;font-size:13px">'
-      + '<div style="line-height:1.9">Last count <b>'+cnt+'</b>'+(r.count?' <span style="color:#999">('+String(r.count.entry_date).slice(8,10)+'-'+String(r.count.entry_date).slice(5,7)+')</span>':'')
-      + ' &nbsp;+ bought <b>'+f(r.bought)+'</b> &nbsp;+ stock in <b>'+f(r.inn)+'</b> &nbsp;− kitchen <b>'+f(r.otherOut)+'</b> &nbsp;− outlets <b>'+f(r.accOut)+'</b>'
-      + (r.balance==null ? '' : ' &nbsp;= <b>'+f(r.balance)+'</b>')+'</div>'
-      + (oc.length ? '<div style="margin-top:6px;color:#666">Sent to: '+oc.map(function(o){ return siEsc(o)+' <b>'+f(r.outl[o])+'</b>'; }).join(' · ')+'</div>' : '')
-      + '</div></details>';
+    + '“Sent to outlets” is the office’s daily accessories filing. Only days <u>after</u> the last count are taken off (the count already includes that day). An item with no count yet shows “not counted”, so nothing is taken off until it is counted.<br>'
+    + 'Managers’ own accessories entries are separate and never change the store.</div>';
+  var seen = {}, groups = [];
+  (typeof ACC_CATALOG!=='undefined' ? ACC_CATALOG : []).forEach(function(g){
+    var rows = g.items.map(function(p){ var k = acoMatch(p.name); if(k) k = (SI.memberOf && SI.memberOf[k]) || k; if(k) seen[k] = 1; return {name:p.name, k:k}; });
+    groups.push({cat:g.cat, rows:rows});
+  });
+  // accessories that were filed and matched to a store item, but are not in the catalog
+  var extra = Object.keys(SI.byKey||{}).filter(function(k){ return (SI.byKey[k]||[]).some(function(e){ return e.source==='accessories' && !e.voided; }); })
+    .map(function(k){ return (SI.memberOf && SI.memberOf[k]) || k; }).filter(function(k, i, a){ return a.indexOf(k)===i && !seen[k] && (SI.allItems||{})[k]; });
+  if(extra.length) groups.push({cat:'Other filed accessories', rows:extra.map(function(k){ return {name:SI.allItems[k].name, k:k}; })});
+  var body = groups.map(function(g){
+    var miss = 0;
+    var rows = g.rows.map(function(r){
+      if(r.k){ return sacItemHtml(sacCalc(r.k), f); }
+      miss++;
+      return '<div style="border-top:1px solid #eee;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:140px;font-size:14px;font-weight:600">'+siEsc(r.name)+' <span style="color:#a35c00;font-size:11px;font-weight:600">not in store list</span></span>'
+        + '<select data-n="'+siEsc(r.name)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+opts+'</select></div>';
+    }).join('');
+    return '<div style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;overflow:hidden;margin-bottom:12px"><div style="padding:10px 12px;background:#f9f5f2;font-weight:700;color:#6B2400">'+siEsc(g.cat)+(miss?' <span style="font-weight:400;color:#a35c00;font-size:12px">· '+miss+' to join</span>':'')+'</div>'+rows+'</div>';
   }).join('');
-  // names matched by a join (so they can be undone)
+  // filed names that match nothing (not in the catalog, not in the store)
+  var un = Object.keys(ACO.unmatched||{}).sort(function(a,b){ return ACO.unmatched[b].qty-ACO.unmatched[a].qty; });
+  var unHtml = un.length ? '<div style="border:1px solid #f0c878;border-radius:12px;background:#fffaf3;overflow:hidden;margin-bottom:12px"><div style="padding:10px 12px;font-weight:700;color:#a35c00">Filed by the office but not matched yet ('+un.length+') — their stock is NOT reduced until joined</div>'
+    + un.map(function(n){ return '<div style="border-top:1px solid #f0d8b0;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:140px;font-size:13px"><b>'+siEsc(n)+'</b> <span style="color:#999">sent '+ACO.unmatched[n].qty+'</span></span><select data-n="'+siEsc(n)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+opts+'</select></div>'; }).join('')+'</div>' : '';
   var aliases = (ACO.rows||[]).reduce(function(m,x){ var n = String(x.product||'').trim(), kn = siNorm(n); if(n && SI.alias && SI.alias[kn] && !(SI.allItems||{})[kn]) m[kn] = {n:n, to:SI.alias[kn]}; return m; }, {});
   var al = Object.keys(aliases).map(function(kn){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;margin-top:6px;background:#fbf7f3;border-radius:8px;font-size:13px"><span>“'+siEsc(aliases[kn].n)+'” → <b>'+siEsc(aliases[kn].to)+'</b></span><button data-a="'+siEsc(kn)+'" onclick="sacUndo(this.getAttribute(\'data-a\'))" style="border:1px solid #d9c9bb;background:#fff;color:#B03020;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Undo</button></div>'; }).join('');
-  return head + '<div style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;overflow:hidden;margin-bottom:12px"><div style="padding:10px 12px;background:#f9f5f2;font-weight:700;color:#6B2400">Accessories in the store <span style="font-weight:400;color:#888;font-size:12px">· tap a row for the calculation and outlets</span></div>'+body+'</div>'
+  return head + (body || '<div class="card" style="text-align:center;color:#999">No accessories list found.</div>') + unHtml
     + (al ? '<div class="card"><b style="font-size:14px">Names joined to a store item</b><div style="font-size:12px;color:#888;margin-top:2px">Filed with this name, counted as the item on the right. Undo to separate.</div>'+al+'</div>' : '');
 }
 async function sacUndo(kn){
