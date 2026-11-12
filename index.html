@@ -8814,7 +8814,7 @@ getAllPurchaseProducts = function(){
     return c;
   });
 }; }
- // ── ACCESSORIES TAB: new "🧷 Store link" view — what is sent to outlets, and how it reduces the store ──
+// ── ACCESSORIES TAB: new "🧷 Store link" view — what is sent to outlets, and how it reduces the store ──
 // The "Accessories sent to outlets" box is taken OFF the Store front page and lives here instead.
 // Reads the office's daily accessories filing (Sanjay / Gautham). Nothing new to enter.
 // Paste BELOW store_accessories_out.js and product_profile.js. No SQL.
@@ -8833,7 +8833,17 @@ function sacCalc(k){
   var st = siStock(k);
   return {k:k, it:all[k], count:c, bought:m.bought, inn:m.inn, accOut:acc, otherOut:Math.max(0, m.out-acc), outl:outl, balance:st.balance};
 }
-function sacOpts(){ return '<option value="">join to a store item…</option>'+(SI.order||[]).map(function(k){ return '<option value="'+siEsc(SI.items[k].name)+'">'+siEsc(SI.items[k].name)+'</option>'; }).join(''); }
+function sacToks(n){ return siNorm(n).replace(/\b(pcs|pc|nos|no|box|pkt|packet|kg|g|ml|l)\b/g,' ').split(/[^a-z0-9]+/).filter(Boolean); }
+function sacOpts(name){
+  var all = (SI.order||[]).map(function(k){ return SI.items[k].name; }), sug = [];
+  if(name){
+    var t = sacToks(name); 
+    sug = all.map(function(n){ var u = sacToks(n), hit = t.filter(function(x){ return u.indexOf(x)>=0; }).length; return {n:n, s:hit}; })
+      .filter(function(x){ return x.s>0 && x.s>=Math.min(2, t.length); }).sort(function(a,b){ return b.s-a.s; }).slice(0,4);
+  }
+  var o = function(n){ return '<option value="'+siEsc(n)+'">'+siEsc(n)+'</option>'; };
+  return '<option value="">join to a store item…</option>'+(sug.length ? '<optgroup label="Looks like">'+sug.map(function(x){ return o(x.n); }).join('')+'</optgroup><optgroup label="All items">' : '')+all.map(o).join('')+(sug.length?'</optgroup>':'');
+}
 function sacItemHtml(r, f){
   var oc = Object.keys(r.outl).sort(function(a,b){ return r.outl[b]-r.outl[a]; });
   var cnt = r.count ? f(Number(r.count.qty)||0) : '–';
@@ -8850,7 +8860,7 @@ function sacItemHtml(r, f){
     + '</div></details>';
 }
 function sacHtml(){
-  var f = (typeof siFmt==='function') ? siFmt : function(x){ return x; }, opts = sacOpts();
+  var f = (typeof siFmt==='function') ? siFmt : function(x){ return x; };
   var nOut = Object.keys(ACO.todayOutlets||{}).length;
   var st = ACO.today ? '<span style="color:#1a7f4b;font-weight:700">✅ Filed today: '+ACO.today+' lines for '+nOut+' outlet'+(nOut>1?'s':'')+'</span>'
     : '<span style="color:#B03020;font-weight:700">⚠ Not filed today yet</span>'+(ACO.last?' <span style="color:#888">(last filed '+siDMY(ACO.last)+')</span>':'');
@@ -8874,14 +8884,14 @@ function sacHtml(){
       if(r.k){ return sacItemHtml(sacCalc(r.k), f); }
       miss++;
       return '<div style="border-top:1px solid #eee;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:140px;font-size:14px;font-weight:600">'+siEsc(r.name)+' <span style="color:#a35c00;font-size:11px;font-weight:600">not in store list</span></span>'
-        + '<select data-n="'+siEsc(r.name)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+opts+'</select></div>';
+        + '<select data-n="'+siEsc(r.name)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+sacOpts(r.name)+'</select></div>';
     }).join('');
     return '<div style="border:1px solid #e6ddd5;border-radius:12px;background:#fff;overflow:hidden;margin-bottom:12px"><div style="padding:10px 12px;background:#f9f5f2;font-weight:700;color:#6B2400">'+siEsc(g.cat)+(miss?' <span style="font-weight:400;color:#a35c00;font-size:12px">· '+miss+' to join</span>':'')+'</div>'+rows+'</div>';
   }).join('');
   // filed names that match nothing (not in the catalog, not in the store)
   var un = Object.keys(ACO.unmatched||{}).sort(function(a,b){ return ACO.unmatched[b].qty-ACO.unmatched[a].qty; });
   var unHtml = un.length ? '<div style="border:1px solid #f0c878;border-radius:12px;background:#fffaf3;overflow:hidden;margin-bottom:12px"><div style="padding:10px 12px;font-weight:700;color:#a35c00">Filed by the office but not matched yet ('+un.length+') — their stock is NOT reduced until joined</div>'
-    + un.map(function(n){ return '<div style="border-top:1px solid #f0d8b0;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:140px;font-size:13px"><b>'+siEsc(n)+'</b> <span style="color:#999">sent '+ACO.unmatched[n].qty+'</span></span><select data-n="'+siEsc(n)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+opts+'</select></div>'; }).join('')+'</div>' : '';
+    + un.map(function(n){ return '<div style="border-top:1px solid #f0d8b0;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:140px;font-size:13px"><b>'+siEsc(n)+'</b> <span style="color:#999">sent '+ACO.unmatched[n].qty+'</span></span><select data-n="'+siEsc(n)+'" onchange="acoMatchSel(this)" style="max-width:220px;padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px">'+sacOpts(n)+'</select></div>'; }).join('')+'</div>' : '';
   var aliases = (ACO.rows||[]).reduce(function(m,x){ var n = String(x.product||'').trim(), kn = siNorm(n); if(n && SI.alias && SI.alias[kn] && !(SI.allItems||{})[kn]) m[kn] = {n:n, to:SI.alias[kn]}; return m; }, {});
   var al = Object.keys(aliases).map(function(kn){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;margin-top:6px;background:#fbf7f3;border-radius:8px;font-size:13px"><span>“'+siEsc(aliases[kn].n)+'” → <b>'+siEsc(aliases[kn].to)+'</b></span><button data-a="'+siEsc(kn)+'" onclick="sacUndo(this.getAttribute(\'data-a\'))" style="border:1px solid #d9c9bb;background:#fff;color:#B03020;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Undo</button></div>'; }).join('');
   return head + (body || '<div class="card" style="text-align:center;color:#999">No accessories list found.</div>') + unHtml
