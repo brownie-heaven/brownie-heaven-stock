@@ -8596,7 +8596,7 @@ async function puEditSave(btn){
   var o = document.getElementById('pu-one'); if(o) o.remove();
   await puSave();
 }
-  // ── PRODUCT PROFILE: search any product → see its profile → change price + GST (saved for good, shows in Stock Value ₹) ──
+ // ── PRODUCT PROFILE: search any product → see its profile → change price + GST (saved for good, shows in Stock Value ₹) ──
 // Tap any product name (Store list, Stock Value, or the "Find any product" box on the Store) to open its profile.
 // The profile shows: vendor, unit, price in use, GST %, stock in store, last purchase, names joined to it, hidden status.
 // It also lets you SEPARATE a wrong join / match (and show a hidden item) from one place.
@@ -8613,8 +8613,10 @@ function ppInfo(k){
   var buy = ppRateOf(k), ov = (PV.ov||{})[pvKey(it.name)] || null;
   var base = buy ? buy.rate : null;
   var rate = (ov && ov.rate!=null) ? Number(ov.rate) : base;
-  var gst = (ov && ov.gst!=null && ov.gst!=='') ? Number(ov.gst) : null;
-  return {k:k, it:it, buy:buy, ov:ov, rate:rate, gst:gst, src:(ov&&ov.rate!=null)?'changed in app':(buy?'latest purchase':'no price yet')};
+  var gst = (ov && ov.gst!=null && ov.gst!=='') ? Number(ov.gst) : null, gsrc = gst!=null ? 'changed in app' : '';
+  if(gst==null && buy && buy.gst!=null){ gst = buy.gst; gsrc = 'from purchase'; }
+  if(gst==null){ try{ var cp = getAllPurchaseProducts().filter(function(x){ return siNorm(x.name)===k; })[0]; if(cp && cp.gst!=null && cp.gst!==''){ gst = Number(cp.gst); gsrc = 'from product list'; } }catch(e){} }
+  return {k:k, it:it, buy:buy, ov:ov, rate:rate, gst:gst, gsrc:gsrc, src:(ov&&ov.rate!=null)?'changed in app':(buy?'latest purchase':'no price yet')};
 }
 // ---------- the profile ----------
 async function ppOpen(k){
@@ -8652,7 +8654,7 @@ function ppShow(k){
     + ppRow('Category', pvEsc(it.category||'—'))
     + ppRow('Unit', pvEsc(it.unit || (buy&&buy.unit) || '—'))
     + ppRow('Price in use (before GST)', p.rate!=null ? '₹'+p.rate+' <span style="font-weight:400;color:#888;font-size:12px">· '+p.src+'</span>' : '<span style="color:#B03020">no price yet</span>')
-    + ppRow('GST', p.gst!=null ? p.gst+'%' : '<span style="color:#888;font-weight:400">not set</span>')
+    + ppRow('GST', p.gst!=null ? p.gst+'% <span style="font-weight:400;color:#888;font-size:12px">· '+p.gsrc+'</span>' : '<span style="color:#888;font-weight:400">not set</span>')
     + (p.rate!=null && p.gst!=null ? ppRow('Price with GST', '₹'+(Math.round(p.rate*(1+p.gst/100)*100)/100)) : '')
     + ppRow('Last purchase', buy ? '₹'+buy.rate+' on '+(buy.date?buy.date.slice(8,10)+'-'+buy.date.slice(5,7)+'-'+buy.date.slice(0,4):'') : '—')
     + ppRow('In store now', st.balance==null ? '<span style="color:#a35c00;font-weight:400">not counted yet</span>' : (typeof siFmt==='function'?siFmt(st.balance):st.balance)+' '+pvEsc(it.unit||''))
@@ -8749,6 +8751,68 @@ if(!window.__ppW6){ window.__ppW6 = 1; var _pvHtmlPP = pvHtml;
 pvHtml = function(){
   var h = _pvHtmlPP.apply(this, arguments);
   return h.replace(/<button[^>]*onclick="puPick\(\)"[^>]*>[^<]*<\/button>/, '');
+}; }
+
+// ---------- Purchase screen: tap a product in Purchase History, and a ⓘ next to each product in a new bill ----------
+function ppKeyByName(name){
+  var all = SI.allItems || SI.items || {}, k = siNorm(name);
+  if(all[k]) return k;
+  var pk = pvKey(name); return Object.keys(all).filter(function(x){ return pvKey(all[x].name)===pk; })[0] || null;
+}
+async function ppOpenByName(name){
+  if(!SI.allItems || !Object.keys(SI.allItems).length){ try{ await siLoad(); }catch(e){} }
+  var k = ppKeyByName(name);
+  if(k) ppOpen(k); else alert('“'+name+'” is not in the Store list yet, so it has no profile.');
+}
+if(!window.__ppW7 && typeof loadPurchaseHistory==='function'){ window.__ppW7 = 1; var _lphPP = loadPurchaseHistory;
+loadPurchaseHistory = async function(){
+  var r = await _lphPP.apply(this, arguments);
+  try{
+    document.querySelectorAll('#pur-history tbody tr').forEach(function(tr){
+      var td = tr.cells[0]; if(!td || td.getAttribute('data-pp')) return;
+      var sp = td.querySelector('span'), name = (sp ? td.textContent.replace(sp.textContent,'') : td.textContent).trim(); if(!name) return;
+      td.setAttribute('data-pp','1'); td.setAttribute('data-name', name); td.style.cursor = 'pointer';
+      td.setAttribute('onclick', "ppOpenByName(this.getAttribute('data-name'))"); td.title = 'Open the product profile';
+      td.style.textDecoration = 'underline dotted #bbb';
+    });
+  }catch(e){}
+  return r;
+}; }
+if(!window.__ppW8 && typeof renderPurchaseRows==='function'){ window.__ppW8 = 1; var _rprPP = renderPurchaseRows;
+renderPurchaseRows = function(){
+  var r = _rprPP.apply(this, arguments);
+  try{
+    (typeof purchaseRows!=='undefined' ? purchaseRows : []).forEach(function(row){
+      if(!row.product) return; var inp = document.getElementById('psearch-'+row.id); if(!inp || inp.parentNode.querySelector('.pp-i')) return;
+      var b = document.createElement('button'); b.className = 'pp-i'; b.type = 'button'; b.textContent = 'ⓘ Profile'; b.setAttribute('data-name', row.product);
+      b.style.cssText = 'margin-top:3px;border:none;background:none;color:#1a56a0;font-size:11px;cursor:pointer;padding:0';
+      b.onclick = function(){ ppOpenByName(this.getAttribute('data-name')); }; inp.parentNode.insertBefore(b, inp.nextSibling);
+    });
+  }catch(e){}
+  return r;
+}; }
+
+// ---------- new bills prefill the price/GST saved in the profile (the Purchase screen's own list is not edited) ----------
+PP.ovLoaded = false;
+async function ppLoadOv(){
+  try{
+    var rows = await sbGetAll('price_overrides','?select=*'); PV.ov = PV.ov || {};
+    rows.forEach(function(o){ PV.ov[o.item_key] = o; });
+    PP.ovLoaded = true;
+  }catch(e){}
+}
+if(!window.__ppW9 && typeof getAllPurchaseProducts==='function'){ window.__ppW9 = 1; var _gappPP = getAllPurchaseProducts;
+getAllPurchaseProducts = function(){
+  var list = _gappPP.apply(this, arguments);
+  if(!PP.ovLoaded && !PP.ovLoading){ PP.ovLoading = true; ppLoadOv().then(function(){ PP.ovLoading = false; }); }
+  var ov = PV.ov || {};
+  return list.map(function(p){
+    var o = ov[pvKey(p.name)]; if(!o) return p;
+    var c = Object.assign({}, p);
+    if(o.rate!=null) c.rate = Number(o.rate);
+    if(o.gst!=null && o.gst!=='') c.gst = Number(o.gst);
+    return c;
+  });
 }; }
   // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
 // 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
