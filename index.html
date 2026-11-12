@@ -8596,6 +8596,160 @@ async function puEditSave(btn){
   var o = document.getElementById('pu-one'); if(o) o.remove();
   await puSave();
 }
+  // ── PRODUCT PROFILE: search any product → see its profile → change price + GST (saved for good, shows in Stock Value ₹) ──
+// Tap any product name (Store list, Stock Value, or the "Find any product" box on the Store) to open its profile.
+// The profile shows: vendor, unit, price in use, GST %, stock in store, last purchase, names joined to it, hidden status.
+// It also lets you SEPARATE a wrong join / match (and show a hidden item) from one place.
+// Needs stock_value.js + stock_price_upload.js + price_overrides_gst.sql. Paste BELOW stock_price_upload.js.
+var PP = {q:'', ledger:[], rate:{}};
+
+function ppRateOf(k){   // newest purchase (price>0) across the item and every name joined to it
+  var best = null;
+  pnMembers(k).forEach(function(m){ var r = PP.rate[pvKey((SI.allItems[m]||{}).name||m)]; if(r && (!best || String(r.date)>String(best.date))) best = r; });
+  return best;
+}
+function ppInfo(k){
+  var it = (SI.allItems||SI.items)[k]; if(!it) return null;
+  var buy = ppRateOf(k), ov = (PV.ov||{})[pvKey(it.name)] || null;
+  var base = buy ? buy.rate : null;
+  var rate = (ov && ov.rate!=null) ? Number(ov.rate) : base;
+  var gst = (ov && ov.gst!=null && ov.gst!=='') ? Number(ov.gst) : null;
+  return {k:k, it:it, buy:buy, ov:ov, rate:rate, gst:gst, src:(ov&&ov.rate!=null)?'changed in app':(buy?'latest purchase':'no price yet')};
+}
+// ---------- the profile ----------
+async function ppOpen(k){
+  if(!PP.ledger.length && !PP.loading && !PP.err){ await ppLoadQuiet(); }
+  ppShow(k);
+}
+async function ppLoadQuiet(){
+  try{
+    if(typeof pvLoad==='function' && !PV.data) await pvLoad();
+    var rows = await sbGetAll('purchase_ledger','?select=*&order=date.desc'); PP.ledger = rows; PP.rate = {};
+    rows.forEach(function(r){ var k = pvKey(r.product); if(!k || PP.rate[k]) return; var rt = Number(r.rate); if(!(rt>0)) return;
+      PP.rate[k] = {rate:rt, unit:r.unit||'', date:String(r.date||'').slice(0,10), vendor:r.agency||r.vendor||r.supplier||r.vendor_name||'', gst:(r.gst_percent!=null&&r.gst_percent!=='')?Number(r.gst_percent):null}; });
+  }catch(e){}
+}
+function ppRow(label, val){ return '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #f0e8e0;font-size:14px"><span style="color:#777">'+label+'</span><b style="text-align:right">'+val+'</b></div>'; }
+function ppShow(k){
+  var p = ppInfo(k); if(!p){ alert('Product not found.'); return; }
+  var all = SI.allItems || SI.items, it = p.it, old = document.getElementById('pp-ov'); if(old) old.remove();
+  var main = SI.memberOf && SI.memberOf[k] ? all[SI.memberOf[k]] : null;
+  var st = (typeof siStock==='function') ? siStock(main ? SI.memberOf[k] : k) : {balance:null};
+  var ovl = document.createElement('div'); ovl.id = 'pp-ov'; ovl.setAttribute('data-k', k);
+  ovl.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto';
+  var join = '';
+  if(main) join += '<div style="margin-top:10px;padding:10px 12px;background:#fff4e0;border-radius:10px;font-size:13px">⚠ This name is <b>joined into “'+pvEsc(main.name)+'”</b>, so it does not show on its own in the Store. <button data-a="'+pvEsc(k)+'" onclick="ppUnmatch(this.getAttribute(\'data-a\'))" style="margin-left:6px;border:1px solid #d9c9bb;background:#fff;color:#B03020;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Separate again</button></div>';
+  var names = Object.keys(SI.alias||{}).filter(function(ka){ return siNorm(SI.alias[ka])===k && ka!==k; });
+  if(names.length) join += '<div style="margin-top:10px;font-size:13px;color:#777">Names joined or matched to this product:</div>'+names.map(function(ka){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;margin-top:6px;background:#fbf7f3;border-radius:8px;font-size:14px"><span>'+pvEsc(all[ka]?all[ka].name:ka)+(all[ka]?'':' <span style="color:#999;font-size:11px">(name from a filing or request)</span>')+'</span><button data-a="'+pvEsc(ka)+'" onclick="ppUnmatch(this.getAttribute(\'data-a\'))" style="border:1px solid #d9c9bb;background:#fff;color:#B03020;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Undo</button></div>'; }).join('');
+  if(SI.hidden && SI.hidden[k]) join += '<div style="margin-top:10px;padding:10px 12px;background:#fff4e0;border-radius:10px;font-size:13px">⚠ Hidden from the Store list. <button data-a="'+pvEsc(k)+'" onclick="ppUnhide(this.getAttribute(\'data-a\'))" style="margin-left:6px;border:1px solid #d9c9bb;background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Show again</button></div>';
+  var buy = p.buy, inp = 'width:100%;box-sizing:border-box;padding:12px;border:1px solid #ccc;border-radius:10px;font-size:16px;margin-top:4px';
+  var gstDef = p.gst!=null ? p.gst : (buy && buy.gst!=null ? buy.gst : '');
+  ovl.innerHTML = '<div style="background:#fff;border-radius:16px;padding:18px;width:100%;max-width:520px;margin:auto">'
+    + '<div style="display:flex;justify-content:space-between;gap:10px"><div><div style="font-weight:800;font-size:19px;color:#6B2400">'+pvEsc(it.name)+'</div><div style="font-size:12px;color:#888">Product profile</div></div><button onclick="ppClose()" style="border:none;background:none;font-size:24px;cursor:pointer;color:#888">✕</button></div>'
+    + '<div style="margin-top:8px">'
+    + ppRow('Vendor / agency', pvEsc(it.agency || (buy&&buy.vendor) || '—'))
+    + ppRow('Category', pvEsc(it.category||'—'))
+    + ppRow('Unit', pvEsc(it.unit || (buy&&buy.unit) || '—'))
+    + ppRow('Price in use (before GST)', p.rate!=null ? '₹'+p.rate+' <span style="font-weight:400;color:#888;font-size:12px">· '+p.src+'</span>' : '<span style="color:#B03020">no price yet</span>')
+    + ppRow('GST', p.gst!=null ? p.gst+'%' : '<span style="color:#888;font-weight:400">not set</span>')
+    + (p.rate!=null && p.gst!=null ? ppRow('Price with GST', '₹'+(Math.round(p.rate*(1+p.gst/100)*100)/100)) : '')
+    + ppRow('Last purchase', buy ? '₹'+buy.rate+' on '+(buy.date?buy.date.slice(8,10)+'-'+buy.date.slice(5,7)+'-'+buy.date.slice(0,4):'') : '—')
+    + ppRow('In store now', st.balance==null ? '<span style="color:#a35c00;font-weight:400">not counted yet</span>' : (typeof siFmt==='function'?siFmt(st.balance):st.balance)+' '+pvEsc(it.unit||''))
+    + '</div>' + join
+    + '<div style="margin-top:16px;padding:14px;border:1.5px solid #6B2400;border-radius:14px;background:#fffaf5"><div style="font-weight:700;margin-bottom:6px">✏️ Change price and GST</div>'
+    + '<div style="font-size:13px;color:#666">New price (₹, before GST)<input id="pp-rate" type="number" inputmode="decimal" min="0" step="any" value="'+(p.rate!=null?p.rate:'')+'" style="'+inp+'"></div>'
+    + '<div style="font-size:13px;color:#666;margin-top:10px">GST %<input id="pp-gst" type="number" inputmode="decimal" min="0" max="100" step="any" value="'+gstDef+'" style="'+inp+'"></div>'
+    + '<div style="font-size:13px;color:#666;margin-top:10px">Reason <span style="color:#B03020">*</span><input id="pp-why" type="text" placeholder="e.g. rate on the vendor bill" autocomplete="off" style="'+inp+'"></div>'
+    + '<div id="pp-err" style="color:#B03020;font-size:13px;min-height:18px;margin-top:6px"></div>'
+    + '<button class="btn btn-p" style="width:100%;padding:13px;font-size:15px" onclick="ppSave()">💾 Save for good</button>'
+    + (p.ov ? '<button class="btn btn-s" style="width:100%;padding:11px;margin-top:8px;font-size:13px" onclick="ppBack()">Back to the purchase rate</button>' : '')
+    + '<div style="font-size:12px;color:#888;margin-top:8px">Saved permanently and used in Stock Value ₹. Every change is logged (who, when, why). Purchase entries are never touched.</div></div></div>';
+  document.body.appendChild(ovl);
+}
+function ppClose(){ var o = document.getElementById('pp-ov'); if(o) o.remove(); }
+async function ppSave(){
+  var ovl = document.getElementById('pp-ov'); if(!ovl) return; var k = ovl.getAttribute('data-k'), p = ppInfo(k), err = document.getElementById('pp-err');
+  var rv = document.getElementById('pp-rate').value, gv = String(document.getElementById('pp-gst').value||'').trim(), why = String(document.getElementById('pp-why').value||'').trim();
+  var rate = rv==='' ? null : Number(rv), gst = gv==='' ? null : Number(gv);
+  if(rate==null && gst==null){ err.textContent = 'Type a price or a GST %.'; return; }
+  if(rate!=null && !(rate>0)){ err.textContent = 'Price must be above 0.'; return; }
+  if(gst!=null && (isNaN(gst)||gst<0||gst>100)){ err.textContent = 'GST % must be between 0 and 100.'; return; }
+  if(!why){ err.textContent = 'Please give a reason.'; return; }
+  if(typeof puSave!=='function'){ alert('The price editor is not live yet (stock_price_upload.js).'); return; }
+  if(!confirm('Save for good?\n\n'+p.it.name+'\nPrice: '+(rate==null?'(unchanged)':'₹'+rate)+'\nGST: '+(gst==null?'(not set)':gst+'%')+'\nReason: '+why)) return;
+  var ov = p.ov || null;
+  var newRate = rate!=null ? rate : (ov&&ov.rate!=null ? Number(ov.rate) : null);
+  PV.up = {changes:[{key:pvKey(p.it.name), name:p.it.name, now:p.rate, next:newRate, gst:gst, gstNow:p.gst, unit:(ov&&ov.unit)||p.it.unit||(p.buy&&p.buy.unit)||''}], skipped:[], reason:why};
+  ppClose(); await puSave(); await ppLoadQuiet(); 
+  ppShow(k);
+}
+async function ppBack(){
+  var ovl = document.getElementById('pp-ov'); if(!ovl) return; var k = ovl.getAttribute('data-k'), p = ppInfo(k);
+  if(!p.ov || !confirm('Put “'+p.it.name+'” back to the purchase rate (and clear the GST set here)?')) return;
+  try{
+    var H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'};
+    var d = await fetch(SB_URL+'/rest/v1/price_overrides?item_key=eq.'+encodeURIComponent(pvKey(p.it.name)),{method:'DELETE',headers:H}); if(!d.ok) throw new Error(await d.text());
+    toast('Back to purchase rate'); ppClose(); await pvLoad(); await ppLoadQuiet(); ppShow(k);
+  }catch(e){ alert('Could not change: '+(e.message||e)); }
+}
+async function ppUnmatch(ka){
+  var all = SI.allItems || SI.items;
+  if(!confirm('Undo this join/match for “'+(all[ka]?all[ka].name:ka)+'”?\n\nIt becomes its own item again (or, if it is only a name from a filing, it stops being matched).')) return;
+  try{
+    var r = await fetch(SB_URL+'/rest/v1/store_aliases?alias=eq.'+encodeURIComponent(ka),{method:'DELETE',headers:siHdr('return=representation')});
+    if(!r.ok) throw new Error(await r.text());
+    var gone = await r.json(); if(!gone.length) throw new Error('Nothing was changed (permission). Run store_aliases_policy.sql in Supabase once.');
+    var open = (document.getElementById('pp-ov')||{getAttribute:function(){return null;}}).getAttribute('data-k');
+    toast('Done'); ppClose(); await siLoad(); if(open) ppShow(open);
+  }catch(e){ alert('Could not undo: '+(e.message||e)); }
+}
+async function ppUnhide(k){
+  try{
+    var it = (SI.allItems||SI.items)[k]; await sbDelete('store_hidden','?item=eq.'+encodeURIComponent((SI.hidden[k]||{}).item||it.name));
+    toast('Shown again'); ppClose(); await siLoad(); ppShow(k);
+  }catch(e){ alert('Could not show: '+(e.message||e)); }
+}
+
+// ---------- tap an item name on the Store screen ----------
+if(!window.__ppW1){ window.__ppW1 = 1;
+var _svDayHtmlPP = svDayHtml;
+svDayHtml = function(){
+  var h = _svDayHtmlPP.apply(this, arguments), all = SI.items||{}, byName = {};
+  Object.keys(all).forEach(function(k){ byName[siEsc(all[k].name)] = k; });
+  return h.replace(/<div style="font-weight:600;font-size:14px">([^<]*)<\/div>/g, function(m, nm){
+    var k = byName[nm]; if(!k) return m;
+    return '<div data-k="'+siEsc(k)+'" onclick="ppOpen(this.getAttribute(\'data-k\'))" title="Open the product profile" style="font-weight:600;font-size:14px;cursor:pointer;text-decoration:underline dotted #bbb">'+nm+'</div>';
+  });
+};
+}
+
+// ---------- "Find any product" box on top of the Store (also finds joined / hidden ones) ----------
+function ppFind(i){
+  var all = SI.allItems || SI.items, q = siNorm(i.value), box = document.getElementById('pp-res'); if(!box) return;
+  if(!q){ box.innerHTML=''; return; }
+  var keys = Object.keys(all).filter(function(k){ return siNorm(all[k].name+' '+(all[k].agency||'')).indexOf(q)>=0; }).sort(function(a,b){ return all[a].name.localeCompare(all[b].name); }).slice(0,12);
+  box.innerHTML = keys.length ? '<div style="border:1px solid #e6ddd5;border-radius:10px;background:#fff;margin-top:6px;overflow:hidden">'+keys.map(function(k){
+    var tag = (SI.memberOf&&SI.memberOf[k]) ? ' <span style="color:#a35c00;font-size:11px">joined into '+pvEsc(all[SI.memberOf[k]].name)+'</span>' : ((SI.hidden&&SI.hidden[k]) ? ' <span style="color:#a35c00;font-size:11px">hidden</span>' : '');
+    return '<div data-k="'+pvEsc(k)+'" onclick="ppOpen(this.getAttribute(\'data-k\'))" style="padding:10px 12px;border-top:1px solid #f0e8e0;cursor:pointer;font-size:14px"><b>'+pvEsc(all[k].name)+'</b>'+tag+'<span style="color:#999;font-size:12px"> '+pvEsc(all[k].agency||'')+'</span></div>'; }).join('')+'</div>'
+    : '<div style="font-size:13px;color:#999;margin-top:6px">Nothing found.</div>';
+}
+if(!window.__ppW5){ window.__ppW5 = 1; var _svDayHtmlPP2 = svDayHtml;
+svDayHtml = function(){
+  var h = _svDayHtmlPP2.apply(this, arguments);
+  return '<div style="margin-bottom:12px"><input id="pp-find" oninput="ppFind(this)" placeholder="🔎 Find any product — vendor, price, GST, joins" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #ddd;border-radius:10px;font-size:15px"><div id="pp-res"></div></div>'+h;
+}; }
+// ---------- Stock Value: ✏️ opens the same profile; upload button removed (download stays) ----------
+function puEdit(name){
+  var all = SI.allItems || SI.items, k = siNorm(name);
+  if(!all[k]){ var pk = pvKey(name); k = Object.keys(all).filter(function(x){ return pvKey(all[x].name)===pk; })[0] || k; }
+  if(all[k]) ppOpen(k); else alert('This product is not in the Store list yet, so it has no profile.');
+}
+if(!window.__ppW6){ window.__ppW6 = 1; var _pvHtmlPP = pvHtml;
+pvHtml = function(){
+  var h = _pvHtmlPP.apply(this, arguments);
+  return h.replace(/<button[^>]*onclick="puPick\(\)"[^>]*>[^<]*<\/button>/, '');
+}; }
   // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
 // 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
 // 2) Store → Yesterday: a clear ✏️ button on every row (change the count, or add a missed one), a reason is always asked.
