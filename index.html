@@ -8899,7 +8899,9 @@ async function sacOpen(){
   if(!SI.items || !Object.keys(SI.items).length || !ACO.since){ try{ SI.quiet = true; await siLoad(); }catch(e){} SI.quiet = false; }
   sacShow();
 }
-function sacClose(){ SAC.open = false; if(typeof setTab==='function') setTab(8); }
+function sacClose(){ if(SI.tab==='acc'){ SI.tab = 'stock'; siDraw(); window.scrollTo && window.scrollTo({top:0}); return; } SAC.open = false; if(typeof setTab==='function') setTab(8); }
+// ---- Store side: a 🧷 Accessories button next to Kitchen requests (opens the same view) ----
+function sacStore(){ SI.tab = 'acc'; SAC.open = false; siDraw(); window.scrollTo && window.scrollTo({top:0}); }
 function sacInject(){
   if(typeof S==='undefined' || S.mainTab!==8 || document.getElementById('sac-tab')) return;
   var bar = sacBar(); if(!bar) return;
@@ -8910,9 +8912,17 @@ function sacInject(){
 }
 if(!window.__sacW1){ window.__sacW1 = 1;
   try{ new MutationObserver(function(){ sacInject(); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
-  var _setTabSAC = setTab; setTab = function(){ SAC.open = false; return _setTabSAC.apply(this, arguments); };
-  var _siDrawSAC = siDraw; siDraw = function(){ if(SAC.open && typeof S!=='undefined' && S.mainTab===8){ sacShow(); return; } return _siDrawSAC.apply(this, arguments); };
+  var _setTabSAC = setTab; setTab = function(){ SAC.open = false; if(SI.tab==='acc') SI.tab = 'stock'; return _setTabSAC.apply(this, arguments); };
+  var _siDrawSAC = siDraw; siDraw = function(){
+    if(SI.tab==='acc'){ var el = document.getElementById('screen'); if(!el) return; el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px"><h2 style="color:var(--brown,#6B2400);margin:0 0 12px">🧷 Accessories sent to outlets</h2>'+(SI.loading?'<div class="loading"><div class="spinner"></div></div>':(SI.err?'<div class="card" style="color:#B03020">Could not load: '+siEsc(SI.err)+'</div>':sacHtml()))+'</div>'; return; }
+    if(SAC.open && typeof S!=='undefined' && S.mainTab===8){ sacShow(); return; } return _siDrawSAC.apply(this, arguments); };
 }
+
+if(!window.__sacW3){ window.__sacW3 = 1; var _svDaySAC = svDayHtml;
+svDayHtml = function(){
+  var h = _svDaySAC.apply(this, arguments);
+  return '<div style="margin-bottom:12px"><button onclick="sacStore()" class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px">🧷 Accessories</button></div>'+h;
+}; }
   // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
 // 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
 // 2) Store → Yesterday: a clear ✏️ button on every row (change the count, or add a missed one), a reason is always asked.
