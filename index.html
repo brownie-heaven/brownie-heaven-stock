@@ -8814,9 +8814,13 @@ getAllPurchaseProducts = function(){
     return c;
   });
 }; }
-  // ── STORE: 🧷 Accessories screen (like Kitchen requests) — what is sent to outlets, and how it reduces the store ──
+ // ── ACCESSORIES TAB: new "🧷 Store link" view — what is sent to outlets, and how it reduces the store ──
+// The "Accessories sent to outlets" box is taken OFF the Store front page and lives here instead.
 // Reads the office's daily accessories filing (Sanjay / Gautham). Nothing new to enter.
 // Paste BELOW store_accessories_out.js and product_profile.js. No SQL.
+var SAC = {open:false, in:false};
+var _acoBoxOrig = acoBox;
+acoBox = function(){ return SAC.in ? _acoBoxOrig.apply(this, arguments) : ''; };   // hidden on the Store front page
 function sacCol(){ return 'padding:8px 6px;text-align:right;white-space:nowrap'; }
 function sacRows(){
   var all = SI.allItems || SI.items || {}, groups = {};
@@ -8839,12 +8843,12 @@ function sacRows(){
 }
 function sacHtml(){
   var rows = sacRows(), f = (typeof siFmt==='function') ? siFmt : function(x){ return x; };
-  var head = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px" onclick="siTab(\'stock\')">← Back to store</button></div>'
+  var head = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px" onclick="sacClose()">← Back</button></div>'
     + '<div class="card" style="margin-bottom:12px;font-size:13px;line-height:1.6"><b>How the number is worked out</b><br>'
     + 'In store now = <b>last count</b> + <b>bought</b> (Purchase) + <b>stock in</b> − <b>sent to kitchen</b> − <b>sent to outlets</b>.<br>'
     + '“Sent to outlets” comes from the office’s daily accessories filing. Only days <u>after</u> the last count are taken off (the count already includes that day). An item with no count yet is “not counted”, so nothing is taken off it until it is counted.<br>'
     + 'Managers’ own accessories entries are separate and do not change the store.</div>'
-    + (typeof acoBox==='function' ? acoBox() : '');
+    + (function(){ SAC.in = true; try{ return acoBox(); } finally { SAC.in = false; } })();
   if(!rows.length) return head + '<div class="card" style="text-align:center;color:#999">No accessories filed since the first store count yet.</div>';
   var body = rows.map(function(r){
     var oc = Object.keys(r.outl).sort(function(a,b){ return r.outl[b]-r.outl[a]; });
@@ -8875,21 +8879,40 @@ async function sacUndo(kn){
     toast('Done'); await siLoad();
   }catch(e){ alert('Could not undo: '+(e.message||e)); }
 }
-function sacOpen(){ SI.tab = 'acc'; siDraw(); window.scrollTo && window.scrollTo({top:0}); }
 
-if(!window.__sacW1){ window.__sacW1 = 1; var _siDrawSAC = siDraw;
-siDraw = function(){
-  if(typeof S!=='undefined' && S.mainTab===14) return _siDrawSAC.apply(this, arguments);
-  if(SI.tab!=='acc') return _siDrawSAC.apply(this, arguments);
-  var el = document.getElementById('screen'); if(!el) return;
-  var body = SI.loading ? '<div class="loading"><div class="spinner"></div></div>' : (SI.err ? '<div class="card" style="color:#B03020">Could not load: '+siEsc(SI.err)+'</div>' : sacHtml());
-  el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px"><h2 style="color:var(--brown,#6B2400);margin:0 0 12px">🧷 Accessories — sent to outlets</h2>'+body+'</div>';
-}; }
-if(!window.__sacW2){ window.__sacW2 = 1; var _svDayHtmlSAC = svDayHtml;
-svDayHtml = function(){
-  var h = _svDayHtmlSAC.apply(this, arguments);
-  return '<div style="margin-bottom:12px"><button onclick="sacOpen()" class="btn btn-s" style="width:auto;padding:9px 14px;font-size:13px">🧷 Accessories</button></div>'+h;
-}; }
+// ---------- the "🧷 Store link" sub-tab inside the Accessories tab (next to New entry / History / Manage items) ----------
+function sacBar(){
+  var btn = Array.prototype.filter.call(document.querySelectorAll('#screen button, #screen a, #screen div'), function(b){ return b.children.length===0 && /Manage items/.test(b.textContent||''); })[0];
+  return btn ? btn.parentElement : null;
+}
+function sacShow(){
+  var bar = sacBar(); if(!bar) return; var wrap = bar.parentElement; if(!wrap) return;
+  SAC.open = true;
+  Array.prototype.forEach.call(wrap.children, function(c){ if(c!==bar && c.id!=='sac-body') c.style.display = 'none'; });
+  var box = document.getElementById('sac-body'); if(!box){ box = document.createElement('div'); box.id = 'sac-body'; wrap.appendChild(box); }
+  box.style.display = ''; box.innerHTML = SI.loading ? '<div class="loading"><div class="spinner"></div></div>' : (SI.err ? '<div class="card" style="color:#B03020">Could not load: '+siEsc(SI.err)+'</div>' : sacHtml());
+  var b = document.getElementById('sac-tab'); if(b) b.style.cssText += ';font-weight:700;color:#6B2400;border-bottom:2px solid #6B2400';
+}
+async function sacOpen(){
+  SAC.open = true;
+  var box = document.getElementById('sac-body'); sacShow();
+  if(!SI.items || !Object.keys(SI.items).length || !ACO.since){ try{ SI.quiet = true; await siLoad(); }catch(e){} SI.quiet = false; }
+  sacShow();
+}
+function sacClose(){ SAC.open = false; if(typeof setTab==='function') setTab(8); }
+function sacInject(){
+  if(typeof S==='undefined' || S.mainTab!==8 || document.getElementById('sac-tab')) return;
+  var bar = sacBar(); if(!bar) return;
+  var manage = Array.prototype.filter.call(bar.children, function(c){ return /Manage items/.test(c.textContent||''); })[0];
+  var b = document.createElement('button'); b.id = 'sac-tab'; b.type = 'button'; b.textContent = '🧷 Store link';
+  b.style.cssText = 'padding:12px 4px;background:none;border:none;font-size:15px;cursor:pointer;color:#555;margin-left:18px';
+  b.onclick = sacOpen; if(manage) bar.insertBefore(b, manage); else bar.appendChild(b);
+}
+if(!window.__sacW1){ window.__sacW1 = 1;
+  try{ new MutationObserver(function(){ sacInject(); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
+  var _setTabSAC = setTab; setTab = function(){ SAC.open = false; return _setTabSAC.apply(this, arguments); };
+  var _siDrawSAC = siDraw; siDraw = function(){ if(SAC.open && typeof S!=='undefined' && S.mainTab===8){ sacShow(); return; } return _siDrawSAC.apply(this, arguments); };
+}
   // ── EDITS + AUTO HISTORY ───────────────────────────────────────────────────────────────────────────────────────
 // 1) Chef requests: ✏️ now changes the quantity AND the unit (pcs / kg / pkt …), with a reason.
 // 2) Store → Yesterday: a clear ✏️ button on every row (change the count, or add a missed one), a reason is always asked.
