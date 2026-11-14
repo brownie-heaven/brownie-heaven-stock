@@ -9229,6 +9229,54 @@ if(!window.__acoW2){ window.__acoW2 = 1;
 var _svDayHtmlACO = svDayHtml;
 svDayHtml = function(){ return acoBox() + _svDayHtmlACO.apply(this, arguments); };
 }
+  // ── OVERVIEW: ⚠ Low stock card (store items that will run out soon) ──
+// Looks at the last 14 days of use (kitchen issues + accessories sent), works out "days left", and lists the nearest to running out.
+// Only counted items can be checked. Tap a name to open its profile. Paste BELOW accessories_final.js. No SQL.
+var LS = {t:0, show:false};
+function lsDays(){ return 14; }
+function lsRows(){
+  var all = SI.allItems || SI.items || {}, today = siToday(), from = new Date(today+'T00:00:00Z'); from.setUTCDate(from.getUTCDate()-lsDays());
+  var fromS = from.toISOString().slice(0,10), rows = [];
+  Object.keys(SI.items||{}).forEach(function(k){
+    var st = siStock(k); if(st.balance==null) return;            // not counted yet: cannot judge
+    var used = 0;
+    (typeof pnMembers==='function' ? pnMembers(k) : [k]).forEach(function(mk){
+      (SI.byKey[mk]||[]).forEach(function(e){ if(e.kind==='out' && !e.voided && String(e.entry_date)>=fromS) used += Number(e.qty)||0; });
+    });
+    if(!(used>0)) return;
+    var perDay = used/lsDays(), left = st.balance/perDay;
+    rows.push({k:k, it:all[k], bal:st.balance, perDay:perDay, left:left});
+  });
+  return rows.filter(function(r){ return r.left<5; }).sort(function(a,b){ return a.left-b.left; });
+}
+function lsHtml(){
+  var rows = lsRows(), f = (typeof siFmt==='function') ? siFmt : function(x){ return x; };
+  var n = LS.show ? 40 : 8, shown = rows.slice(0,n);
+  var line = function(r){
+    var d = r.left<=0 ? '<b style="color:#B03020">out of stock</b>' : (r.left<1 ? '<b style="color:#B03020">less than 1 day</b>' : '<b style="color:'+(r.left<2?'#B03020':'#a35c00')+'">~'+Math.floor(r.left)+' day'+(Math.floor(r.left)===1?'':'s')+'</b>');
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px"><span data-k="'+siEsc(r.k)+'" onclick="ppOpen(this.getAttribute(\'data-k\'))" style="cursor:pointer;font-weight:600">'+siEsc(r.it.name)+'</span><span style="white-space:nowrap;color:#666">'+f(Math.max(0,Math.round(r.bal*10)/10))+' '+siEsc(r.it.unit||'')+' · '+d+'</span></div>';
+  };
+  return '<div class="card" style="border:1.5px solid #f0c878;background:#fffaf3"><div class="card-title" style="color:#a35c00">⚠️ Low stock — '+(rows.length?rows.length+' item'+(rows.length>1?'s':'')+' running out':'all fine')+'</div>'
+    + (rows.length ? shown.map(line).join('')+(rows.length>8?'<button class="btn btn-s" style="width:auto;padding:7px 12px;font-size:12px;margin-top:8px" onclick="LS.show=!LS.show;lsPaint()">'+(LS.show?'Show less':'See all '+rows.length)+'</button>':'') : '<div style="font-size:13px;color:#777">Nothing in the store is about to run out (based on the last '+lsDays()+' days of use).</div>')
+    + '<div style="font-size:11px;color:#999;margin-top:8px">Days left = in store now ÷ average use per day (last '+lsDays()+' days). Items never counted are not checked.</div></div>';
+}
+function lsPaint(){
+  var el = document.getElementById('screen'); if(!el) return;
+  var old = document.getElementById('ls-card'); var html = '<div id="ls-card">'+lsHtml()+'</div>';
+  if(old){ old.outerHTML = html; return; }
+  var first = el.firstElementChild; if(!first || !/Revenue/.test(el.textContent||'')) return;
+  first.insertAdjacentHTML('afterbegin', html);
+}
+if(!window.__lsW1 && typeof renderOverview==='function'){ window.__lsW1 = 1; var _roLS = renderOverview;
+renderOverview = async function(){
+  var r = await _roLS.apply(this, arguments);
+  try{
+    if(typeof S!=='undefined' && S.role && S.role!=='admin') return r;
+    if(!SI.items || !Object.keys(SI.items).length || Date.now()-LS.t>300000){ SI.quiet = true; try{ await siLoad(); }catch(e){} SI.quiet = false; LS.t = Date.now(); }
+    lsPaint();
+  }catch(e){}
+  return r;
+}; }
 // App starts via welcome screen Get Started button → startApp()
  // ── STEP B: PRODUCT NAMES — join "same product, different name/brand" into ONE product (Gautham does it himself) ──
 // Example: White Compound 500 g / White Compound 500gms / another brand → one item "White Compound 500 g".
