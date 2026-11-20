@@ -9280,6 +9280,30 @@ renderOverview = async function(){
   }catch(e){}
   return r;
 }; }
+  // ── STORE: "History" button next to Today / Yesterday / This month ──
+// Every store change is listed here (counts, stock in, issued to kitchen, edits and cancels, with who / when / why).
+// Each line has ✎ edit and 🗑 cancel (a reason is always asked). Search by item, person or note; filter by type; ⬇ Download.
+// Purchases are in the Purchase tab; accessories sent are in 🧷 Accessories. Paste BELOW accessories_final.js. No SQL.
+if(!window.__shW1){ window.__shW1 = 1; var _svSegSH = svSeg;
+svSeg = function(){
+  var h = _svSegSH.apply(this, arguments), on = (typeof SV!=='undefined' && SV.view==='history');
+  var btn = '<button onclick="svView(\'history\')" style="flex:1;padding:12px 6px;font-size:15px;font-weight:700;border:none;border-left:1px solid #e3d3c6;cursor:pointer;background:'+(on?'#6B2400':'#fff')+';color:'+(on?'#fff':'#6B2400')+'">History</button>';
+  return h.replace(/(This month<\/button>)(<\/div>)/, '$1'+btn+'$2');
+}; }
+if(!window.__shW2){ window.__shW2 = 1; var _siDrawSH = siDraw;
+siDraw = function(){
+  if(SI.tab==='history'){ SI.tab = 'stock'; SV.view = 'history'; }          // after an edit or cancel
+  if(SV.view==='history' && SI.tab==='stock'){
+    var el = document.getElementById('screen'); if(!el) return;
+    var body;
+    if(SI.loading) body = '<div class="loading"><div class="spinner"></div></div>';
+    else if(SI.err) body = '<div class="card" style="color:#B03020;font-size:13px">Could not load the store: '+siEsc(SI.err)+'</div>';
+    else body = svSeg() + '<div style="font-size:13px;color:#666;margin-bottom:10px">Every change in the store, newest first. ✎ changes a line, 🗑 cancels it. A reason is always asked and is kept with your name.</div>' + siHistoryHtml();
+    el.innerHTML = '<div style="max-width:1000px;margin:0 auto;padding:16px"><h2 style="color:var(--brown,#6B2400);margin:0 0 12px">🏬 Store</h2>'+body+'</div>';
+    return;
+  }
+  return _siDrawSH.apply(this, arguments);
+}; }
 // App starts via welcome screen Get Started button → startApp()
  // ── STEP B: PRODUCT NAMES — join "same product, different name/brand" into ONE product (Gautham does it himself) ──
 // Example: White Compound 500 g / White Compound 500gms / another brand → one item "White Compound 500 g".
