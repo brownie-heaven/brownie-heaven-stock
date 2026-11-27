@@ -9352,6 +9352,49 @@ ckDraw = function(){
   }catch(e){}
   return r;
 }; }
+  // ═══ GAUTHAM LOGIN (blank for now) ═══
+// A separate PIN for Gautham (Purchase Manager). For now it only opens a blank "Welcome" screen.
+// Later we add the stock screens here, one step at a time.
+var GAUTHAM_PIN = '1357';   // change this one line to change Gautham's PIN (must not match any outlet / chef / admin PIN)
+
+if(!window.__ghW1){
+  window.__ghW1 = true;
+
+  function ghDraw(){
+    var el = document.getElementById('screen'); if(!el || S.role!=='gautham') return;
+    el.innerHTML = '<div style="max-width:560px;margin:0 auto;padding:14px">'
+      +'<div class="card" style="text-align:center;padding:30px 16px">'
+      +'<div style="font-size:34px;margin-bottom:8px">👋</div>'
+      +'<div style="font-weight:700;font-size:18px;margin-bottom:6px">Welcome, Gautham</div>'
+      +'<div style="font-size:13px;color:#888">Your screens will come here soon.</div>'
+      +'</div></div>';
+  }
+  window.ghDraw = ghDraw;
+
+  var _pressNumGH = pressNum;
+  pressNum = function(n){
+    var typed = String(S.pin||'') + n;
+    if(typeof n==='string' && n!=='del' && typed===GAUTHAM_PIN){
+      S.pin = ''; S.role = 'gautham'; S.outlet = null; S.outletName = null; S.pinError = false;
+      try{ if(typeof actLog==='function') actLog('Sign-in','Signed in','Gautham signed in','Gautham','gautham'); }catch(e){}
+      try{ setHdr('Gautham', false); }catch(e){}
+      ghDraw(); return;
+    }
+    return _pressNumGH.apply(this, arguments);
+  };
+
+  var _confirmHomeGH = confirmHome;
+  confirmHome = function(){ if(S.role==='gautham'){ ghDraw(); window.scrollTo && window.scrollTo({top:0}); return; } return _confirmHomeGH.apply(this, arguments); };
+
+  var _goHomeGH = goHome;
+  goHome = function(){
+    try{ if(S && S.role==='gautham' && typeof actLog==='function') actLog('Sign-in','Signed out','Gautham signed out','Gautham','gautham'); }catch(e){}
+    return _goHomeGH.apply(this, arguments);
+  };
+
+  if(typeof logWho==='function'){ var _logWhoGH = logWho; logWho = function(){ return (S && S.role==='gautham') ? 'Gautham' : _logWhoGH.apply(this, arguments); }; }
+}
+// ═══ END GAUTHAM LOGIN ═══
 // App starts via welcome screen Get Started button → startApp()
  // ── STEP B: PRODUCT NAMES — join "same product, different name/brand" into ONE product (Gautham does it himself) ──
 // Example: White Compound 500 g / White Compound 500gms / another brand → one item "White Compound 500 g".
